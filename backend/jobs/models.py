@@ -1,4 +1,3 @@
-# backend/jobs/models.py
 from typing import List
 from pydantic import BaseModel, Field
 from datetime import datetime
