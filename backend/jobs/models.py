@@ -12,7 +12,7 @@ class JobCreate(JobBase):
     pass
 
 class Job(JobBase):
-    id: str = Field(..., alias="_id")  # ← On stocke l'ID comme str
+    id: str = Field(..., alias="_id")  
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
     model_config = {"populate_by_name": True}

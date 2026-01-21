@@ -1,4 +1,3 @@
-# backend/auth/security.py
 import bcrypt
 from datetime import datetime, timedelta
 from jose import jwt

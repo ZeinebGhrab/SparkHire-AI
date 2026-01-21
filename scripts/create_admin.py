@@ -1,4 +1,3 @@
-# scripts/create_admin.py
 import os
 from pathlib import Path
 from pymongo import MongoClient

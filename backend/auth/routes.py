@@ -8,9 +8,9 @@ router = APIRouter(prefix="/auth", tags=["Auth"])
 # backend/auth/routes.py
 @router.post("/login", response_model=Token)
 def login(recruiter: RecruiterCreate):
-    print("🔍 Tentative de login :", recruiter.email)  # ← Ajoutez ceci
+    print("Tentative de login :", recruiter.email)  
     user = db.recruiters.find_one({"email": recruiter.email})
-    print("👤 Utilisateur trouvé :", user)  # ← Et ceci
+    print("Utilisateur trouvé :", user)  
     if not user or not verify_password(recruiter.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Email ou mot de passe incorrect")
     access_token = create_access_token(data={"sub": recruiter.email})
