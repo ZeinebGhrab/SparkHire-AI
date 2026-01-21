@@ -15,13 +15,13 @@ EMAIL = "rh@stark.tn"
 PASSWORD = "admin123"
 
 def create_admin_user():
-    print(f"🔌 Connexion à MongoDB : {MONGODB_URL}")
+    print(f"Connexion à MongoDB : {MONGODB_URL}")
     client = MongoClient(MONGODB_URL)
     db = client[DB_NAME]
 
     # Vérifier si existe déjà
     if db.recruiters.find_one({"email": EMAIL}):
-        print(f"✅ Recruteur '{EMAIL}' existe déjà.")
+        print(f"Recruteur '{EMAIL}' existe déjà.")
         return
 
     # Hacher le mot de passe avec bcrypt
@@ -32,7 +32,7 @@ def create_admin_user():
         "email": EMAIL,
         "password_hash": hashed
     })
-    print(f"🎉 Admin créé ! ID: {result.inserted_id}")
+    print(f"Admin créé ! ID: {result.inserted_id}")
 
 if __name__ == "__main__":
     print("🔧 Création du recruteur administrateur...")
