@@ -16,8 +16,14 @@ class Settings(BaseSettings):
     WINDOW_HEIGHT: int = 800
     LANGUAGE: str = "ar"  # ar ou en
     
+    # MongoDB + sécurité (champs venant de .env)
+    SECRET_KEY: str
+    MONGODB_URL: str
+    MONGODB_DB_NAME: str
+    
     class Config:
         env_file = ".env"
+        case_sensitive = True  
 
 @lru_cache()
 def get_settings():
