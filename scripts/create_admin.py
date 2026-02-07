@@ -34,5 +34,5 @@ def create_admin_user():
     print(f"Admin créé ! ID: {result.inserted_id}")
 
 if __name__ == "__main__":
-    print("🔧 Création du recruteur administrateur...")
+    print("Création du recruteur administrateur...")
     create_admin_user()
