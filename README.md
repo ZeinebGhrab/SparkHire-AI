@@ -210,7 +210,7 @@ AVATAR_PROVIDER=simple  # or wav2lip, did
 
 ## 📄 License
 
-Proprietary - Stark Solutions © 2025
+Proprietary - Stark Solutions © 2026
 
 ## 👥 Support
 
