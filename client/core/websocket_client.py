@@ -8,8 +8,9 @@ from PySide6.QtCore import QObject, Signal, QThread
 class WebSocketWorker(QObject):
     """Worker pour WebSocket dans thread séparé"""
     
-    connected = Signal()
-    disconnected = Signal()
+    # ✅ FIX: Renommer le signal pour éviter le conflit avec la méthode connect()
+    connection_established = Signal()
+    connection_closed = Signal()
     message_received = Signal(dict)
     error_occurred = Signal(str)
     
@@ -18,12 +19,13 @@ class WebSocketWorker(QObject):
         self.url = url
         self.websocket = None
         self.running = False
+        self.loop = None
     
-    async def connect(self):
+    async def connect_to_server(self):
         """Connecter au WebSocket"""
         try:
             self.websocket = await websockets.connect(self.url)
-            self.connected.emit()
+            self.connection_established.emit()
             
             # Boucle de réception
             async for message in self.websocket:
@@ -39,7 +41,7 @@ class WebSocketWorker(QObject):
         except Exception as e:
             self.error_occurred.emit(f"Connection error: {e}")
         finally:
-            self.disconnected.emit()
+            self.connection_closed.emit()
     
     async def send(self, data: dict):
         """Envoyer message"""
@@ -55,7 +57,9 @@ class WebSocketWorker(QObject):
     def run(self):
         """Point d'entrée du worker"""
         self.running = True
-        asyncio.run(self.connect())
+        self.loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(self.loop)
+        self.loop.run_until_complete(self.connect_to_server())
 
 
 class WebSocketClient(QObject):
@@ -76,8 +80,8 @@ class WebSocketClient(QObject):
         
         # Connecter signaux
         self.thread.started.connect(self.worker.run)
-        self.worker.connected.connect(self._on_connected)
-        self.worker.disconnected.connect(self._on_disconnected)
+        self.worker.connection_established.connect(self._on_connected)
+        self.worker.connection_closed.connect(self._on_disconnected)
         self.worker.message_received.connect(self._on_message)
         self.worker.error_occurred.connect(self._on_error)
     
@@ -88,17 +92,19 @@ class WebSocketClient(QObject):
     
     def send_message(self, data: dict):
         """Envoyer message"""
-        asyncio.run_coroutine_threadsafe(
-            self.worker.send(data),
-            self.worker.loop if hasattr(self.worker, 'loop') else asyncio.get_event_loop()
-        )
+        if self.worker.loop and self.worker.running:
+            asyncio.run_coroutine_threadsafe(
+                self.worker.send(data),
+                self.worker.loop
+            )
     
     def disconnect_from_server(self):
         """Déconnecter"""
-        asyncio.run_coroutine_threadsafe(
-            self.worker.close(),
-            self.worker.loop if hasattr(self.worker, 'loop') else asyncio.get_event_loop()
-        )
+        if self.worker.loop and self.worker.running:
+            asyncio.run_coroutine_threadsafe(
+                self.worker.close(),
+                self.worker.loop
+            )
         self.thread.quit()
         self.thread.wait()
     
