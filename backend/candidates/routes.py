@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, Query, HTTPException
 from backend.candidates.models import Candidate, CandidateCreate, CandidateUpdate, Consent
 from backend.candidates.crud import CandidateCRUD
 from backend.auth.security import get_current_recruiter
-from typing import List, Optional
+from typing import List
 
 router = APIRouter(prefix="/candidates", tags=["Candidates"])
 

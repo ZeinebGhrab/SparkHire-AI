@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import OAuth2PasswordRequestForm
-from backend.auth.models import RecruiterCreate, Token
+from backend.auth.models import Token
 from backend.auth.security import get_current_recruiter, create_access_token, verify_password
 from backend.database import db
 

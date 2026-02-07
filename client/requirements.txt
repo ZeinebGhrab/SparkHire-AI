@@ -1,0 +1,15 @@
+# Interface graphique
+PySide6==6.6.1
+PySide6-Addons==6.6.1
+
+# Communication
+websockets==13.0.1
+httpx==0.27.2
+
+# Audio
+pyaudio==0.2.14
+numpy==1.26.4
+
+# Utils
+python-dotenv==1.0.1
+aiofiles==24.1.0

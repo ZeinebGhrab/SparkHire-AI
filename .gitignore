@@ -5,5 +5,8 @@
 __pycache__/
 *.pyc
 
+# Ignorer les fichiers 
+models/
+
 # Ignorer l'environnement virtuel
 venv/

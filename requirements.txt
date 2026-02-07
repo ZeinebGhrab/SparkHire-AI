@@ -1,19 +1,46 @@
-# FastAPI & ASGI
+# ============ API & Core ============
 fastapi==0.115.0
 uvicorn[standard]==0.32.0
-
-# Validation & config
 pydantic==2.9.0
 pydantic-settings==2.6.0
+python-multipart==0.0.9
 
-# Authentification
+# ============ Auth ============
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
 
-# Base de données
+# ============ Database ============
 pymongo==4.10.1
+motor==3.5.1
 python-dotenv==1.0.1
+redis==5.0.8
 
-# Tests (optionnel mais utile)
+# ============ WebSocket ============
+websockets==13.0.1
+
+# ============ ASR (Speech-to-Text) ============
+faster-whisper==1.0.3
+vosk==0.3.45
+pyaudio==0.2.14
+soundfile==0.12.1
+
+# ============ TTS (Text-to-Speech) ============
+TTS==0.22.0
+pyttsx3==2.90
+
+# ============ Audio Processing ============
+scipy==1.14.1
+numpy==1.26.4
+
+# ============ Video/Avatar ============
+opencv-python==4.10.0.84
+moviepy==1.0.3
+pillow==10.4.0
+
+# ============ Utils ============
+aiofiles==24.1.0
+httpx==0.27.2
+
+# ============ Tests ============
 pytest==8.3.0
-httpx==0.27.0
+pytest-asyncio==0.24.0
