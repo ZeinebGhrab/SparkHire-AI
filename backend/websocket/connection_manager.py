@@ -20,13 +20,13 @@ class ConnectionManager:
         """Accepter une nouvelle connexion"""
         await websocket.accept()
         self.active_connections[session_id] = websocket
-        logger.info(f"✅ WebSocket connecté: {session_id}")
+        logger.info(f"WebSocket connecté: {session_id}")
     
     def disconnect(self, session_id: str):
         """Déconnecter un client"""
         if session_id in self.active_connections:
             del self.active_connections[session_id]
-            logger.info(f"❌ WebSocket déconnecté: {session_id}")
+            logger.info(f"WebSocket déconnecté: {session_id}")
     
     async def send_json(self, session_id: str, data: dict):
         """Envoyer un message JSON"""

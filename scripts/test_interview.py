@@ -140,11 +140,11 @@ async def test_interview():
         )
         
         if session_response.status_code != 200:
-            print(f"❌ Erreur création session: {session_response.text}")
+            print(f"Erreur création session: {session_response.text}")
             return
         
         session = session_response.json()
-        print(f"✅ Session créée: {session['session_id']}")
+        print(f" Session créée: {session['session_id']}")
         print(f"   Candidat: {candidates[0]['first_name']} {candidates[0]['last_name']}")
         print(f"   Poste: {positions[0]['title']}")
         print(f"   Langue: {session['language']}")
@@ -152,18 +152,18 @@ async def test_interview():
         
         # 6. Instructions
         print("\n" + "="*70)
-        print("✅ ENTRETIEN PRÊT!")
+        print("ENTRETIEN PRÊT!")
         print("="*70)
-        print(f"\n🔗 Pour démarrer l'entretien:")
+        print(f"\n Pour démarrer l'entretien:")
         print(f"   1. Lancez le client: python client/main.py")
         print(f"   2. Entrez le session_id: {session['session_id']}")
         print(f"   3. Cliquez sur 'Se connecter'")
-        print("\n📊 Pour voir les résultats:")
+        print("\n Pour voir les résultats:")
         print(f"   GET {base_url}/interviews/sessions/{session['session_id']}")
-        print("\n💡 Ou testez via WebSocket:")
+        print("\n Ou testez via WebSocket:")
         print(f"   python scripts/test_websocket.py {session['session_id']}")
         print("="*70)
 
 if __name__ == "__main__":
-    print("🧪 Test du système d'entretien vocal\n")
+    print(" Test du système d'entretien vocal\n")
     asyncio.run(test_interview())

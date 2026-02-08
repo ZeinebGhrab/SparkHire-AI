@@ -164,7 +164,7 @@ python scripts/test_interview.py
 
 ## 📂 Structure
 ```
-hr_avatar_platform/
+stark-recruitment-chatbot/
 ├── backend/           # FastAPI API
 │   ├── auth/          # Authentication
 │   ├── candidates/    # Candidate management

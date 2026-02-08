@@ -165,7 +165,7 @@ def seed_job_positions():
     }
     
     result = db.job_positions.insert_one(datascience_position)
-    print(f"✅ Poste créé: {datascience_position['title']} (ID: {result.inserted_id})")
+    print(f"Poste créé: {datascience_position['title']} (ID: {result.inserted_id})")
 
 if __name__ == "__main__":
     print("Seed des postes avec questions...")

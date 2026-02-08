@@ -89,7 +89,7 @@ class WhisperASR(ASREngine):
             
             logger.info(f"Chargement du modèle Whisper: {model_size}")
             self.model = WhisperModel(model_size, device="cpu", compute_type="int8")
-            logger.info("✅ Modèle Whisper chargé avec succès")
+            logger.info("Modèle Whisper chargé avec succès")
             
         except ImportError:
             raise ImportError("Faster-Whisper n'est pas installé. pip install faster-whisper")

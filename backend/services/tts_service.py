@@ -35,7 +35,7 @@ class Pyttsx3TTS(TTSEngine):
             self.engine.setProperty('rate', 150)  # Vitesse
             self.engine.setProperty('volume', 0.9)  # Volume
             
-            logger.info("✅ pyttsx3 TTS initialisé")
+            logger.info("pyttsx3 TTS initialisé")
             
         except ImportError:
             raise ImportError("pyttsx3 n'est pas installé. pip install pyttsx3")
