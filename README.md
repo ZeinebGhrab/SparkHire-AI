@@ -41,8 +41,8 @@ brew install portaudio
 
 ### 1. Clone the project
 ```bash
-git clone <repo-url>
-cd hr_avatar_platform
+git clone https://github.com/ZeinebGhrab/stark-recruitment-chatbot.git
+cd stark-recruitment-chatbot
 ```
 
 ### 2. Backend
