@@ -85,7 +85,15 @@ class StarkTheme:
     FONT_SIZE_XLARGE = "24px"
     FONT_SIZE_TITLE = "32px"
     
-    # ========== ESPACEMENTS ==========
+    # ========== ESPACEMENTS (INT pour setSpacing, STR pour CSS) ==========
+    # Valeurs entières pour Qt
+    SPACING_XS_INT = 4
+    SPACING_SM_INT = 8
+    SPACING_MD_INT = 16
+    SPACING_LG_INT = 24
+    SPACING_XL_INT = 32
+    
+    # Valeurs string pour CSS
     SPACING_XS = "4px"
     SPACING_SM = "8px"
     SPACING_MD = "16px"

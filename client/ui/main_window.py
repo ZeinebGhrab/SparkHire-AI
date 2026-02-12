@@ -15,8 +15,14 @@ from pathlib import Path
 
 # Imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from .stark_theme import StarkTheme
-from .icons import StarkIcons
+from client.ui.stark_theme import StarkTheme
+from client.ui.icons import StarkIcons
+from client.ui.video_player_widget import VideoPlayerWidget
+from client.ui.interview_widget import InterviewWidget
+from client.core.websocket_client import WebSocketClient
+from client.core.audio_recorder import AudioRecorder
+from client.config import settings
+import base64
 
 
 class MainWindow(QMainWindow):
@@ -29,7 +35,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         
         self.websocket_client = None
-        self.audio_recorder = None  # À initialiser séparément
+        self.audio_recorder = None
         self.session_id = None
         
         self._setup_ui()
@@ -62,9 +68,8 @@ class MainWindow(QMainWindow):
         main_layout.addWidget(self.connection_widget)
         
         # ========== ZONE D'ENTRETIEN (cachée au début) ==========
-        self.interview_container = QWidget()
+        self.interview_container = self._create_interview_container()
         self.interview_container.setVisible(False)
-        # ... à compléter avec le layout d'interview
         
         main_layout.addWidget(self.interview_container)
         
@@ -283,6 +288,32 @@ class MainWindow(QMainWindow):
         
         return widget
     
+    def _create_interview_container(self) -> QWidget:
+        """Créer le conteneur d'entretien avec avatar et contrôles"""
+        container = QWidget()
+        container.setStyleSheet("QWidget { background: transparent; }")
+        
+        layout = QHBoxLayout(container)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(20)
+        
+        # ========== GAUCHE: AVATAR VIDEO ==========
+        self.video_player = VideoPlayerWidget()
+        layout.addWidget(self.video_player, stretch=2)
+        
+        # ========== DROITE: CONTRÔLES ==========
+        self.interview_widget = InterviewWidget()
+        self.interview_widget.setMaximumWidth(450)
+        
+        # Connecter les signaux
+        self.interview_widget.start_recording.connect(self._on_start_recording)
+        self.interview_widget.stop_recording.connect(self._on_stop_recording)
+        self.interview_widget.end_interview.connect(self._on_end_interview)
+        
+        layout.addWidget(self.interview_widget, stretch=1)
+        
+        return container
+    
     def _setup_statusbar(self):
         """Configurer la barre de statut"""
         status_bar = self.statusBar()
@@ -307,15 +338,144 @@ class MainWindow(QMainWindow):
                                    "Veuillez entrer un identifiant de session valide")
             return
         
-        # TODO: Implémenter la connexion WebSocket
+        self.session_id = session_id
+        
+        # Créer le client WebSocket
+        ws_url = f"{settings.WEBSOCKET_URL}/ws/interview/{session_id}"
+        self.websocket_client = WebSocketClient(ws_url)
+        
+        # Connecter les signaux WebSocket
+        self.websocket_client.connected.connect(self._on_websocket_connected)
+        self.websocket_client.disconnected.connect(self._on_websocket_disconnected)
+        self.websocket_client.message_received.connect(self._on_websocket_message)
+        self.websocket_client.error_occurred.connect(self._on_websocket_error)
+        
+        # Initialiser l'enregistreur audio
+        self.audio_recorder = AudioRecorder()
+        self.audio_recorder.audio_chunk_ready.connect(self._on_audio_chunk)
+        
+        # Connexion
+        try:
+            self.websocket_client.connect_to_server()
+            self.statusBar().showMessage("⏳ Connexion en cours...")
+        except Exception as e:
+            self._show_error_dialog("Erreur de Connexion", f"Impossible de se connecter: {e}")
+    
+    def _on_websocket_connected(self):
+        """Callback: WebSocket connecté"""
         self.status_label.setText("CONNECTÉ")
-        self.status_label.setStyleSheet(f"color: {StarkTheme.SUCCESS}; letter-spacing: 1px;")
+        self.status_label.setStyleSheet(f"color: {StarkTheme.SUCCESS}; letter-spacing: 1px; font-weight: bold;")
         self.status_detail.setText("Session active")
         self.statusBar().showMessage("✅ Connexion Sécurisée Établie")
         
         # Basculer vers l'interface d'entretien
         self.connection_widget.setVisible(False)
         self.interview_container.setVisible(True)
+        
+        # Démarrer l'avatar en mode idle
+        self.video_player.set_idle()
+    
+    def _on_websocket_disconnected(self):
+        """Callback: WebSocket déconnecté"""
+        self.status_label.setText("DÉCONNECTÉ")
+        self.status_label.setStyleSheet(f"color: {StarkTheme.ERROR}; letter-spacing: 1px;")
+        self.status_detail.setText("Connexion perdue")
+        self.statusBar().showMessage("❌ Déconnecté du serveur")
+    
+    def _on_websocket_message(self, data: dict):
+        """Callback: Message WebSocket reçu"""
+        msg_type = data.get("type")
+        msg_data = data.get("data", {})
+        
+        if msg_type == "welcome":
+            # Message de bienvenue
+            self.statusBar().showMessage(f"👋 {msg_data.get('text', 'Bienvenue')}")
+            self.video_player.set_speaking()
+            
+        elif msg_type == "question":
+            # Nouvelle question
+            question_text = msg_data.get("text", "")
+            progress = msg_data.get("progress", {})
+            
+            self.interview_widget.update_question(question_text, progress)
+            self.video_player.set_speaking()
+            
+            # Réactiver l'enregistrement
+            self.interview_widget.enable_recording(True)
+            
+        elif msg_type == "answer_saved":
+            # Réponse sauvegardée
+            transcript = msg_data.get("transcript", "")
+            self.interview_widget.update_transcript(transcript)
+            self.statusBar().showMessage("✅ Réponse enregistrée")
+            self.video_player.set_idle()
+            
+        elif msg_type == "interview_completed":
+            # Entretien terminé
+            message = msg_data.get("message", "Entretien terminé")
+            self._show_info_dialog("Entretien Terminé", message)
+            self.statusBar().showMessage("🎉 Entretien complété avec succès!")
+            
+        elif msg_type == "error":
+            # Erreur
+            error_msg = msg_data.get("message", "Erreur inconnue")
+            self._show_error_dialog("Erreur", error_msg)
+    
+    def _on_websocket_error(self, error: str):
+        """Callback: Erreur WebSocket"""
+        self._show_error_dialog("Erreur WebSocket", error)
+        self.statusBar().showMessage(f"❌ Erreur: {error}")
+    
+    def _on_start_recording(self):
+        """Démarrer l'enregistrement audio"""
+        if self.audio_recorder:
+            self.audio_recorder.start_recording()
+            self.video_player.set_listening()
+            self.statusBar().showMessage("🎤 Enregistrement en cours...")
+    
+    def _on_stop_recording(self):
+        """Arrêter l'enregistrement audio"""
+        if self.audio_recorder:
+            self.audio_recorder.stop_recording()
+            
+            # Envoyer la fin de réponse au serveur
+            if self.websocket_client:
+                self.websocket_client.send_message({
+                    "type": "answer_complete"
+                })
+            
+            self.video_player.set_idle()
+            self.statusBar().showMessage("⏹️ Enregistrement arrêté, traitement...")
+            
+            # Désactiver le bouton d'enregistrement pendant le traitement
+            self.interview_widget.enable_recording(False)
+    
+    def _on_audio_chunk(self, audio_data: bytes):
+        """Callback: Chunk audio reçu"""
+        if self.websocket_client:
+            # Encoder en base64 et envoyer
+            audio_b64 = base64.b64encode(audio_data).decode('utf-8')
+            self.websocket_client.send_message({
+                "type": "audio_chunk",
+                "audio_data": audio_b64
+            })
+    
+    def _on_end_interview(self):
+        """Terminer l'entretien"""
+        reply = QMessageBox.question(
+            self,
+            "Terminer l'Entretien",
+            "Êtes-vous sûr de vouloir terminer l'entretien maintenant?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        
+        if reply == QMessageBox.StandardButton.Yes:
+            if self.websocket_client:
+                self.websocket_client.send_message({
+                    "type": "end_interview"
+                })
+            
+            self.statusBar().showMessage("🔚 Entretien terminé")
     
     def _show_error_dialog(self, title: str, message: str):
         """Afficher un dialogue d'erreur"""
@@ -343,3 +503,40 @@ class MainWindow(QMainWindow):
             }}
         """)
         msg_box.exec()
+    
+    def _show_info_dialog(self, title: str, message: str):
+        """Afficher un dialogue d'information"""
+        msg_box = QMessageBox(self)
+        msg_box.setIcon(QMessageBox.Icon.Information)
+        msg_box.setWindowTitle(title)
+        msg_box.setText(message)
+        msg_box.setStyleSheet(f"""
+            QMessageBox {{
+                background: {StarkTheme.WHITE};
+            }}
+            QMessageBox QLabel {{
+                color: {StarkTheme.BLUE_PRIMARY};
+                font-size: 13px;
+            }}
+            QPushButton {{
+                background: {StarkTheme.BLUE_PRIMARY};
+                color: {StarkTheme.WHITE};
+                border-radius: {StarkTheme.RADIUS_MEDIUM};
+                padding: 10px 25px;
+                min-width: 80px;
+            }}
+            QPushButton:hover {{
+                background: {StarkTheme.BLUE_LIGHT};
+            }}
+        """)
+        msg_box.exec()
+    
+    def closeEvent(self, event):
+        """Nettoyage lors de la fermeture"""
+        if self.websocket_client:
+            self.websocket_client.disconnect_from_server()
+        
+        if self.audio_recorder:
+            self.audio_recorder.cleanup()
+        
+        super().closeEvent(event)

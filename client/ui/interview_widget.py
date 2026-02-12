@@ -14,8 +14,8 @@ from pathlib import Path
 
 # Import du thème et des icônes
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from .stark_theme import StarkTheme
-from .icons import StarkIcons
+from client.ui.stark_theme import StarkTheme
+from client.ui.icons import StarkIcons
 
 
 class InterviewWidget(QWidget):
@@ -35,7 +35,7 @@ class InterviewWidget(QWidget):
         
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(StarkTheme.SPACING_MD)
+        layout.setSpacing(StarkTheme.SPACING_MD_INT)  
         
         # ========== EN-TÊTE ==========
         header = self._create_header()
@@ -99,7 +99,7 @@ class InterviewWidget(QWidget):
         """)
         
         card_layout = QVBoxLayout(card)
-        card_layout.setSpacing(StarkTheme.SPACING_MD)
+        card_layout.setSpacing(StarkTheme.SPACING_MD_INT)  
         
         # Label progression
         self.progress_label = QLabel("Question 0/0")
@@ -151,7 +151,7 @@ class InterviewWidget(QWidget):
         """)
         
         card_layout = QVBoxLayout(card)
-        card_layout.setSpacing(StarkTheme.SPACING_MD)
+        card_layout.setSpacing(StarkTheme.SPACING_MD_INT)  
         
         # Header avec icône
         header_layout = QHBoxLayout()
@@ -200,7 +200,7 @@ class InterviewWidget(QWidget):
         """)
         
         card_layout = QVBoxLayout(card)
-        card_layout.setSpacing(StarkTheme.SPACING_MD)
+        card_layout.setSpacing(StarkTheme.SPACING_MD_INT)  
         
         # Header
         header_layout = QHBoxLayout()
