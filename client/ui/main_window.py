@@ -6,11 +6,10 @@ Utilise la charte graphique officielle de stark-solutions.online
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QMessageBox, QLabel, QLineEdit, QPushButton, QFrame, 
-    QGraphicsDropShadowEffect, QStatusBar
+    QGraphicsDropShadowEffect
 )
 from PySide6.QtCore import Qt, QSize
 from PySide6.QtGui import QFont, QColor
-import base64
 import sys
 from pathlib import Path
 
