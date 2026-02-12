@@ -1,88 +1,123 @@
 import cv2
 import pygame
 import numpy as np
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QFrame, QHBoxLayout
-from PySide6.QtCore import Qt, QTimer, Slot, QSize
-from PySide6.QtGui import QImage, QPixmap, QPainter, QLinearGradient, QColor
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QFrame, QHBoxLayout, QGraphicsDropShadowEffect
+from PySide6.QtCore import Qt, QTimer, Slot, QSize, QPropertyAnimation, QEasingCurve
+from PySide6.QtGui import QFont,QImage, QPixmap, QColor
 from pathlib import Path
 from client.ui.icons import StarkIcons
 
 class VideoPlayerWidget(QWidget):
     """
-    Moteur de rendu Avatar RH - Design Stark Solutions
+    Moteur de rendu Avatar RH - Design Fluide et Créatif
+    Avec animations, effets de glow et transitions douces
     """
     
-    # Palette Stark
+    # Palette Stark améliorée
     STARK_BLUE_PRIMARY = "#1565C0"
     STARK_BLUE_DARK = "#0D47A1"
     STARK_BLUE_LIGHT = "#42A5F5"
+    STARK_BLUE_GLOW = "#64B5F6"
     STARK_ACCENT = "#FF6B35"
+    STARK_ACCENT_GLOW = "#FF8555"
     STARK_BG_DARK = "#0A1929"
     STARK_SUCCESS = "#00E676"
+    STARK_SUCCESS_GLOW = "#00FF88"
     
     def __init__(self, parent=None):
         super().__init__(parent)
         
-        # Layout principal
         self.layout = QVBoxLayout(self)
         self.layout.setContentsMargins(0, 0, 0, 0)
         self.layout.setSpacing(0)
         
-        # Container pour l'avatar
+        # Container principal
         avatar_container = QFrame()
         avatar_container.setStyleSheet("QFrame { background: transparent; }")
         container_layout = QVBoxLayout(avatar_container)
         container_layout.setContentsMargins(0, 0, 0, 0)
         container_layout.setSpacing(0)
         
-        # Zone d'affichage de l'avatar
+        # Zone d'affichage avec border animé
         self.avatar_display = QLabel()
         self.avatar_display.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.avatar_display.setStyleSheet(f"""
             QLabel {{
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                background: qradialgradient(cx:0.5, cy:0.5, radius:1,
+                    fx:0.5, fy:0.5,
                     stop:0 {self.STARK_BG_DARK},
-                    stop:1 {self.STARK_BLUE_DARK});
+                    stop:0.7 {self.STARK_BLUE_DARK},
+                    stop:1 {self.STARK_BG_DARK});
                 border: none;
-                border-radius: 15px;
+                border-radius: 20px;
             }}
         """)
         self.avatar_display.setMinimumSize(800, 600)
         self.avatar_display.setScaledContents(False)
+        
+        # Effet de glow autour de l'avatar
+        self.avatar_shadow = QGraphicsDropShadowEffect()
+        self.avatar_shadow.setBlurRadius(35)
+        self.avatar_shadow.setColor(QColor(self.STARK_BLUE_GLOW))
+        self.avatar_shadow.setOffset(0, 0)
+        self.avatar_display.setGraphicsEffect(self.avatar_shadow)
+        
         container_layout.addWidget(self.avatar_display)
         
-        # Barre de statut Stark avec icônes
+        # Barre de statut fluide avec glassmorphism
         status_overlay = QFrame()
+        status_overlay.setObjectName("statusOverlay")
         status_overlay.setStyleSheet(f"""
-            QFrame {{
+            #statusOverlay {{
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                    stop:0 {self.STARK_BLUE_DARK},
-                    stop:0.5 {self.STARK_BLUE_PRIMARY},
-                    stop:1 {self.STARK_BLUE_DARK});
-                border-radius: 12px;
-                padding: 8px 20px;
+                    stop:0 rgba(13, 71, 161, 0.85),
+                    stop:0.5 rgba(21, 101, 192, 0.75),
+                    stop:1 rgba(13, 71, 161, 0.85));
+                border: 2px solid rgba(100, 181, 246, 0.4);
+                border-radius: 18px;
+                padding: 12px 25px;
+                backdrop-filter: blur(10px);
             }}
         """)
-        status_layout = QHBoxLayout(status_overlay)
-        status_layout.setContentsMargins(15, 8, 15, 8)
-        status_layout.setSpacing(10)
         
-        # Icône d'état
+        # Ombre pour la barre de statut
+        status_shadow = QGraphicsDropShadowEffect()
+        status_shadow.setBlurRadius(20)
+        status_shadow.setColor(QColor(self.STARK_BLUE_PRIMARY))
+        status_shadow.setOffset(0, 5)
+        status_overlay.setGraphicsEffect(status_shadow)
+        
+        status_layout = QHBoxLayout(status_overlay)
+        status_layout.setContentsMargins(15, 10, 15, 10)
+        status_layout.setSpacing(15)
+        
+        # Icône d'état animée
         self.status_icon = QLabel()
-        self.status_icon.setPixmap(StarkIcons.user_check(self.STARK_BLUE_LIGHT).pixmap(QSize(24, 24)))
+        self.status_icon.setPixmap(StarkIcons.user_check(self.STARK_BLUE_LIGHT).pixmap(QSize(28, 28)))
         status_layout.addWidget(self.status_icon)
         
+        # Texte de statut
         self.status_label = QLabel("Agent RH : Initialisation...")
-        self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.status_label.setStyleSheet("""
+        self.status_label.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        self.status_label.setStyleSheet(f"""
             color: #FFFFFF;
-            font-size: 13px;
+            font-size: 14px;
             font-weight: bold;
             letter-spacing: 1px;
             background: transparent;
+            text-shadow: 0 0 10px {self.STARK_BLUE_GLOW};
         """)
         status_layout.addWidget(self.status_label)
         status_layout.addStretch()
+        
+        # Indicateur de pulse animé
+        self.pulse_indicator = QLabel("●")
+        self.pulse_indicator.setFont(QFont("Arial", 18))
+        self.pulse_indicator.setStyleSheet(f"""
+            color: {self.STARK_SUCCESS};
+            background: transparent;
+        """)
+        status_layout.addWidget(self.pulse_indicator)
         
         container_layout.addWidget(status_overlay)
         
@@ -107,11 +142,17 @@ class VideoPlayerWidget(QWidget):
         self.timer.timeout.connect(self._update_frame)
         self.current_state = "idle"
         
+        # Timer pour l'animation du pulse
+        self.pulse_timer = QTimer()
+        self.pulse_timer.timeout.connect(self._animate_pulse)
+        self.pulse_state = False
+        self.pulse_timer.start(1000)
+        
         # Démarrage
         self.set_idle()
     
     def _load_video(self, state):
-        """Charger la vidéo correspondant à l'état"""
+        """Charger la vidéo avec transition fluide"""
         if self.cap:
             self.cap.release()
         
@@ -125,25 +166,34 @@ class VideoPlayerWidget(QWidget):
         self.cap = cv2.VideoCapture(path)
         self.current_state = state
         
-        # Démarrer le rendu à 30 FPS
         if not self.timer.isActive():
-            self.timer.start(33)
+            self.timer.start(33)  # 30 FPS
     
     def _show_placeholder(self, state):
-        """Afficher un placeholder avec gradient Stark"""
+        """Placeholder avec gradient animé"""
         placeholder_size = (800, 600)
         placeholder = np.zeros((placeholder_size[1], placeholder_size[0], 3), dtype=np.uint8)
         
-        # Gradient Stark
-        for y in range(placeholder_size[1]):
-            ratio = y / placeholder_size[1]
-            # Interpolation entre STARK_BG_DARK et STARK_BLUE_DARK
-            r = int(10 + ratio * 3)
-            g = int(25 + ratio * 46)
-            b = int(41 + ratio * 120)
-            placeholder[y, :] = (b, g, r)  # BGR pour OpenCV
+        # Gradient radial Stark
+        center_x, center_y = placeholder_size[0] // 2, placeholder_size[1] // 2
+        max_distance = np.sqrt(center_x**2 + center_y**2)
         
-        # Convertir en QImage
+        for y in range(placeholder_size[1]):
+            for x in range(placeholder_size[0]):
+                distance = np.sqrt((x - center_x)**2 + (y - center_y)**2)
+                ratio = distance / max_distance
+                
+                # Interpolation de couleur
+                r = int(10 + ratio * 3)
+                g = int(25 + ratio * 96)
+                b = int(41 + ratio * 151)
+                placeholder[y, x] = (b, g, r)  # BGR
+        
+        # Ajouter du texte
+        cv2.putText(placeholder, f"Mode: {state}", (center_x - 100, center_y),
+                    cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+        
+        # Convertir et afficher
         h, w, ch = placeholder.shape
         bytes_per_line = ch * w
         qt_img = QImage(placeholder.data, w, h, bytes_per_line, QImage.Format_RGB888)
@@ -154,24 +204,21 @@ class VideoPlayerWidget(QWidget):
             Qt.AspectRatioMode.KeepAspectRatio,
             Qt.TransformationMode.SmoothTransformation
         ))
-        
-        self.status_label.setText(f"Vidéo '{state}' non disponible")
     
     @Slot()
     def _update_frame(self):
-        """Boucle de rendu principale"""
+        """Boucle de rendu avec optimisations"""
         if self.cap is None or not self.cap.isOpened():
             return
         
         ret, frame = self.cap.read()
         
         if not ret:
-            # Boucle infinie
             self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
             return
         
         try:
-            # Conversion BGR vers RGB
+            # Conversion BGR → RGB
             frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             
             # Traitement Pygame
@@ -186,10 +233,9 @@ class VideoPlayerWidget(QWidget):
             
             # Image Qt
             qt_img = QImage(buffer.data, w, h, bytes_per_line, QImage.Format_RGB888)
-            
-            # Affichage
             pixmap = QPixmap.fromImage(qt_img)
             
+            # Affichage
             scaled_pixmap = pixmap.scaled(
                 self.avatar_display.size(),
                 Qt.AspectRatioMode.KeepAspectRatioByExpanding,
@@ -199,58 +245,86 @@ class VideoPlayerWidget(QWidget):
             self.avatar_display.setPixmap(scaled_pixmap)
         
         except Exception as e:
-            print(f"Erreur rendu frame: {e}")
+            print(f"Erreur rendu: {e}")
+    
+    def _animate_pulse(self):
+        """Animation du pulse indicator"""
+        if self.pulse_state:
+            self.pulse_indicator.setStyleSheet(f"""
+                color: {self.STARK_SUCCESS_GLOW};
+                background: transparent;
+                text-shadow: 0 0 15px {self.STARK_SUCCESS_GLOW};
+            """)
+        else:
+            self.pulse_indicator.setStyleSheet(f"""
+                color: {self.STARK_SUCCESS};
+                background: transparent;
+            """)
+        
+        self.pulse_state = not self.pulse_state
+    
+    def _update_glow_color(self, color: str):
+        """Mettre à jour la couleur du glow"""
+        self.avatar_shadow.setColor(QColor(color))
     
     # === MÉTHODES DE CONTRÔLE ===
     
     def set_idle(self):
-        """Avatar en mode attente"""
-        self.status_icon.setPixmap(StarkIcons.user_check(self.STARK_BLUE_LIGHT).pixmap(QSize(24, 24)))
+        """Mode attente avec glow vert"""
+        self.status_icon.setPixmap(StarkIcons.user_check(self.STARK_SUCCESS).pixmap(QSize(28, 28)))
         self.status_label.setText("Agent RH : Prêt à vous écouter")
         self.status_label.setStyleSheet(f"""
-            color: {self.STARK_SUCCESS};
-            font-size: 13px;
+            color: #FFFFFF;
+            font-size: 14px;
             font-weight: bold;
             letter-spacing: 1px;
             background: transparent;
+            text-shadow: 0 0 10px {self.STARK_SUCCESS_GLOW};
         """)
+        
+        self._update_glow_color(self.STARK_SUCCESS)
         self._load_video("idle")
     
     def set_speaking(self):
-        """Avatar en train de parler"""
-        self.status_icon.setPixmap(StarkIcons.message_circle(self.STARK_BLUE_LIGHT).pixmap(QSize(24, 24)))
+        """Mode parole avec glow bleu"""
+        self.status_icon.setPixmap(StarkIcons.message_circle(self.STARK_BLUE_LIGHT).pixmap(QSize(28, 28)))
         self.status_label.setText("Agent RH : Analyse de votre profil...")
         self.status_label.setStyleSheet(f"""
-            color: {self.STARK_BLUE_LIGHT};
-            font-size: 13px;
+            color: #FFFFFF;
+            font-size: 14px;
             font-weight: bold;
             letter-spacing: 1px;
             background: transparent;
+            text-shadow: 0 0 10px {self.STARK_BLUE_GLOW};
         """)
+        
+        self._update_glow_color(self.STARK_BLUE_GLOW)
         self._load_video("speaking")
     
     def set_listening(self):
-        """Avatar en écoute active"""
-        self.status_icon.setPixmap(StarkIcons.headphones(self.STARK_ACCENT).pixmap(QSize(24, 24)))
+        """Mode écoute avec glow orange"""
+        self.status_icon.setPixmap(StarkIcons.headphones(self.STARK_ACCENT_GLOW).pixmap(QSize(28, 28)))
         self.status_label.setText("Agent RH : Écoute attentive en cours...")
         self.status_label.setStyleSheet(f"""
-            color: {self.STARK_ACCENT};
-            font-size: 13px;
+            color: #FFFFFF;
+            font-size: 14px;
             font-weight: bold;
             letter-spacing: 1px;
             background: transparent;
+            text-shadow: 0 0 10px {self.STARK_ACCENT_GLOW};
         """)
+        
+        self._update_glow_color(self.STARK_ACCENT_GLOW)
         self._load_video("listening")
     
     def resizeEvent(self, event):
-        """Ajuster l'affichage lors du redimensionnement"""
+        """Ajustement responsive"""
         super().resizeEvent(event)
-        if hasattr(self, 'cap') and self.cap and self.cap.isOpened():
-            pass
     
     def closeEvent(self, event):
         """Nettoyage"""
         self.timer.stop()
+        self.pulse_timer.stop()
         if self.cap:
             self.cap.release()
         pygame.quit()
