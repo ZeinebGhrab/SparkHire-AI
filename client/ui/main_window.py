@@ -1,9 +1,9 @@
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QMessageBox, QLabel, QLineEdit, QPushButton, QSplitter
+    QMessageBox, QLabel, QLineEdit, QPushButton, QFrame
 )
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QFont
+from PySide6.QtCore import Qt, QPropertyAnimation, QEasingCurve, QSize
+from PySide6.QtGui import QFont, QPalette, QColor
 import base64
 
 from client.config import settings
@@ -12,7 +12,7 @@ from client.ui.video_player_widget import VideoPlayerWidget
 from client.ui.interview_widget import InterviewWidget
 
 class MainWindow(QMainWindow):
-    """Fenêtre principale de l'application client"""
+    """Fenêtre principale de l'application client - Design Professionnel Immersif"""
     
     def __init__(self):
         super().__init__()
@@ -26,16 +26,28 @@ class MainWindow(QMainWindow):
     
     def _setup_ui(self):
         """Initialiser l'interface"""
-        self.setWindowTitle("Stark Recruitment - Entretien Vocal")
-        self.setGeometry(100, 100, settings.WINDOW_WIDTH, settings.WINDOW_HEIGHT)
+        self.setWindowTitle("Stark Recruitment AI - Entretien Vocal Intelligent")
+        
+        # Plein écran par défaut
+        self.showMaximized()
+        
+        # Style global moderne avec gradient
+        self.setStyleSheet("""
+            QMainWindow {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #0f0c29, stop:0.5 #302b63, stop:1 #24243e);
+            }
+        """)
         
         # Widget central
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         
         main_layout = QVBoxLayout(central_widget)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
         
-        # En-tête
+        # En-tête minimaliste et élégant
         header = self._create_header()
         main_layout.addWidget(header)
         
@@ -43,97 +55,256 @@ class MainWindow(QMainWindow):
         self.connection_widget = self._create_connection_widget()
         main_layout.addWidget(self.connection_widget)
         
-        # Splitter principal (caché au départ)
-        self.interview_container = QSplitter(Qt.Orientation.Horizontal)
+        # Container principal pour l'entretien (caché au départ)
+        self.interview_container = QWidget()
         self.interview_container.setVisible(False)
         
-        # Avatar (gauche)
+        interview_layout = QHBoxLayout(self.interview_container)
+        interview_layout.setContentsMargins(10, 10, 10, 10)
+        interview_layout.setSpacing(15)
+        
+        # Avatar (occupe 78% de l'écran - presque tout l'écran)
+        avatar_frame = QFrame()
+        avatar_frame.setStyleSheet("""
+            QFrame {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 rgba(30, 30, 46, 180),
+                    stop:1 rgba(24, 24, 37, 200));
+                border: 3px solid qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #e94560, stop:0.5 #0f3460, stop:1 #e94560);
+                border-radius: 20px;
+            }
+        """)
+        avatar_layout = QVBoxLayout(avatar_frame)
+        avatar_layout.setContentsMargins(0, 0, 0, 0)
+        
         self.video_player = VideoPlayerWidget()
-        self.interview_container.addWidget(self.video_player)
+        avatar_layout.addWidget(self.video_player)
         
-        # Interface entretien (droite)
+        interview_layout.addWidget(avatar_frame, 78)
+        
+        # Panel latéral compact pour les contrôles (22% de l'écran)
+        control_frame = QFrame()
+        control_frame.setStyleSheet("""
+            QFrame {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 rgba(15, 52, 96, 200),
+                    stop:1 rgba(11, 19, 43, 230));
+                border: 2px solid rgba(233, 69, 96, 100);
+                border-radius: 15px;
+            }
+        """)
+        control_layout = QVBoxLayout(control_frame)
+        control_layout.setContentsMargins(15, 15, 15, 15)
+        
         self.interview_widget = InterviewWidget()
-        self.interview_container.addWidget(self.interview_widget)
+        control_layout.addWidget(self.interview_widget)
         
-        # Ratio 40/60
-        self.interview_container.setSizes([480, 720])
+        interview_layout.addWidget(control_frame, 22)
         
         main_layout.addWidget(self.interview_container)
         
-        # Barre de statut
-        self.statusBar().showMessage("Prêt")
-    
-    def _create_header(self) -> QWidget:
-        """Créer l'en-tête"""
-        header = QWidget()
-        header.setStyleSheet("""
-            QWidget {
-                background-color: #2C3E50;
-                color: white;
+        # Barre de statut moderne et discrète
+        status_bar = self.statusBar()
+        status_bar.setStyleSheet("""
+            QStatusBar {
+                background: rgba(15, 52, 96, 180);
+                color: #e94560;
+                font-size: 11px;
+                font-weight: bold;
+                padding: 8px;
+                border-top: 2px solid rgba(233, 69, 96, 50);
             }
         """)
-        header.setFixedHeight(70)
+        status_bar.showMessage("🔒 Système Sécurisé - Prêt à Démarrer")
+    
+    def _create_header(self) -> QWidget:
+        """Créer un en-tête moderne et minimaliste"""
+        header = QFrame()
+        header.setStyleSheet("""
+            QFrame {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 rgba(15, 52, 96, 230),
+                    stop:0.5 rgba(48, 43, 99, 240),
+                    stop:1 rgba(15, 52, 96, 230));
+                border-bottom: 3px solid qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #e94560, stop:0.5 #ffffff, stop:1 #e94560);
+            }
+        """)
+        header.setFixedHeight(80)
         
         layout = QHBoxLayout(header)
+        layout.setContentsMargins(30, 15, 30, 15)
         
-        title = QLabel("🎤 Stark Recruitment - Entretien Vocal")
-        title.setFont(QFont("Arial", 18, QFont.Weight.Bold))
-        title.setStyleSheet("color: white;")
-        layout.addWidget(title)
+        # Logo et titre avec effet
+        title_container = QWidget()
+        title_layout = QHBoxLayout(title_container)
+        title_layout.setContentsMargins(0, 0, 0, 0)
+        title_layout.setSpacing(15)
+        
+        # Icône/Logo
+        logo = QLabel("🤖")
+        logo.setFont(QFont("Arial", 32))
+        title_layout.addWidget(logo)
+        
+        # Texte du titre
+        title_text = QWidget()
+        title_text_layout = QVBoxLayout(title_text)
+        title_text_layout.setContentsMargins(0, 0, 0, 0)
+        title_text_layout.setSpacing(0)
+        
+        main_title = QLabel("STARK RECRUITMENT AI")
+        main_title.setFont(QFont("Arial", 20, QFont.Weight.ExtraBold))
+        main_title.setStyleSheet("""
+            color: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                stop:0 #ffffff, stop:0.5 #e94560, stop:1 #ffffff);
+        """)
+        title_text_layout.addWidget(main_title)
+        
+        subtitle = QLabel("Système d'Entretien Vocal Intelligent")
+        subtitle.setFont(QFont("Arial", 10))
+        subtitle.setStyleSheet("color: rgba(255, 255, 255, 180);")
+        title_text_layout.addWidget(subtitle)
+        
+        title_layout.addWidget(title_text)
+        layout.addWidget(title_container)
         
         layout.addStretch()
         
-        self.status_indicator = QLabel("●")
-        self.status_indicator.setFont(QFont("Arial", 20))
-        self.status_indicator.setStyleSheet("color: #E74C3C;")
-        layout.addWidget(self.status_indicator)
+        # Indicateur de statut animé
+        status_container = QWidget()
+        status_layout = QHBoxLayout(status_container)
+        status_layout.setContentsMargins(0, 0, 0, 0)
+        status_layout.setSpacing(10)
         
-        status_label = QLabel("Déconnecté")
-        status_label.setStyleSheet("color: white;")
-        self.status_label = status_label
-        layout.addWidget(status_label)
+        self.status_indicator = QLabel("●")
+        self.status_indicator.setFont(QFont("Arial", 24))
+        self.status_indicator.setStyleSheet("color: #e94560;")
+        status_layout.addWidget(self.status_indicator)
+        
+        status_text_container = QWidget()
+        status_text_layout = QVBoxLayout(status_text_container)
+        status_text_layout.setContentsMargins(0, 0, 0, 0)
+        status_text_layout.setSpacing(0)
+        
+        self.status_label = QLabel("DÉCONNECTÉ")
+        self.status_label.setFont(QFont("Arial", 11, QFont.Weight.Bold))
+        self.status_label.setStyleSheet("color: #e94560;")
+        status_text_layout.addWidget(self.status_label)
+        
+        self.status_detail = QLabel("En attente de connexion")
+        self.status_detail.setFont(QFont("Arial", 8))
+        self.status_detail.setStyleSheet("color: rgba(255, 255, 255, 150);")
+        status_text_layout.addWidget(self.status_detail)
+        
+        status_layout.addWidget(status_text_container)
+        layout.addWidget(status_container)
         
         return header
     
     def _create_connection_widget(self) -> QWidget:
-        """Créer widget de connexion"""
-        widget = QWidget()
+        """Créer widget de connexion moderne"""
+        widget = QFrame()
+        widget.setStyleSheet("""
+            QFrame {
+                background: transparent;
+            }
+        """)
+        
         layout = QVBoxLayout(widget)
         layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.setSpacing(30)
+        
+        # Container central avec effet de carte
+        card = QFrame()
+        card.setStyleSheet("""
+            QFrame {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 rgba(48, 43, 99, 200),
+                    stop:1 rgba(15, 52, 96, 220));
+                border: 2px solid rgba(233, 69, 96, 150);
+                border-radius: 25px;
+            }
+        """)
+        card.setFixedSize(550, 450)
+        
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(50, 50, 50, 50)
+        card_layout.setSpacing(25)
+        
+        # Icône centrale
+        icon = QLabel("🎤")
+        icon.setFont(QFont("Arial", 72))
+        icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        card_layout.addWidget(icon)
         
         # Titre
-        title = QLabel("Entrer l'ID de session")
-        title.setFont(QFont("Arial", 16, QFont.Weight.Bold))
+        title = QLabel("CONNEXION SÉCURISÉE")
+        title.setFont(QFont("Arial", 20, QFont.Weight.ExtraBold))
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(title)
+        title.setStyleSheet("color: #ffffff;")
+        card_layout.addWidget(title)
         
-        # Champ session ID
+        subtitle = QLabel("Entrez votre identifiant de session")
+        subtitle.setFont(QFont("Arial", 11))
+        subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        subtitle.setStyleSheet("color: rgba(255, 255, 255, 180);")
+        card_layout.addWidget(subtitle)
+        
+        # Champ session ID avec style moderne
         self.session_input = QLineEdit()
-        self.session_input.setPlaceholderText("Ex: session_abc123def456")
-        self.session_input.setFont(QFont("Arial", 12))
-        self.session_input.setMaximumWidth(400)
-        self.session_input.setMinimumHeight(40)
+        self.session_input.setPlaceholderText("session_xxxxxxxxxxxxx")
+        self.session_input.setFont(QFont("Courier New", 13, QFont.Weight.Bold))
+        self.session_input.setMinimumHeight(55)
         self.session_input.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(self.session_input, alignment=Qt.AlignmentFlag.AlignCenter)
+        self.session_input.setStyleSheet("""
+            QLineEdit {
+                background: rgba(255, 255, 255, 15);
+                border: 2px solid rgba(233, 69, 96, 100);
+                border-radius: 12px;
+                padding: 15px;
+                color: #ffffff;
+                font-size: 13px;
+            }
+            QLineEdit:focus {
+                border: 2px solid #e94560;
+                background: rgba(255, 255, 255, 25);
+            }
+            QLineEdit::placeholder {
+                color: rgba(255, 255, 255, 100);
+            }
+        """)
+        card_layout.addWidget(self.session_input)
         
-        # Bouton connexion
-        connect_btn = QPushButton("Se connecter")
-        connect_btn.setFont(QFont("Arial", 12, QFont.Weight.Bold))
-        connect_btn.setMinimumHeight(50)
-        connect_btn.setMaximumWidth(200)
+        # Bouton connexion avec effet hover
+        connect_btn = QPushButton("DÉMARRER L'ENTRETIEN")
+        connect_btn.setFont(QFont("Arial", 13, QFont.Weight.ExtraBold))
+        connect_btn.setMinimumHeight(60)
+        connect_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         connect_btn.setStyleSheet("""
             QPushButton {
-                background-color: #3498DB;
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #e94560, stop:1 #0f3460);
                 color: white;
-                border-radius: 10px;
-                padding: 10px;
+                border: none;
+                border-radius: 15px;
+                padding: 15px;
+                font-size: 13px;
+                letter-spacing: 2px;
             }
             QPushButton:hover {
-                background-color: #2980B9;
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #ff5577, stop:1 #1a5c96);
+            }
+            QPushButton:pressed {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #cc3344, stop:1 #0a2744);
             }
         """)
         connect_btn.clicked.connect(self._connect_to_interview)
-        layout.addWidget(connect_btn, alignment=Qt.AlignmentFlag.AlignCenter)
+        card_layout.addWidget(connect_btn)
+        
+        layout.addWidget(card)
         
         return widget
     
@@ -153,7 +324,8 @@ class MainWindow(QMainWindow):
         session_id = self.session_input.text().strip()
         
         if not session_id:
-            QMessageBox.warning(self, "Erreur", "Veuillez entrer un ID de session")
+            self._show_error_dialog("Erreur de Connexion", 
+                                   "Veuillez entrer un identifiant de session valide")
             return
         
         self.session_id = session_id
@@ -170,23 +342,28 @@ class MainWindow(QMainWindow):
         
         # Se connecter
         self.websocket_client.connect_to_server()
-        self.statusBar().showMessage("Connexion en cours...")
+        self.statusBar().showMessage("⏳ Connexion sécurisée en cours...")
+        self.status_detail.setText("Établissement de la connexion...")
     
     def _on_connected(self):
-        """Callback connexion réussie"""
-        self.status_indicator.setStyleSheet("color: #27AE60;")
-        self.status_label.setText("Connecté")
-        self.statusBar().showMessage("Connecté avec succès")
+        """Callback connexion réussie avec animation"""
+        self.status_indicator.setStyleSheet("color: #00ff88;")
+        self.status_label.setText("CONNECTÉ")
+        self.status_label.setStyleSheet("color: #00ff88;")
+        self.status_detail.setText("Session active et sécurisée")
+        self.statusBar().showMessage("✅ Connexion Sécurisée Établie - Session Active")
         
-        # Masquer zone de connexion, afficher entretien
+        # Animation de transition
         self.connection_widget.setVisible(False)
         self.interview_container.setVisible(True)
     
     def _on_disconnected(self):
         """Callback déconnexion"""
-        self.status_indicator.setStyleSheet("color: #E74C3C;")
-        self.status_label.setText("Déconnecté")
-        self.statusBar().showMessage("Déconnecté")
+        self.status_indicator.setStyleSheet("color: #e94560;")
+        self.status_label.setText("DÉCONNECTÉ")
+        self.status_label.setStyleSheet("color: #e94560;")
+        self.status_detail.setText("Session terminée")
+        self.statusBar().showMessage("❌ Déconnecté du Serveur")
     
     def _on_message_received(self, data: dict):
         """Traiter message WebSocket"""
@@ -198,10 +375,9 @@ class MainWindow(QMainWindow):
             text = msg_data.get("text")
             audio_url = msg_data.get("audio_url")
             
-            QMessageBox.information(self, "Bienvenue", text)
+            self._show_info_dialog("🎉 Bienvenue", text)
             
             if audio_url:
-                # Construire chemin complet
                 full_url = f"{settings.BACKEND_URL}{audio_url}"
                 # TODO: Télécharger et jouer l'audio
         
@@ -225,39 +401,38 @@ class MainWindow(QMainWindow):
             # Réponse sauvegardée
             transcript = msg_data.get("transcript")
             self.interview_widget.update_transcript(transcript)
-            self.statusBar().showMessage("Réponse enregistrée", 3000)
+            self.statusBar().showMessage("💾 Réponse Enregistrée et Analysée", 3000)
         
         elif msg_type == "interview_completed":
             # Entretien terminé
             message = msg_data.get("message")
-            QMessageBox.information(self, "Entretien terminé", message)
+            self._show_success_dialog("🎊 Entretien Terminé", message)
             self.close()
         
         elif msg_type == "error":
             # Erreur
             error_msg = msg_data.get("message")
-            QMessageBox.critical(self, "Erreur", error_msg)
+            self._show_error_dialog("Erreur Système", error_msg)
     
     def _on_error(self, error: str):
         """Callback erreur"""
-        QMessageBox.critical(self, "Erreur", error)
-        self.statusBar().showMessage(f"Erreur: {error}")
+        self._show_error_dialog("Erreur de Connexion", error)
+        self.statusBar().showMessage(f"❌ Erreur: {error}")
     
     def _start_recording(self):
         """Démarrer l'enregistrement audio"""
         self.audio_recorder.start_recording()
         self.video_player.set_listening()
-        self.statusBar().showMessage("🎤 Enregistrement en cours...")
+        self.statusBar().showMessage("🎤 Enregistrement en cours - Exprimez-vous clairement...")
     
     def _stop_recording(self):
         """Arrêter l'enregistrement"""
         self.audio_recorder.stop_recording()
-        self.statusBar().showMessage("⏸️ Enregistrement arrêté, envoi en cours...")
+        self.statusBar().showMessage("⏳ Traitement de votre réponse...")
     
     def _on_audio_chunk(self, chunk: bytes):
         """Envoyer chunk audio au serveur"""
         if self.websocket_client:
-            # Encoder en base64
             chunk_b64 = base64.b64encode(chunk).decode('utf-8')
             
             self.websocket_client.send_message({
@@ -268,7 +443,6 @@ class MainWindow(QMainWindow):
     def _on_recording_stopped(self):
         """Recording arrêté"""
         if self.websocket_client:
-            # Signaler fin de la réponse
             self.websocket_client.send_message({
                 "type": "answer_complete"
             })
@@ -280,9 +454,11 @@ class MainWindow(QMainWindow):
         """Terminer l'entretien"""
         reply = QMessageBox.question(
             self,
-            "Confirmer",
-            "Êtes-vous sûr de vouloir terminer l'entretien ?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            "⚠️ Confirmer l'Action",
+            "Êtes-vous sûr de vouloir terminer l'entretien maintenant ?\n\n"
+            "Cette action est irréversible.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
         )
         
         if reply == QMessageBox.StandardButton.Yes:
@@ -290,6 +466,88 @@ class MainWindow(QMainWindow):
                 self.websocket_client.send_message({
                     "type": "end_interview"
                 })
+    
+    def _show_info_dialog(self, title: str, message: str):
+        """Afficher dialogue d'information stylé"""
+        msg_box = QMessageBox(self)
+        msg_box.setIcon(QMessageBox.Icon.Information)
+        msg_box.setWindowTitle(title)
+        msg_box.setText(message)
+        msg_box.setStyleSheet("""
+            QMessageBox {
+                background-color: #1e1e2e;
+            }
+            QMessageBox QLabel {
+                color: #ffffff;
+                font-size: 13px;
+            }
+            QPushButton {
+                background-color: #0f3460;
+                color: white;
+                border-radius: 5px;
+                padding: 8px 20px;
+                min-width: 80px;
+            }
+            QPushButton:hover {
+                background-color: #1a5c96;
+            }
+        """)
+        msg_box.exec()
+    
+    def _show_success_dialog(self, title: str, message: str):
+        """Afficher dialogue de succès"""
+        msg_box = QMessageBox(self)
+        msg_box.setIcon(QMessageBox.Icon.Information)
+        msg_box.setWindowTitle(title)
+        msg_box.setText(message)
+        msg_box.setStyleSheet("""
+            QMessageBox {
+                background-color: #1e1e2e;
+            }
+            QMessageBox QLabel {
+                color: #00ff88;
+                font-size: 13px;
+                font-weight: bold;
+            }
+            QPushButton {
+                background-color: #27ae60;
+                color: white;
+                border-radius: 5px;
+                padding: 8px 20px;
+                min-width: 80px;
+            }
+            QPushButton:hover {
+                background-color: #2ecc71;
+            }
+        """)
+        msg_box.exec()
+    
+    def _show_error_dialog(self, title: str, message: str):
+        """Afficher dialogue d'erreur"""
+        msg_box = QMessageBox(self)
+        msg_box.setIcon(QMessageBox.Icon.Critical)
+        msg_box.setWindowTitle(title)
+        msg_box.setText(message)
+        msg_box.setStyleSheet("""
+            QMessageBox {
+                background-color: #1e1e2e;
+            }
+            QMessageBox QLabel {
+                color: #e94560;
+                font-size: 13px;
+            }
+            QPushButton {
+                background-color: #e74c3c;
+                color: white;
+                border-radius: 5px;
+                padding: 8px 20px;
+                min-width: 80px;
+            }
+            QPushButton:hover {
+                background-color: #c0392b;
+            }
+        """)
+        msg_box.exec()
     
     def closeEvent(self, event):
         """Gérer fermeture"""
