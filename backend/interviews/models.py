@@ -1,6 +1,6 @@
 from typing import List, Optional
 from pydantic import BaseModel, Field
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # ============ Question Models ============
 
@@ -63,6 +63,7 @@ class InterviewSession(InterviewSessionBase):
     answers: List[Answer] = []  # Liste des réponses
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
+    expires_at: datetime  # Date d'expiration (30 min après création)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
     

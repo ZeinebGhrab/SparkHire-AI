@@ -1,5 +1,6 @@
 """
 Handler WebSocket pour les entretiens vocaux
+Avec validation de session (expiration + statut)
 """
 
 import logging
@@ -20,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 
 class InterviewHandler:
-    """Gestionnaire d'entretien vocal"""
+    """Gestionnaire d'entretien vocal avec validation stricte"""
     
     def __init__(self, session_id: str, websocket: WebSocket):
         self.session_id = session_id
@@ -44,8 +45,10 @@ class InterviewHandler:
     async def handle(self):
         """Gérer le cycle de vie de l'entretien"""
         try:
-            # 1. Charger la session
-            await self._load_session()
+            # 1. Charger et valider la session
+            is_valid = await self._load_session()
+            if not is_valid:
+                return  # Erreur déjà envoyée au client
             
             # 2. Message de bienvenue
             await self._send_welcome()
@@ -78,21 +81,54 @@ class InterviewHandler:
         finally:
             manager.disconnect(self.session_id)
     
-    async def _load_session(self):
-        """Charger la session d'entretien"""
+    async def _load_session(self) -> bool:
+        """
+        Charger et valider la session d'entretien
+        
+        Vérifications :
+        1. Session existe
+        2. Session non expirée (< 30 minutes)
+        3. Session accessible (statut pending ou in_progress)
+        
+        Returns:
+            bool: True si valide, False sinon
+        """
         try:
-            self.session = InterviewSessionCRUD.get_by_session_id(self.session_id)
+            # Valider l'accès avec vérification d'expiration
+            session, is_valid, error_message = InterviewSessionCRUD.validate_session_access(self.session_id)
+            
+            if not is_valid:
+                logger.warning(f"Accès refusé à session {self.session_id}: {error_message}")
+                
+                await self._send_error(
+                    message=error_message,
+                    error_type="SESSION_INVALID"
+                )
+                
+                # Fermer la connexion WebSocket
+                await self.websocket.close(code=4003, reason=error_message)
+                return False
+            
+            # Session valide, charger les données
+            self.session = session
             self.position = JobPositionCRUD.get_by_id(self.session.job_position_id)
-            logger.info(f"Session chargée: {self.session_id}")
+            
+            logger.info(f"✅ Session chargée et validée: {self.session_id}")
+            logger.info(f"   - Candidat: {self.session.candidate_id}")
+            logger.info(f"   - Poste: {self.position.title}")
+            logger.info(f"   - Expire à: {self.session.expires_at.strftime('%Y-%m-%d %H:%M:%S')}")
+            
+            return True
+            
         except Exception as e:
             logger.error(f"Erreur chargement session: {e}")
-            await self._send_error("Session introuvable")
-            raise
+            await self._send_error(f"Erreur lors du chargement de la session: {str(e)}")
+            return False
     
     async def _send_welcome(self):
         """Envoyer message de bienvenue"""
-        welcome_text_ar = "مرحبا بك في المقابلة الصوتية. سأطرح عليك مجموعة من الأسئلة، أرجو الإجابة بوضوح."
-        welcome_text_en = "Welcome to the voice interview. I will ask you a series of questions, please answer clearly."
+        welcome_text_ar = "مرحبا بك في المقابلة الصوتية. سأطرح عليك مجموعة من الأسئلة المتعلقة بالمنصب، أرجو الإجابة بوضوح."
+        welcome_text_en = "Welcome to the voice interview. I will ask you position-specific questions, please answer clearly."
         
         welcome_text = welcome_text_ar if self.session.language == "ar" else welcome_text_en
         
@@ -119,14 +155,16 @@ class InterviewHandler:
             "data": {
                 "text": welcome_text,
                 "audio_url": audio_url,
-                "total_questions": len(self.position.questions)
+                "total_questions": len(self.position.questions),
+                "position_title": self.position.title,
+                "expires_at": self.session.expires_at.isoformat()
             }
         })
     
     async def _start_interview(self):
         """Démarrer l'entretien"""
         self.session = InterviewSessionCRUD.update_status(self.session_id, "in_progress")
-        logger.info(f"Entretien démarré: {self.session_id}")
+        logger.info(f"🎬 Entretien démarré: {self.session_id}")
     
     async def _send_current_question(self):
         """Envoyer la question actuelle"""
@@ -177,7 +215,7 @@ class InterviewHandler:
             }
         })
         
-        logger.info(f"Question envoyée: {question.order}/{len(self.position.questions)}")
+        logger.info(f"❓ Question envoyée: {question.order}/{len(self.position.questions)}")
     
     async def _wait_for_answer(self):
         """Attendre et traiter la réponse du candidat"""
@@ -243,7 +281,7 @@ class InterviewHandler:
         with open(audio_path, 'wb') as f:
             f.write(audio_bytes)
         
-        logger.info(f"Audio sauvegardé: {audio_path} ({len(audio_bytes)} bytes)")
+        logger.info(f"💾 Audio sauvegardé: {audio_path} ({len(audio_bytes)} bytes)")
         
         # Transcrire l'audio
         transcript = ""
@@ -253,7 +291,7 @@ class InterviewHandler:
                     audio_bytes,
                     language=self.session.language
                 )
-                logger.info(f"Transcription: '{transcript}'")
+                logger.info(f"📝 Transcription: '{transcript}'")
             except Exception as e:
                 logger.error(f"Erreur transcription: {e}")
         
@@ -294,8 +332,8 @@ class InterviewHandler:
         """Terminer l'entretien"""
         self.session = InterviewSessionCRUD.update_status(self.session_id, "completed")
         
-        message_ar = "شكراً لك! انتهت المقابلة. سنتواصل معك قريباً."
-        message_en = "Thank you! The interview is complete. We will contact you soon."
+        message_ar = "شكراً لك! انتهت المقابلة للمنصب. سنتواصل معك قريباً."
+        message_en = "Thank you! The position interview is complete. We will contact you soon."
         
         message = message_ar if self.session.language == "ar" else message_en
         
@@ -304,22 +342,26 @@ class InterviewHandler:
             "data": {
                 "message": message,
                 "total_questions": len(self.position.questions),
-                "total_answers": len(self.session.answers)
+                "total_answers": len(self.session.answers),
+                "position_title": self.position.title
             }
         })
         
-        logger.info(f"Entretien terminé: {self.session_id}")
+        logger.info(f"✅ Entretien terminé: {self.session_id}")
     
     async def _cancel_interview(self):
         """Annuler l'entretien"""
         self.session = InterviewSessionCRUD.update_status(self.session_id, "cancelled")
-        logger.info(f"Entretien annulé: {self.session_id}")
+        logger.info(f"❌ Entretien annulé: {self.session_id}")
     
-    async def _send_error(self, message: str):
+    async def _send_error(self, message: str, error_type: str = "GENERAL_ERROR"):
         """Envoyer une erreur"""
         await manager.send_json(self.session_id, {
             "type": "error",
-            "data": {"message": message}
+            "data": {
+                "message": message,
+                "error_type": error_type
+            }
         })
 
 

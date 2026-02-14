@@ -5,9 +5,12 @@ from backend.interviews.models import (
 )
 from bson import ObjectId
 from fastapi import HTTPException
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List, Optional
 import secrets
+
+# ============ CONSTANTES ============
+SESSION_EXPIRATION_MINUTES = 30  # Délai d'expiration: 30 minutes
 
 class JobPositionCRUD:
     """CRUD pour les postes avec questions"""
@@ -80,13 +83,18 @@ class InterviewSessionCRUD:
         # Générer un session_id unique
         session_id = f"session_{secrets.token_urlsafe(16)}"
         
+        # Calculer la date d'expiration (30 minutes après création)
+        now = datetime.utcnow()
+        expires_at = now + timedelta(minutes=SESSION_EXPIRATION_MINUTES)
+        
         session_dict = session.model_dump()
         session_dict["session_id"] = session_id
         session_dict["status"] = "pending"
         session_dict["current_question_index"] = 0
         session_dict["answers"] = []
-        session_dict["created_at"] = datetime.utcnow()
-        session_dict["updated_at"] = datetime.utcnow()
+        session_dict["created_at"] = now
+        session_dict["expires_at"] = expires_at
+        session_dict["updated_at"] = now
         
         result = db.interview_sessions.insert_one(session_dict)
         session_dict["_id"] = str(result.inserted_id)
@@ -133,6 +141,34 @@ class InterviewSessionCRUD:
         
         session["_id"] = str(session["_id"])
         return InterviewSession(**session)
+    
+    @staticmethod
+    def validate_session_access(session_id: str) -> tuple[InterviewSession, bool, str]:
+        """
+        Valider l'accès à une session
+        
+        Returns:
+            tuple: (session, is_valid, error_message)
+        """
+        # 1. Vérifier que la session existe
+        try:
+            session = InterviewSessionCRUD.get_by_session_id(session_id)
+        except HTTPException:
+            return None, False, "Session ID invalide ou introuvable"
+        
+        # 2. Vérifier que la session n'est pas expirée
+        now = datetime.utcnow()
+        if now > session.expires_at:
+            # Calculer le retard
+            delay = (now - session.expires_at).total_seconds() / 60  # en minutes
+            return session, False, f"Session expirée (retard de {int(delay)} minutes). Délai maximum: {SESSION_EXPIRATION_MINUTES} minutes"
+        
+        # 3. Vérifier le statut de la session
+        if session.status in ["completed", "cancelled"]:
+            return session, False, f"Session déjà {session.status}. Impossible de la réutiliser"
+        
+        # 4. Tout est OK
+        return session, True, ""
     
     @staticmethod
     def update_status(session_id: str, status: str) -> InterviewSession:
