@@ -6,7 +6,6 @@ from backend.config import settings
 from pathlib import Path
 import shutil
 import uuid
-from datetime import datetime
 from typing import Optional
 
 router = APIRouter(prefix="/media", tags=["Media"])

@@ -166,13 +166,17 @@ python scripts/test_interview.py
 ```
 stark-recruitment-chatbot/
 ├── backend/           # FastAPI API
-│   ├── auth/          # Authentication
-│   ├── candidates/    # Candidate management
-│   ├── jobs/          # Job postings
-│   ├── matches/       # CV/Job matching
-│   ├── interviews/    # Voice interviews
-│   ├── websocket/     # Real-time communication
-│   └── services/      # ASR, TTS, Avatar
+│   ├── auth/          # 🔐 Authentication
+│   ├── candidates/    # 👥 Candidate management
+│   ├── jobs/          # 💼 Job postings
+│   ├── matches/       # 🎯 CV/Job matching
+│   ├── interviews/    # 🎤 Voice interviews
+│   ├── media/         # 📁 File management
+│   ├── analytics/     # 📊 Statistics
+│   ├── notifications/ # 🔔 Notifications
+│   ├── export/        # 📤 Data export
+│   ├── websocket/     # 🔌 Real-time communication
+│   └── services/      # ⚙️ ASR, TTS, Avatar
 │
 ├── client/            # PySide6 Interface
 │   ├── core/          # Business logic

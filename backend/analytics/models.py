@@ -3,13 +3,17 @@ from typing import List, Dict, Any
 from datetime import datetime
 
 
+class SkillStat(BaseModel):
+    skill: str
+    count: int
+
 class CandidateStats(BaseModel):
     """Statistiques des candidats"""
     total_candidates: int
     candidates_by_status: Dict[str, int]
     candidates_by_skill: Dict[str, int]
     recent_candidates: int
-    top_skills: List[Dict[str, int]]
+    top_skills: List[SkillStat]  
 
 class InterviewStats(BaseModel):
     """Statistiques des entretiens"""

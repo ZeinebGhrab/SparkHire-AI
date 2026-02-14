@@ -81,7 +81,7 @@ class CoquiTTS(TTSEngine):
             
             logger.info(f"Chargement du modèle Coqui-TTS: {model_name}")
             self.tts = TTS(model_name=model_name)
-            logger.info("✅ Coqui-TTS chargé avec succès")
+            logger.info("Coqui-TTS chargé avec succès")
             
         except ImportError:
             raise ImportError("Coqui-TTS n'est pas installé. pip install TTS")
@@ -112,7 +112,7 @@ class CoquiTTS(TTSEngine):
             # Nettoyer
             os.unlink(tmp_path)
             
-            logger.info(f"✅ Audio synthétisé (Coqui): {len(audio_data)} bytes")
+            logger.info(f"Audio synthétisé (Coqui): {len(audio_data)} bytes")
             return audio_data
         
         except Exception as e:
