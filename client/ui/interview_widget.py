@@ -1,6 +1,6 @@
 """
-Widget d'Interview - Design Professionnel Stark Solutions
-Utilise la palette de couleurs officielle de stark-solutions.online
+Widget d'Interview - MODE VOCAL PUR
+Les questions ne sont PAS affichées à l'écran, uniquement en audio
 """
 
 from PySide6.QtWidgets import (
@@ -12,7 +12,6 @@ from PySide6.QtGui import QFont, QColor
 import sys
 from pathlib import Path
 
-# Import du thème et des icônes
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from client.ui.stark_theme import StarkTheme
 from client.ui.icons import StarkIcons
@@ -20,8 +19,8 @@ from client.ui.icons import StarkIcons
 
 class InterviewWidget(QWidget):
     """
-    Widget de contrôles d'entretien - Design Professionnel Stark Solutions
-    Utilise la charte graphique officielle stark-solutions.online
+    Widget de contrôles d'entretien - MODE VOCAL PUR
+    Affiche uniquement la progression, pas le texte des questions
     """
     
     start_recording = Signal()
@@ -45,13 +44,12 @@ class InterviewWidget(QWidget):
         progress_card = self._create_progress_card()
         layout.addWidget(progress_card)
         
-        # ========== QUESTION ACTUELLE ==========
-        question_card = self._create_question_card()
-        layout.addWidget(question_card)
+        # ========== INDICATEUR VOCAL ==========
+        vocal_indicator = self._create_vocal_indicator()
+        layout.addWidget(vocal_indicator)
         
-        # ========== TRANSCRIPTION ==========
-        transcript_card = self._create_transcript_card()
-        layout.addWidget(transcript_card)
+        # ========== TRANSCRIPTION (optionnelle, cachée par défaut) ==========
+        # SUPPRIMÉ - Pas de transcription affichée en mode vocal pur
         
         layout.addStretch()
         
@@ -64,23 +62,22 @@ class InterviewWidget(QWidget):
     
     def _create_header(self) -> QWidget:
         """Créer l'en-tête du widget"""
-        header = QLabel("PANNEAU DE CONTRÔLE")
+        header = QLabel("MODE VOCAL")
         header.setFont(QFont(StarkTheme.FONT_FAMILY_PRIMARY, 14, QFont.Weight.Bold))
         header.setAlignment(Qt.AlignmentFlag.AlignCenter)
         header.setStyleSheet(f"""
             QLabel {{
                 color: {StarkTheme.WHITE};
-                background: {StarkTheme.GRADIENT_HEADER};
+                background: {StarkTheme.GRADIENT_ACCENT};
                 padding: {StarkTheme.SPACING_MD};
                 border-radius: {StarkTheme.RADIUS_MEDIUM};
                 letter-spacing: 2px;
             }}
         """)
         
-        # Ombre
         shadow = QGraphicsDropShadowEffect()
         shadow.setBlurRadius(15)
-        shadow.setColor(QColor(StarkTheme.BLUE_PRIMARY))
+        shadow.setColor(QColor(StarkTheme.ORANGE_ACCENT))
         shadow.setOffset(0, 3)
         header.setGraphicsEffect(shadow)
         
@@ -138,102 +135,64 @@ class InterviewWidget(QWidget):
         
         return card
     
-    def _create_question_card(self) -> QFrame:
-        """Créer la carte de question"""
+    def _create_vocal_indicator(self) -> QFrame:
+        """Créer l'indicateur de mode vocal"""
         card = QFrame()
         card.setStyleSheet(f"""
             QFrame {{
                 background: {StarkTheme.WHITE};
-                border: 2px solid {StarkTheme.BLUE_EXTRA_LIGHT};
+                border: 2px solid {StarkTheme.ORANGE_ACCENT};
                 border-radius: {StarkTheme.RADIUS_LARGE};
-                padding: {StarkTheme.SPACING_LG};
+                padding: {StarkTheme.SPACING_XL};
             }}
         """)
         
         card_layout = QVBoxLayout(card)
-        card_layout.setSpacing(StarkTheme.SPACING_MD_INT)  
+        card_layout.setSpacing(StarkTheme.SPACING_LG_INT)
+        card_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         
-        # Header avec icône
-        header_layout = QHBoxLayout()
-        
+        # Icône principale
         icon_label = QLabel()
-        icon_label.setPixmap(StarkIcons.help_circle().pixmap(QSize(20, 20)))
-        header_layout.addWidget(icon_label)
+        icon_label.setPixmap(StarkIcons.headphones(StarkTheme.ORANGE_ACCENT).pixmap(QSize(80, 80)))
+        icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        card_layout.addWidget(icon_label)
         
-        title = QLabel("QUESTION ACTUELLE")
-        title.setFont(QFont(StarkTheme.FONT_FAMILY_PRIMARY, 11, QFont.Weight.Bold))
-        title.setStyleSheet(f"color: {StarkTheme.BLUE_PRIMARY}; letter-spacing: 1px;")
-        header_layout.addWidget(title)
-        header_layout.addStretch()
-        
-        card_layout.addLayout(header_layout)
-        
-        # Texte de la question
-        self.question_text = QLabel("En attente de connexion...")
-        self.question_text.setFont(QFont(StarkTheme.FONT_FAMILY_PRIMARY, 13))
-        self.question_text.setWordWrap(True)
-        self.question_text.setStyleSheet(f"""
-            QLabel {{
-                color: {StarkTheme.GRAY_DARK};
-                padding: {StarkTheme.SPACING_MD};
-                background: {StarkTheme.GRAY_EXTRA_LIGHT};
-                border: 1px solid {StarkTheme.GRAY_LIGHT};
-                border-radius: {StarkTheme.RADIUS_MEDIUM};
-                line-height: 1.6;
-            }}
+        # Message principal
+        message = QLabel("ÉCOUTEZ ATTENTIVEMENT")
+        message.setFont(QFont(StarkTheme.FONT_FAMILY_PRIMARY, 18, QFont.Weight.ExtraBold))
+        message.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        message.setStyleSheet(f"""
+            color: {StarkTheme.ORANGE_ACCENT};
+            letter-spacing: 2px;
         """)
-        self.question_text.setMinimumHeight(100)
-        card_layout.addWidget(self.question_text)
+        card_layout.addWidget(message)
         
-        return card
-    
-    def _create_transcript_card(self) -> QFrame:
-        """Créer la carte de transcription"""
-        card = QFrame()
-        card.setStyleSheet(f"""
-            QFrame {{
-                background: {StarkTheme.WHITE};
-                border: 2px solid {StarkTheme.BLUE_EXTRA_LIGHT};
-                border-radius: {StarkTheme.RADIUS_LARGE};
-                padding: {StarkTheme.SPACING_LG};
-            }}
+        # Instructions
+        instructions = QLabel(
+            "Les questions vous seront posées uniquement en vocal.\n"
+            "Écoutez bien l'avatar, puis répondez clairement."
+        )
+        instructions.setFont(QFont(StarkTheme.FONT_FAMILY_PRIMARY, 12))
+        instructions.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        instructions.setWordWrap(True)
+        instructions.setStyleSheet(f"""
+            color: {StarkTheme.GRAY_DARK};
+            padding: {StarkTheme.SPACING_MD};
+            line-height: 1.6;
         """)
+        card_layout.addWidget(instructions)
         
-        card_layout = QVBoxLayout(card)
-        card_layout.setSpacing(StarkTheme.SPACING_MD_INT)  
-        
-        # Header
-        header_layout = QHBoxLayout()
-        
-        icon_label = QLabel()
-        icon_label.setPixmap(StarkIcons.file_text().pixmap(QSize(20, 20)))
-        header_layout.addWidget(icon_label)
-        
-        title = QLabel("TRANSCRIPTION")
-        title.setFont(QFont(StarkTheme.FONT_FAMILY_PRIMARY, 11, QFont.Weight.Bold))
-        title.setStyleSheet(f"color: {StarkTheme.BLUE_PRIMARY}; letter-spacing: 1px;")
-        header_layout.addWidget(title)
-        header_layout.addStretch()
-        
-        card_layout.addLayout(header_layout)
-        
-        # Zone de texte
-        self.transcript_text = QTextEdit()
-        self.transcript_text.setReadOnly(True)
-        self.transcript_text.setMaximumHeight(120)
-        self.transcript_text.setPlaceholderText("Votre réponse apparaîtra ici...")
-        self.transcript_text.setStyleSheet(f"""
-            QTextEdit {{
-                background: {StarkTheme.GRAY_EXTRA_LIGHT};
-                border: 1px solid {StarkTheme.GRAY_LIGHT};
-                border-radius: {StarkTheme.RADIUS_MEDIUM};
-                padding: {StarkTheme.SPACING_MD};
-                color: {StarkTheme.GRAY_DARK};
-                font-size: 11px;
-                font-family: {StarkTheme.FONT_FAMILY_MONO};
-            }}
+        # Statut de l'audio
+        self.audio_status = QLabel("🔊 En attente de la question...")
+        self.audio_status.setFont(QFont(StarkTheme.FONT_FAMILY_PRIMARY, 11, QFont.Weight.Bold))
+        self.audio_status.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.audio_status.setStyleSheet(f"""
+            color: {StarkTheme.BLUE_PRIMARY};
+            background: {StarkTheme.BLUE_EXTRA_LIGHT};
+            padding: {StarkTheme.SPACING_MD};
+            border-radius: {StarkTheme.RADIUS_MEDIUM};
         """)
-        card_layout.addWidget(self.transcript_text)
+        card_layout.addWidget(self.audio_status)
         
         return card
     
@@ -248,7 +207,6 @@ class InterviewWidget(QWidget):
         btn.setStyleSheet(StarkTheme.get_button_style("primary"))
         btn.clicked.connect(self._on_record_clicked)
         
-        # Ombre
         shadow = QGraphicsDropShadowEffect()
         shadow.setBlurRadius(15)
         shadow.setColor(QColor(StarkTheme.BLUE_PRIMARY))
@@ -321,16 +279,47 @@ class InterviewWidget(QWidget):
             self.record_button.setIcon(StarkIcons.microphone())
             self.record_button.setStyleSheet(StarkTheme.get_button_style("primary"))
     
-    def update_question(self, question_text: str, progress: dict):
-        """Mettre à jour la question"""
-        self.question_text.setText(question_text)
+    def update_question(self, progress: dict):
+        """
+        Mettre à jour UNIQUEMENT la progression (pas de texte de question)
+        Mode vocal pur: seule la progression est affichée
+        """
         self.progress_label.setText(f"Question {progress['current']}/{progress['total']}")
         self.progress_bar.setValue(progress['percentage'])
+        self.audio_status.setText("🔊 Question en cours de lecture...")
+        self.audio_status.setStyleSheet(f"""
+            color: {StarkTheme.ORANGE_ACCENT};
+            background: {StarkTheme.ORANGE_LIGHT};
+            padding: {StarkTheme.SPACING_MD};
+            border-radius: {StarkTheme.RADIUS_MEDIUM};
+            font-weight: bold;
+        """)
     
-    def update_transcript(self, transcript: str):
-        """Mettre à jour la transcription"""
-        self.transcript_text.setPlainText(transcript)
+    def set_audio_playing(self):
+        """Indiquer que l'audio est en cours de lecture"""
+        self.audio_status.setText("🔊 Écoutez la question...")
+        self.audio_status.setStyleSheet(f"""
+            color: {StarkTheme.ORANGE_ACCENT};
+            background: {StarkTheme.ORANGE_LIGHT};
+            padding: {StarkTheme.SPACING_MD};
+            border-radius: {StarkTheme.RADIUS_MEDIUM};
+            font-weight: bold;
+        """)
+    
+    def set_ready_to_answer(self):
+        """Indiquer que le candidat peut répondre"""
+        self.audio_status.setText("✅ Prêt à répondre")
+        self.audio_status.setStyleSheet(f"""
+            color: {StarkTheme.SUCCESS};
+            background: #E8F5E9;
+            padding: {StarkTheme.SPACING_MD};
+            border-radius: {StarkTheme.RADIUS_MEDIUM};
+            font-weight: bold;
+        """)
     
     def enable_recording(self, enabled: bool):
         """Activer/désactiver l'enregistrement"""
         self.record_button.setEnabled(enabled)
+        
+        if enabled:
+            self.set_ready_to_answer()

@@ -1,6 +1,6 @@
 """
-Handler WebSocket pour les entretiens vocaux
-Avec validation de session (expiration + statut)
+Handler WebSocket pour les entretiens vocaux - MODE VOCAL PUR
+Les questions sont posées uniquement en audio, sans affichage de texte
 """
 
 import logging
@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 
 class InterviewHandler:
-    """Gestionnaire d'entretien vocal avec validation stricte"""
+    """Gestionnaire d'entretien vocal avec validation stricte - MODE VOCAL PUR"""
     
     def __init__(self, session_id: str, websocket: WebSocket):
         self.session_id = session_id
@@ -48,7 +48,7 @@ class InterviewHandler:
             # 1. Charger et valider la session
             is_valid = await self._load_session()
             if not is_valid:
-                return  # Erreur déjà envoyée au client
+                return
             
             # 2. Message de bienvenue
             await self._send_welcome()
@@ -58,7 +58,7 @@ class InterviewHandler:
             
             # 4. Boucle de questions/réponses
             while self.session.status == "in_progress":
-                # Envoyer la question actuelle
+                # Envoyer la question actuelle (VOCAL uniquement)
                 await self._send_current_question()
                 
                 # Attendre et traiter la réponse
@@ -82,41 +82,22 @@ class InterviewHandler:
             manager.disconnect(self.session_id)
     
     async def _load_session(self) -> bool:
-        """
-        Charger et valider la session d'entretien
-        
-        Vérifications :
-        1. Session existe
-        2. Session non expirée (< 30 minutes)
-        3. Session accessible (statut pending ou in_progress)
-        
-        Returns:
-            bool: True si valide, False sinon
-        """
+        """Charger et valider la session d'entretien"""
         try:
-            # Valider l'accès avec vérification d'expiration
             session, is_valid, error_message = InterviewSessionCRUD.validate_session_access(self.session_id)
             
             if not is_valid:
                 logger.warning(f"Accès refusé à session {self.session_id}: {error_message}")
-                
-                await self._send_error(
-                    message=error_message,
-                    error_type="SESSION_INVALID"
-                )
-                
-                # Fermer la connexion WebSocket
+                await self._send_error(message=error_message, error_type="SESSION_INVALID")
                 await self.websocket.close(code=4003, reason=error_message)
                 return False
             
-            # Session valide, charger les données
             self.session = session
             self.position = JobPositionCRUD.get_by_id(self.session.job_position_id)
             
-            logger.info(f"Session chargée et validée: {self.session_id}")
-            logger.info(f"   - Candidat: {self.session.candidate_id}")
-            logger.info(f"   - Poste: {self.position.title}")
-            logger.info(f"   - Expire à: {self.session.expires_at.strftime('%Y-%m-%d %H:%M:%S')}")
+            logger.info(f"✅ Session chargée: {self.session_id}")
+            logger.info(f"   Mode: VOCAL PUR (pas d'affichage texte)")
+            logger.info(f"   Poste: {self.position.title}")
             
             return True
             
@@ -126,13 +107,13 @@ class InterviewHandler:
             return False
     
     async def _send_welcome(self):
-        """Envoyer message de bienvenue"""
-        welcome_text_ar = "مرحبا بك في المقابلة الصوتية. سأطرح عليك مجموعة من الأسئلة المتعلقة بالمنصب، أرجو الإجابة بوضوح."
-        welcome_text_en = "Welcome to the voice interview. I will ask you position-specific questions, please answer clearly."
+        """Envoyer message de bienvenue VOCAL"""
+        welcome_text_ar = "مرحبا بك في المقابلة الصوتية. سأطرح عليك مجموعة من الأسئلة الصوتية فقط. استمع جيداً وأجب بوضوح."
+        welcome_text_en = "Welcome to the voice interview. I will ask you questions in audio only. Listen carefully and answer clearly."
         
         welcome_text = welcome_text_ar if self.session.language == "ar" else welcome_text_en
         
-        # Générer audio de bienvenue
+        # Générer audio de bienvenue (OBLIGATOIRE)
         audio_url = None
         if self.tts_service:
             try:
@@ -147,27 +128,28 @@ class InterviewHandler:
                 
                 if success:
                     audio_url = f"/audio/{audio_filename}"
+                    logger.info(f"🔊 Audio bienvenue généré: {audio_filename}")
             except Exception as e:
                 logger.error(f"Erreur génération audio bienvenue: {e}")
         
         await manager.send_json(self.session_id, {
             "type": "welcome",
             "data": {
-                "text": welcome_text,
                 "audio_url": audio_url,
                 "total_questions": len(self.position.questions),
                 "position_title": self.position.title,
-                "expires_at": self.session.expires_at.isoformat()
+                "expires_at": self.session.expires_at.isoformat(),
+                "vocal_only": True  # Mode vocal pur activé
             }
         })
     
     async def _start_interview(self):
         """Démarrer l'entretien"""
         self.session = InterviewSessionCRUD.update_status(self.session_id, "in_progress")
-        logger.info(f"🎬 Entretien démarré: {self.session_id}")
+        logger.info(f"🎬 Entretien VOCAL démarré: {self.session_id}")
     
     async def _send_current_question(self):
-        """Envoyer la question actuelle"""
+        """Envoyer la question actuelle en VOCAL uniquement"""
         question_index = self.session.current_question_index
         
         if question_index >= len(self.position.questions):
@@ -175,7 +157,7 @@ class InterviewHandler:
         
         question = self.position.questions[question_index]
         
-        # Texte de la question
+        # Texte de la question (pour génération TTS uniquement)
         question_text = question.question_ar if self.session.language == "ar" else question.question_en
         
         # Progression
@@ -185,7 +167,7 @@ class InterviewHandler:
             "percentage": int((question_index + 1) / len(self.position.questions) * 100)
         }
         
-        # Générer audio de la question
+        # Générer audio de la question (OBLIGATOIRE)
         audio_url = None
         if self.tts_service:
             try:
@@ -200,22 +182,28 @@ class InterviewHandler:
                 
                 if success:
                     audio_url = f"/audio/{audio_filename}"
+                    logger.info(f"🔊 Audio question généré: {audio_filename}")
             except Exception as e:
-                logger.error(f"Erreur génération audio question: {e}")
+                logger.error(f"❌ Erreur génération audio question: {e}")
         
-        # Envoyer la question
+        if not audio_url:
+            logger.error("⚠️ ERREUR CRITIQUE: Impossible de générer l'audio de la question!")
+            await self._send_error("Impossible de générer l'audio de la question")
+            return
+        
+        # Envoyer la question SANS TEXTE (vocal uniquement)
         await manager.send_json(self.session_id, {
             "type": "question",
             "data": {
-                "text": question_text,
                 "order": question.order,
                 "max_duration": question.max_duration_seconds,
                 "progress": progress,
-                "audio_url": audio_url
+                "audio_url": audio_url,
+                "vocal_only": True  # Flag pour indiquer mode vocal pur
             }
         })
         
-        logger.info(f"❓ Question envoyée: {question.order}/{len(self.position.questions)}")
+        logger.info(f"🎤 Question VOCALE envoyée: {question.order}/{len(self.position.questions)}")
     
     async def _wait_for_answer(self):
         """Attendre et traiter la réponse du candidat"""
@@ -225,28 +213,23 @@ class InterviewHandler:
         
         try:
             while True:
-                # Recevoir message
                 data = await self.websocket.receive_json()
                 msg_type = data.get("type")
                 
                 if msg_type == "audio_chunk":
-                    # Chunk audio reçu
                     if not self.is_recording:
                         self.is_recording = True
                         answer_start_time = datetime.utcnow()
                         logger.info("🎤 Enregistrement démarré")
                     
-                    # Décoder et ajouter au buffer
                     audio_data = base64.b64decode(data.get("audio_data", ""))
                     self.audio_buffer.extend(audio_data)
                 
                 elif msg_type == "answer_complete":
-                    # Réponse terminée
                     logger.info("⏹️ Enregistrement terminé")
                     break
                 
                 elif msg_type == "end_interview":
-                    # Fin anticipée
                     await self._cancel_interview()
                     raise WebSocketDisconnect()
         
@@ -256,7 +239,6 @@ class InterviewHandler:
             logger.error(f"Erreur réception réponse: {e}")
             raise
         
-        # Traiter la réponse
         if self.audio_buffer:
             await self._process_answer(answer_start_time)
     
@@ -275,7 +257,6 @@ class InterviewHandler:
         audio_path = settings.UPLOAD_DIR / "interviews" / audio_filename
         audio_path.parent.mkdir(parents=True, exist_ok=True)
         
-        # Convertir buffer en WAV
         audio_bytes = self._buffer_to_wav(bytes(self.audio_buffer))
         
         with open(audio_path, 'wb') as f:
@@ -306,13 +287,13 @@ class InterviewHandler:
         
         InterviewSessionCRUD.add_answer(self.session_id, answer)
         
-        # Notifier le client
+        # Notifier le client (SANS envoyer la transcription au client)
         await manager.send_json(self.session_id, {
             "type": "answer_saved",
             "data": {
-                "transcript": transcript,
                 "duration": duration,
-                "question_order": question.order
+                "question_order": question.order,
+                "saved": True
             }
         })
     
@@ -322,7 +303,7 @@ class InterviewHandler:
         
         with wave.open(output, 'wb') as wf:
             wf.setnchannels(settings.CHANNELS)
-            wf.setsampwidth(2)  # 16-bit
+            wf.setsampwidth(2)
             wf.setframerate(settings.SAMPLE_RATE)
             wf.writeframes(audio_data)
         
@@ -332,27 +313,45 @@ class InterviewHandler:
         """Terminer l'entretien"""
         self.session = InterviewSessionCRUD.update_status(self.session_id, "completed")
         
-        message_ar = "شكراً لك! انتهت المقابلة للمنصب. سنتواصل معك قريباً."
-        message_en = "Thank you! The position interview is complete. We will contact you soon."
+        message_ar = "شكراً لك! انتهت المقابلة. سنتواصل معك قريباً."
+        message_en = "Thank you! The interview is complete. We will contact you soon."
         
         message = message_ar if self.session.language == "ar" else message_en
+        
+        # Générer audio de fin
+        audio_url = None
+        if self.tts_service:
+            try:
+                audio_filename = f"complete_{self.session_id}.wav"
+                audio_path = settings.TTS_CACHE_DIR / audio_filename
+                
+                success = self.tts_service.synthesize_to_file(
+                    message,
+                    audio_path,
+                    language=self.session.language
+                )
+                
+                if success:
+                    audio_url = f"/audio/{audio_filename}"
+            except Exception as e:
+                logger.error(f"Erreur génération audio fin: {e}")
         
         await manager.send_json(self.session_id, {
             "type": "interview_completed",
             "data": {
-                "message": message,
+                "audio_url": audio_url,
                 "total_questions": len(self.position.questions),
                 "total_answers": len(self.session.answers),
                 "position_title": self.position.title
             }
         })
         
-        logger.info(f"Entretien terminé: {self.session_id}")
+        logger.info(f"✅ Entretien VOCAL terminé: {self.session_id}")
     
     async def _cancel_interview(self):
         """Annuler l'entretien"""
         self.session = InterviewSessionCRUD.update_status(self.session_id, "cancelled")
-        logger.info(f"Entretien annulé: {self.session_id}")
+        logger.info(f"🚫 Entretien annulé: {self.session_id}")
     
     async def _send_error(self, message: str, error_type: str = "GENERAL_ERROR"):
         """Envoyer une erreur"""
