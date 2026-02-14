@@ -9,6 +9,10 @@ from backend.jobs.routes import router as jobs_router
 from backend.candidates.routes import router as candidates_router
 from backend.matches.routes import router as matches_router
 from backend.interviews.routes import router as interviews_router
+from backend.media.routes import router as media_router
+from backend.analytics.routes import router as analytics_router
+from backend.notifications.routes import router as notifications_router
+from backend.export.routes import router as export_router
 from backend.websocket.interview_handler import handle_interview_websocket
 from backend.config import settings
 
@@ -21,8 +25,10 @@ logging.basicConfig(
 # Application
 app = FastAPI(
     title=settings.API_TITLE,
-    description="API pour le système de recrutement intelligent avec IA vocale",
-    version=settings.API_VERSION
+    description="API complète pour le système de recrutement intelligent avec IA vocale",
+    version=settings.API_VERSION,
+    docs_url="/docs",
+    redoc_url="/redoc"
 )
 
 # CORS
@@ -47,6 +53,10 @@ app.include_router(jobs_router)
 app.include_router(candidates_router)
 app.include_router(matches_router)
 app.include_router(interviews_router)
+app.include_router(media_router)
+app.include_router(analytics_router)
+app.include_router(notifications_router)
+app.include_router(export_router)
 
 # WebSocket
 @app.websocket("/ws/interview/{session_id}")
@@ -60,12 +70,56 @@ async def root():
     return {
         "message": "Stark Recruitment AI API",
         "version": settings.API_VERSION,
-        "documentation": "/docs"
+        "documentation": "/docs",
+        "features": [
+            "Authentication & Authorization",
+            "Candidate Management",
+            "Job Positions",
+            "CV/Job Matching",
+            "Voice Interviews",
+            "Media Management",
+            "Analytics & Statistics",
+            "Notifications",
+            "Data Export"
+        ]
     }
 
 @app.get("/health")
 async def health():
-    return {"status": "ok"}
+    return {
+        "status": "ok",
+        "api_version": settings.API_VERSION,
+        "services": {
+            "database": "connected",
+            "asr": settings.ASR_ENGINE,
+            "tts": settings.TTS_ENGINE,
+            "avatar": settings.AVATAR_PROVIDER
+        }
+    }
+
+@app.get("/api/info")
+async def api_info():
+    """Informations détaillées sur l'API"""
+    return {
+        "api_name": settings.API_TITLE,
+        "version": settings.API_VERSION,
+        "endpoints": {
+            "auth": "/auth",
+            "candidates": "/candidates",
+            "jobs": "/jobs",
+            "matches": "/matches",
+            "interviews": "/interviews",
+            "media": "/media",
+            "analytics": "/analytics",
+            "notifications": "/notifications",
+            "export": "/export",
+            "websocket": "/ws/interview/{session_id}"
+        },
+        "documentation": {
+            "swagger": "/docs",
+            "redoc": "/redoc"
+        }
+    }
 
 if __name__ == "__main__":
     import uvicorn
