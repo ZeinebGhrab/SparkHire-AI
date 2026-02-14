@@ -113,7 +113,7 @@ class InterviewHandler:
             self.session = session
             self.position = JobPositionCRUD.get_by_id(self.session.job_position_id)
             
-            logger.info(f"✅ Session chargée et validée: {self.session_id}")
+            logger.info(f"Session chargée et validée: {self.session_id}")
             logger.info(f"   - Candidat: {self.session.candidate_id}")
             logger.info(f"   - Poste: {self.position.title}")
             logger.info(f"   - Expire à: {self.session.expires_at.strftime('%Y-%m-%d %H:%M:%S')}")
@@ -347,12 +347,12 @@ class InterviewHandler:
             }
         })
         
-        logger.info(f"✅ Entretien terminé: {self.session_id}")
+        logger.info(f"Entretien terminé: {self.session_id}")
     
     async def _cancel_interview(self):
         """Annuler l'entretien"""
         self.session = InterviewSessionCRUD.update_status(self.session_id, "cancelled")
-        logger.info(f"❌ Entretien annulé: {self.session_id}")
+        logger.info(f"Entretien annulé: {self.session_id}")
     
     async def _send_error(self, message: str, error_type: str = "GENERAL_ERROR"):
         """Envoyer une erreur"""

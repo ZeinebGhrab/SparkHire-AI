@@ -8,9 +8,9 @@ from PySide6.QtCore import QObject, Signal, QThread
 class WebSocketWorker(QObject):
     """Worker pour WebSocket dans thread séparé"""
     
-    # ✅ FIX: Renommer le signal pour éviter le conflit avec la méthode connect()
+    # Renommer le signal pour éviter le conflit avec la méthode connect()
     connection_established = Signal()
-    connection_closed = Signal()
+    connection_closed = Signal(int, str)  
     message_received = Signal(dict)
     error_occurred = Signal(str)
     
@@ -38,10 +38,13 @@ class WebSocketWorker(QObject):
                 except json.JSONDecodeError as e:
                     self.error_occurred.emit(f"JSON error: {e}")
         
+        except websockets.exceptions.ConnectionClosedError as e:
+            # ✅ NOUVEAU: Capturer la fermeture avec code et raison
+            self.connection_closed.emit(e.code, e.reason)
+            
         except Exception as e:
             self.error_occurred.emit(f"Connection error: {e}")
-        finally:
-            self.connection_closed.emit()
+            self.connection_closed.emit(0, str(e))
     
     async def send(self, data: dict):
         """Envoyer message"""
@@ -66,7 +69,7 @@ class WebSocketClient(QObject):
     """Client WebSocket avec interface Qt"""
     
     connected = Signal()
-    disconnected = Signal()
+    disconnected = Signal(int, str)  # ✅ NOUVEAU: code et raison
     message_received = Signal(dict)
     error_occurred = Signal(str)
     
@@ -111,8 +114,8 @@ class WebSocketClient(QObject):
     def _on_connected(self):
         self.connected.emit()
     
-    def _on_disconnected(self):
-        self.disconnected.emit()
+    def _on_disconnected(self, code: int, reason: str):
+        self.disconnected.emit(code, reason)
     
     def _on_message(self, data: dict):
         self.message_received.emit(data)

@@ -145,7 +145,7 @@ class InterviewSessionCRUD:
     @staticmethod
     def validate_session_access(session_id: str) -> tuple[InterviewSession, bool, str]:
         """
-        Valider l'accès à une session
+        ✅ MODIFIÉ: Valider l'accès à une session avec messages d'erreur améliorés
         
         Returns:
             tuple: (session, is_valid, error_message)
@@ -154,18 +154,20 @@ class InterviewSessionCRUD:
         try:
             session = InterviewSessionCRUD.get_by_session_id(session_id)
         except HTTPException:
-            return None, False, "Session ID invalide ou introuvable"
+            return None, False, "❌ ERREUR: Session ID invalide ou introuvable.\n\nVeuillez vérifier votre identifiant de session."
         
         # 2. Vérifier que la session n'est pas expirée
         now = datetime.utcnow()
         if now > session.expires_at:
-            # Calculer le retard
-            delay = (now - session.expires_at).total_seconds() / 60  # en minutes
-            return session, False, f"Session expirée (retard de {int(delay)} minutes). Délai maximum: {SESSION_EXPIRATION_MINUTES} minutes"
+            delay = (now - session.expires_at).total_seconds() / 60
+            return session, False, f"⏰ ERREUR: Session expirée depuis {int(delay)} minutes.\n\nLes sessions expirent après {SESSION_EXPIRATION_MINUTES} minutes.\nVeuillez contacter le recruteur pour créer une nouvelle session."
         
         # 3. Vérifier le statut de la session
-        if session.status in ["completed", "cancelled"]:
-            return session, False, f"Session déjà {session.status}. Impossible de la réutiliser"
+        if session.status == "completed":
+            return session, False, "✅ ERREUR: Cet entretien est déjà terminé.\n\nVous ne pouvez pas le reprendre.\nMerci d'avoir participé!"
+        
+        if session.status == "cancelled":
+            return session, False, "🚫 ERREUR: Cette session a été annulée.\n\nVeuillez contacter le recruteur pour plus d'informations."
         
         # 4. Tout est OK
         return session, True, ""
