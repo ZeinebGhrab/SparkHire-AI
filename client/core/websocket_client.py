@@ -1,3 +1,8 @@
+"""
+Client WebSocket avec Interface Qt
+VERSION CORRIGÉE - Capture des codes de fermeture de connexion
+"""
+
 import asyncio
 import json
 import base64
@@ -8,9 +13,13 @@ from PySide6.QtCore import QObject, Signal, QThread
 class WebSocketWorker(QObject):
     """Worker pour WebSocket dans thread séparé"""
     
-    # Renommer le signal pour éviter le conflit avec la méthode connect()
+    # Signal de connexion établie
     connection_established = Signal()
-    connection_closed = Signal(int, str)  
+    
+    # ✅ MODIFIÉ: Signal de fermeture avec code et raison
+    connection_closed = Signal(int, str)  # (code, reason)
+    
+    # Autres signaux
     message_received = Signal(dict)
     error_occurred = Signal(str)
     
@@ -39,7 +48,8 @@ class WebSocketWorker(QObject):
                     self.error_occurred.emit(f"JSON error: {e}")
         
         except websockets.exceptions.ConnectionClosedError as e:
-            # ✅ NOUVEAU: Capturer la fermeture avec code et raison
+            # ✅ CRITIQUE: Capturer le code et la raison de fermeture
+            # Code 4003 = validation de session échouée (défini dans le backend)
             self.connection_closed.emit(e.code, e.reason)
             
         except Exception as e:
@@ -68,8 +78,12 @@ class WebSocketWorker(QObject):
 class WebSocketClient(QObject):
     """Client WebSocket avec interface Qt"""
     
+    # Signaux
     connected = Signal()
-    disconnected = Signal(int, str)  # ✅ NOUVEAU: code et raison
+    
+    # ✅ MODIFIÉ: Signal de déconnexion avec code et raison
+    disconnected = Signal(int, str)  # (code, reason)
+    
     message_received = Signal(dict)
     error_occurred = Signal(str)
     
@@ -112,13 +126,17 @@ class WebSocketClient(QObject):
         self.thread.wait()
     
     def _on_connected(self):
+        """Émettre signal de connexion"""
         self.connected.emit()
     
     def _on_disconnected(self, code: int, reason: str):
+        """Émettre signal de déconnexion avec code et raison"""
         self.disconnected.emit(code, reason)
     
     def _on_message(self, data: dict):
+        """Émettre signal de message reçu"""
         self.message_received.emit(data)
     
     def _on_error(self, error: str):
+        """Émettre signal d'erreur"""
         self.error_occurred.emit(error)

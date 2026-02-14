@@ -1,6 +1,11 @@
 """
 Fenêtre Principale - Design Professionnel Stark Solutions
 Utilise la charte graphique officielle de stark-solutions.online
+
+VERSION CORRIGÉE - Validation stricte de session
+✅ Avatar ne s'affiche JAMAIS avec session invalide
+✅ Reste sur écran de connexion en cas d'erreur
+✅ Bascule vers avatar seulement après validation backend
 """
 
 from PySide6.QtWidgets import (
@@ -29,6 +34,11 @@ class MainWindow(QMainWindow):
     """
     Fenêtre Principale - Design Professionnel Stark Solutions
     Interface moderne basée sur la charte graphique stark-solutions.online
+    
+    VERSION CORRIGÉE:
+    - Validation stricte de session
+    - Avatar affiché seulement après validation backend réussie
+    - Gestion propre des erreurs de validation
     """
     
     def __init__(self):
@@ -37,7 +47,7 @@ class MainWindow(QMainWindow):
         self.websocket_client = None
         self.audio_recorder = None
         self.session_id = None
-        self.is_connecting = False
+        self.is_connecting = False  # ✅ Flag pour suivre l'état de validation
         self._setup_ui()
     
     def _setup_ui(self):
@@ -329,6 +339,10 @@ class MainWindow(QMainWindow):
         """)
         status_bar.showMessage("🔒 Système Sécurisé Stark Solutions - Prêt à Démarrer")
     
+    # ========================================================================
+    # ✅ MÉTHODE CORRIGÉE 1: Connexion à l'entretien
+    # ========================================================================
+    
     def _connect_to_interview(self):
         """Connecter à l'entretien avec validation stricte"""
     
@@ -365,45 +379,53 @@ class MainWindow(QMainWindow):
         ws_url = f"{settings.WEBSOCKET_URL}/ws/interview/{session_id}"
         self.websocket_client = WebSocketClient(ws_url)
     
-        # Connecter les signaux WebSocket
-        self.websocket_client.connected.connect(self._on_websocket_connected)
+        # ✅ CRITIQUE: Ordre des signaux - disconnected AVANT connected
+        # Pour capturer les erreurs de validation AVANT de basculer vers l'avatar
         self.websocket_client.disconnected.connect(self._on_websocket_disconnected)
+        self.websocket_client.connected.connect(self._on_websocket_connected)
         self.websocket_client.message_received.connect(self._on_websocket_message)
         self.websocket_client.error_occurred.connect(self._on_websocket_error)
     
-        # Initialiser l'enregistreur audio
-        self.audio_recorder = AudioRecorder()
-        self.audio_recorder.audio_chunk_ready.connect(self._on_audio_chunk)
+        # ⚠️ NE PAS initialiser audio_recorder ici
+        # Attendre la confirmation de validation backend (message "welcome")
     
         # Connexion
         try:
             self.websocket_client.connect_to_server()
-            self.statusBar().showMessage("⏳ Connexion en cours...")
+            self.statusBar().showMessage("🔍 Validation de session en cours...")
         except Exception as e:
             self._handle_connection_failure(f"Impossible de se connecter: {e}")
     
+    # ========================================================================
+    # ✅ MÉTHODE CORRIGÉE 2: WebSocket connecté - EN ATTENTE DE VALIDATION
+    # ========================================================================
+    
     def _on_websocket_connected(self):
-        """Callback: WebSocket connecté"""
+        """Callback: WebSocket connecté - EN ATTENTE DE VALIDATION BACKEND"""
         
-        self.is_connecting = False
+        # ⚠️ NE PAS mettre is_connecting à False ici
+        # Le flag reste True jusqu'à réception du message "welcome"
         
-        self.status_label.setText("CONNECTÉ")
-        self.status_label.setStyleSheet(f"color: {StarkTheme.SUCCESS}; letter-spacing: 1px; font-weight: bold;")
-        self.status_detail.setText("Session active")
-        self.statusBar().showMessage("✅ Connexion Sécurisée Établie")
+        self.status_label.setText("VALIDATION")
+        self.status_label.setStyleSheet(f"color: {StarkTheme.WARNING}; letter-spacing: 1px; font-weight: bold;")
+        self.status_detail.setText("Vérification de session...")
+        self.statusBar().showMessage("🔍 Validation de session en cours...")
         
-        # Basculer vers l'interface d'entretien
-        self.connection_widget.setVisible(False)
-        self.interview_container.setVisible(True)
+        # ⚠️ NE PAS basculer vers l'avatar ici !
+        # self.connection_widget.setVisible(False)  # ❌ NON
+        # self.interview_container.setVisible(True)  # ❌ NON
+        # self.video_player.set_idle()  # ❌ NON
         
-        # Démarrer l'avatar en mode idle
-        self.video_player.set_idle()
+        # Attendre le message "welcome" du backend qui confirme que la session est valide
+    
+    # ========================================================================
+    # ✅ MÉTHODE CORRIGÉE 3: WebSocket déconnecté - Gérer validation échouée
+    # ========================================================================
     
     def _on_websocket_disconnected(self, code: int, reason: str):
         """Callback: WebSocket déconnecté avec code et raison"""
     
-        # Si on est en train de se connecter et qu'on reçoit une déconnexion,
-        # c'est probablement une validation qui a échoué
+        # 🔥 CRITIQUE: Gérer la déconnexion PENDANT la validation
         if self.is_connecting:
             # Code 4003 = erreur de validation de session (défini dans le backend)
             if code == 4003:
@@ -431,6 +453,10 @@ class MainWindow(QMainWindow):
             if reply == QMessageBox.StandardButton.Yes:
                 self._reset_to_connection_screen()
     
+    # ========================================================================
+    # ✅ MÉTHODE CORRIGÉE 4: Messages WebSocket - Basculer sur "welcome"
+    # ========================================================================
+    
     def _on_websocket_message(self, data: dict):
         """Callback: Message WebSocket reçu"""
         msg_type = data.get("type")
@@ -451,9 +477,29 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(f"❌ {error_msg}")
             return
         
+        # ✅ SESSION VALIDÉE - Message "welcome" = feu vert pour basculer vers l'avatar
         if msg_type == "welcome":
-            # Message de bienvenue
-            self.statusBar().showMessage(f"👋 {msg_data.get('text', 'Bienvenue')}")
+            # ✅ Fin de la phase de validation
+            self.is_connecting = False
+            
+            # Mettre à jour le statut
+            self.status_label.setText("CONNECTÉ")
+            self.status_label.setStyleSheet(f"color: {StarkTheme.SUCCESS}; letter-spacing: 1px; font-weight: bold;")
+            self.status_detail.setText("Session active")
+            
+            welcome_text = msg_data.get('text', 'Session validée - Bienvenue!')
+            self.statusBar().showMessage(f"✅ {welcome_text}")
+            
+            # 🎯 MAINTENANT basculer vers l'interface d'entretien
+            self.connection_widget.setVisible(False)
+            self.interview_container.setVisible(True)
+            
+            # Initialiser l'enregistreur audio maintenant (et pas avant)
+            if not self.audio_recorder:
+                self.audio_recorder = AudioRecorder()
+                self.audio_recorder.audio_chunk_ready.connect(self._on_audio_chunk)
+            
+            # Démarrer l'avatar en mode speaking
             self.video_player.set_speaking()
             
         elif msg_type == "question":
@@ -479,16 +525,15 @@ class MainWindow(QMainWindow):
             message = msg_data.get("message", "Entretien terminé")
             self._show_info_dialog("Entretien Terminé", message)
             self.statusBar().showMessage("🎉 Entretien complété avec succès!")
-            
-        elif msg_type == "error":
-            # Erreur
-            error_msg = msg_data.get("message", "Erreur inconnue")
-            self._show_error_dialog("Erreur", error_msg)
     
     def _on_websocket_error(self, error: str):
         """Callback: Erreur WebSocket"""
         self._show_error_dialog("Erreur WebSocket", error)
         self.statusBar().showMessage(f"❌ Erreur: {error}")
+    
+    # ========================================================================
+    # Méthodes de gestion audio
+    # ========================================================================
     
     def _on_start_recording(self):
         """Démarrer l'enregistrement audio"""
@@ -540,6 +585,79 @@ class MainWindow(QMainWindow):
                 })
             
             self.statusBar().showMessage("🔚 Entretien terminé")
+    
+    # ========================================================================
+    # ✅ MÉTHODE CRITIQUE: Gérer échec de connexion
+    # ========================================================================
+    
+    def _handle_connection_failure(self, error_message: str):
+        """Gérer un échec de connexion et rester sur l'écran de connexion"""
+    
+        self.is_connecting = False
+    
+        # Réactiver le bouton
+        self.connect_btn.setEnabled(True)
+        self.connect_btn.setText("DÉMARRER L'ENTRETIEN")
+        self.session_input.setEnabled(True)
+    
+        # Nettoyer le WebSocket
+        if self.websocket_client:
+            try:
+                self.websocket_client.disconnect_from_server()
+            except:
+                pass
+            self.websocket_client = None
+    
+        # Afficher l'erreur
+        self._show_error_dialog("Connexion Impossible", error_message)
+        self.statusBar().showMessage("❌ Connexion échouée")
+    
+    # ========================================================================
+    # ✅ MÉTHODE CRITIQUE: Réinitialiser vers écran de connexion
+    # ========================================================================
+    
+    def _reset_to_connection_screen(self):
+        """Réinitialiser et revenir à l'écran de connexion"""
+    
+        # Nettoyer WebSocket
+        if self.websocket_client:
+            try:
+                self.websocket_client.disconnect_from_server()
+            except:
+                pass
+            self.websocket_client = None
+    
+        # Nettoyer audio
+        if self.audio_recorder:
+            try:
+                self.audio_recorder.cleanup()
+            except:
+                pass
+            self.audio_recorder = None
+    
+        # Réinitialiser l'UI
+        self.interview_container.setVisible(False)
+        self.connection_widget.setVisible(True)
+    
+        # Réactiver les champs
+        self.connect_btn.setEnabled(True)
+        self.connect_btn.setText("DÉMARRER L'ENTRETIEN")
+        self.session_input.setEnabled(True)
+        self.session_input.clear()
+    
+        # Réinitialiser le statut
+        self.status_label.setText("DÉCONNECTÉ")
+        self.status_label.setStyleSheet(f"color: {StarkTheme.WHITE}; letter-spacing: 1px;")
+        self.status_detail.setText("En attente de connexion")
+    
+        self.is_connecting = False
+        self.session_id = None
+    
+        self.statusBar().showMessage("🔒 Prêt pour une nouvelle connexion")
+    
+    # ========================================================================
+    # Dialogues
+    # ========================================================================
     
     def _show_error_dialog(self, title: str, message: str):
         """Afficher un dialogue d'erreur"""
@@ -595,6 +713,10 @@ class MainWindow(QMainWindow):
         """)
         msg_box.exec()
     
+    # ========================================================================
+    # Événements de fermeture
+    # ========================================================================
+    
     def closeEvent(self, event):
         """Nettoyage lors de la fermeture"""
         
@@ -617,64 +739,3 @@ class MainWindow(QMainWindow):
             self.audio_recorder.cleanup()
         
         super().closeEvent(event)
-        
-    def _handle_connection_failure(self, error_message: str):
-        """Gérer un échec de connexion et rester sur l'écran de connexion"""
-    
-        self.is_connecting = False
-    
-        # Réactiver le bouton
-        self.connect_btn.setEnabled(True)
-        self.connect_btn.setText("DÉMARRER L'ENTRETIEN")
-        self.session_input.setEnabled(True)
-    
-        # Nettoyer le WebSocket
-        if self.websocket_client:
-            try:
-                self.websocket_client.disconnect_from_server()
-            except:
-                pass
-            self.websocket_client = None
-    
-        # Afficher l'erreur
-        self._show_error_dialog("Connexion Impossible", error_message)
-        self.statusBar().showMessage("❌ Connexion échouée")
-        
-    def _reset_to_connection_screen(self):
-        """Réinitialiser et revenir à l'écran de connexion"""
-    
-        # Nettoyer WebSocket
-        if self.websocket_client:
-            try:
-                self.websocket_client.disconnect_from_server()
-            except:
-                pass
-            self.websocket_client = None
-    
-        # Nettoyer audio
-        if self.audio_recorder:
-            try:
-                self.audio_recorder.cleanup()
-            except:
-                pass
-            self.audio_recorder = None
-    
-        # Réinitialiser l'UI
-        self.interview_container.setVisible(False)
-        self.connection_widget.setVisible(True)
-    
-        # Réactiver les champs
-        self.connect_btn.setEnabled(True)
-        self.connect_btn.setText("DÉMARRER L'ENTRETIEN")
-        self.session_input.setEnabled(True)
-        self.session_input.clear()
-    
-        # Réinitialiser le statut
-        self.status_label.setText("DÉCONNECTÉ")
-        self.status_label.setStyleSheet(f"color: {StarkTheme.WHITE}; letter-spacing: 1px;")
-        self.status_detail.setText("En attente de connexion")
-    
-        self.is_connecting = False
-        self.session_id = None
-    
-        self.statusBar().showMessage("🔒 Prêt pour une nouvelle connexion")
