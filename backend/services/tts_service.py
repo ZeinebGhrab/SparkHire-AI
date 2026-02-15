@@ -43,13 +43,13 @@ class Pyttsx3TTS(TTSEngine):
             for voice in voices:
                 if 'french' in voice.name.lower() or 'fr-fr' in voice.id.lower():
                     french_voice = voice.id
-                    logger.info(f"✅ Voix française trouvée: {voice.name}")
+                    logger.info(f"Voix française trouvée: {voice.name}")
                     break
 
             if french_voice:
                 test_engine.setProperty('voice', french_voice)
             else:
-                logger.warning("⚠️ Aucune voix française trouvée, utilisation de la voix par défaut")
+                logger.warning("Aucune voix française trouvée, utilisation de la voix par défaut")
 
             test_engine.setProperty('rate', 150)
             test_engine.setProperty('volume', 1.0)
@@ -60,7 +60,7 @@ class Pyttsx3TTS(TTSEngine):
 
             # Libérer le moteur
             del test_engine
-            logger.info("✅ pyttsx3 TTS initialisé avec succès")
+            logger.info("pyttsx3 TTS initialisé avec succès")
 
             # Windows : module pour jouer le son local
             self.is_windows = platform.system().lower() == "windows"
@@ -69,13 +69,13 @@ class Pyttsx3TTS(TTSEngine):
                     import simpleaudio
                     self.simpleaudio = simpleaudio
                 except ImportError:
-                    logger.warning("⚠️ simpleaudio non installé: pip install simpleaudio")
+                    logger.warning("simpleaudio non installé: pip install simpleaudio")
                     self.simpleaudio = None
 
         except ImportError:
             raise ImportError("pyttsx3 n'est pas installé. pip install pyttsx3")
         except Exception as e:
-            logger.error(f"❌ Erreur initialisation pyttsx3: {e}")
+            logger.error(f"Erreur initialisation pyttsx3: {e}")
             raise
 
     def synthesize(self, text: str, language: str = "ar") -> bytes:
@@ -94,14 +94,14 @@ class Pyttsx3TTS(TTSEngine):
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
                 tmp_path = tmp.name
 
-            logger.info(f"🔊 Synthèse TTS: '{text[:50]}...'")
+            logger.info(f"Synthèse TTS: '{text[:50]}...'")
             engine.save_to_file(text, tmp_path)
             engine.runAndWait()
 
             # Attendre la création du fichier
             time.sleep(0.5)
             if not os.path.exists(tmp_path):
-                logger.error(f"❌ Fichier audio non créé: {tmp_path}")
+                logger.error(f"Fichier audio non créé: {tmp_path}")
                 return b""
 
             # Jouer le son sur Windows
@@ -111,7 +111,7 @@ class Pyttsx3TTS(TTSEngine):
                     play_obj = wave_obj.play()
                     play_obj.wait_done()
                 except Exception as e:
-                    logger.warning(f"⚠️ Impossible de jouer le son: {e}")
+                    logger.warning(f"Impossible de jouer le son: {e}")
 
             # Lire le fichier pour retourner bytes
             with open(tmp_path, 'rb') as f:
@@ -121,14 +121,14 @@ class Pyttsx3TTS(TTSEngine):
             try:
                 os.unlink(tmp_path)
             except Exception as cleanup_error:
-                logger.warning(f"⚠️ Impossible de supprimer le fichier temporaire: {cleanup_error}")
+                logger.warning(f"Impossible de supprimer le fichier temporaire: {cleanup_error}")
 
             del engine
-            logger.info(f"✅ Audio synthétisé avec succès: {len(audio_data)} bytes")
+            logger.info(f"Audio synthétisé avec succès: {len(audio_data)} bytes")
             return audio_data
 
         except Exception as e:
-            logger.error(f"❌ Erreur synthèse pyttsx3: {e}")
+            logger.error(f"Erreur synthèse pyttsx3: {e}")
             import traceback
             logger.error(traceback.format_exc())
             return b""
@@ -187,7 +187,7 @@ class TTSService:
             cache_key = self._get_cache_key(text, language)
             cache_path = self.cache_dir / f"{cache_key}.wav"
             if cache_path.exists():
-                logger.info(f"🎯 Cache hit: {cache_path.name}")
+                logger.info(f"Cache hit: {cache_path.name}")
                 with open(cache_path, 'rb') as f:
                     return f.read()
 
@@ -199,9 +199,9 @@ class TTSService:
             try:
                 with open(cache_path, 'wb') as f:
                     f.write(audio_data)
-                logger.info(f"💾 Cache saved: {cache_path.name}")
+                logger.info(f"Cache saved: {cache_path.name}")
             except Exception as e:
-                logger.warning(f"⚠️ Impossible de sauvegarder en cache: {e}")
+                logger.warning(f"Impossible de sauvegarder en cache: {e}")
 
         return audio_data
 
@@ -209,16 +209,16 @@ class TTSService:
         """Synthétiser et sauvegarder dans un fichier"""
         audio_data = self.synthesize(text, language, use_cache)
         if not audio_data:
-            logger.error("❌ Échec de la synthèse audio")
+            logger.error("Échec de la synthèse audio")
             return False
         try:
             output_path.parent.mkdir(parents=True, exist_ok=True)
             with open(output_path, 'wb') as f:
                 f.write(audio_data)
-            logger.info(f"✅ Audio sauvegardé: {output_path}")
+            logger.info(f"Audio sauvegardé: {output_path}")
             return True
         except Exception as e:
-            logger.error(f"❌ Erreur sauvegarde fichier: {e}")
+            logger.error(f"Erreur sauvegarde fichier: {e}")
             return False
 
     @staticmethod
