@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, QSize, QUrl
 from PySide6.QtGui import QFont, QColor
-from PySide6.QtMultimedia import QMediaPlayer, QAudioOutput
+from PySide6.QtMultimedia import QAudio
 import sys
 from pathlib import Path
 
@@ -547,7 +547,7 @@ class MainWindow(QMainWindow):
     
     def _check_audio_finished(self):
         """Vérifier si la lecture audio est terminée"""
-        if self.audio_sink.state() == QAudioSink.State.IdleState:
+        if self.audio_sink.state() == QAudio.State.IdleState:
             logger.info("✅ Audio terminé")
             
             self.video_player.set_idle()

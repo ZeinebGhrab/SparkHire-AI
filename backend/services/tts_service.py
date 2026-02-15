@@ -1,7 +1,6 @@
 """
-Service TTS (Text-to-Speech) - VERSION AVEC FFMPEG LOCAL
-Support pour gTTS (Google Text-to-Speech)
-Configure automatiquement ffmpeg depuis models/ffmpeg-8.0.1-essentials_build
+Service TTS (Text-to-Speech) - VERSION AVEC EDGE-TTS
+Support pour Edge-TTS (voix féminines Microsoft)
 """
 
 import logging
@@ -59,12 +58,29 @@ class TTSEngine(ABC):
         pass
 
 
+class EdgeTTSEngine(TTSEngine):
+    """Moteur Edge-TTS avec voix féminine"""
+    
+    def __init__(self):
+        try:
+            from backend.services.edge_tts_engine import EdgeTTSEngine as EdgeEngine
+            self.engine = EdgeEngine()
+            logger.info("✅ Edge-TTS (Microsoft) initialisé - Voix féminine")
+        except ImportError:
+            raise ImportError("Edge-TTS non installé: pip install edge-tts")
+    
+    def synthesize(self, text: str, language: str = "ar") -> bytes:
+        return self.engine.synthesize(text, language)
+
+
 class GoogleTTS(TTSEngine):
+    """Moteur Google TTS (voix par défaut)"""
+    
     def __init__(self):
         try:
             from gtts import gTTS
             self.gTTS = gTTS
-            logger.info("✅ gTTS (Google Text-to-Speech) initialisé avec succès")
+            logger.info("✅ gTTS (Google Text-to-Speech) initialisé")
         except ImportError:
             raise ImportError("gTTS non installé: pip install gtts")
 
@@ -189,17 +205,20 @@ class TTSService:
 
 
 def get_tts_service() -> TTSService:
+    """Factory pour créer le service TTS"""
     from backend.config import settings
 
-    if settings.TTS_ENGINE == "gtts":
-        logger.info("🌐 Utilisation de gTTS (Google TTS) - Meilleur support arabe")
-        engine = GoogleTTS()
-    else:
-        logger.error(f"❌ Moteur TTS inconnu: {settings.TTS_ENGINE}")
+    # ✅ Essayer Edge-TTS en priorité (voix féminine)
+    try:
+        logger.info("🎤 Tentative d'utilisation de Edge-TTS (voix féminine)...")
+        engine = EdgeTTSEngine()
+        logger.info("✅ Edge-TTS sélectionné - Voix féminine arabe activée")
+    except Exception as e:
+        logger.warning(f"⚠️ Edge-TTS non disponible: {e}")
         logger.info("🔄 Fallback sur gTTS...")
         try:
             engine = GoogleTTS()
         except:
-            raise ValueError(f"Impossible d'initialiser le moteur TTS")
+            raise ValueError(f"Aucun moteur TTS disponible")
 
     return TTSService(engine, cache_dir=settings.TTS_CACHE_DIR)
