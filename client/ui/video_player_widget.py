@@ -2,7 +2,7 @@ import cv2
 import pygame
 import numpy as np
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QFrame, QHBoxLayout, QGraphicsDropShadowEffect
-from PySide6.QtCore import Qt, QTimer, Slot, QSize, QPropertyAnimation, QEasingCurve
+from PySide6.QtCore import Qt, QTimer, Slot, QSize
 from PySide6.QtGui import QFont,QImage, QPixmap, QColor
 from pathlib import Path
 from client.ui.icons import StarkIcons
