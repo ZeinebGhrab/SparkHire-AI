@@ -35,16 +35,16 @@ def configure_ffmpeg_local():
                 if ffprobe_exe.exists():
                     AudioSegment.ffprobe = str(ffprobe_exe)
                 
-                logger.info(f"✅ ffmpeg configuré depuis: {ffmpeg_dir}")
+                logger.info(f"ffmpeg configuré depuis: {ffmpeg_dir}")
                 return True
             except ImportError:
                 logger.warning("pydub non installé")
                 return False
         else:
-            logger.warning(f"⚠️ ffmpeg.exe non trouvé dans: {ffmpeg_dir}")
+            logger.warning(f"ffmpeg.exe non trouvé dans: {ffmpeg_dir}")
             return False
     else:
-        logger.warning(f"⚠️ Dossier ffmpeg non trouvé: {ffmpeg_dir}")
+        logger.warning(f"Dossier ffmpeg non trouvé: {ffmpeg_dir}")
         return False
 
 configure_ffmpeg_local()
@@ -65,7 +65,7 @@ class EdgeTTSEngine(TTSEngine):
         try:
             from backend.services.edge_tts_engine import EdgeTTSEngine as EdgeEngine
             self.engine = EdgeEngine()
-            logger.info("✅ Edge-TTS (Microsoft) initialisé - Voix féminine")
+            logger.info("Edge-TTS (Microsoft) initialisé - Voix féminine")
         except ImportError:
             raise ImportError("Edge-TTS non installé: pip install edge-tts")
     
@@ -80,7 +80,7 @@ class GoogleTTS(TTSEngine):
         try:
             from gtts import gTTS
             self.gTTS = gTTS
-            logger.info("✅ gTTS (Google Text-to-Speech) initialisé")
+            logger.info("gTTS (Google Text-to-Speech) initialisé")
         except ImportError:
             raise ImportError("gTTS non installé: pip install gtts")
 
@@ -91,15 +91,15 @@ class GoogleTTS(TTSEngine):
         try:
             from pydub import AudioSegment
         except ImportError:
-            logger.error("❌ pydub non installé: pip install pydub")
+            logger.error("pydub non installé: pip install pydub")
             return b""
         
         try:
             if not text or len(text.strip()) == 0:
-                logger.error("❌ ERREUR: Texte vide fourni à gTTS")
+                logger.error("ERREUR: Texte vide fourni à gTTS")
                 return b""
             
-            logger.info(f"🔊 gTTS: Synthèse de '{text[:100]}...' (langue: {language})")
+            logger.info(f"gTTS: Synthèse de '{text[:100]}...' (langue: {language})")
             
             lang_code = language if language in ['ar', 'en', 'fr'] else 'ar'
             
@@ -109,7 +109,7 @@ class GoogleTTS(TTSEngine):
                 tmp_mp3_path = tmp_mp3.name
             
             tts.save(tmp_mp3_path)
-            logger.info(f"📁 Audio MP3 temporaire créé: {tmp_mp3_path}")
+            logger.info(f"Audio MP3 temporaire créé: {tmp_mp3_path}")
             
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_wav:
                 tmp_wav_path = tmp_wav.name
@@ -121,7 +121,7 @@ class GoogleTTS(TTSEngine):
                 with open(tmp_wav_path, 'rb') as f:
                     audio_data = f.read()
                 
-                logger.info(f"✅ Audio synthétisé avec succès: {len(audio_data)} bytes")
+                logger.info(f"Audio synthétisé avec succès: {len(audio_data)} bytes")
                 
                 return audio_data
                 
@@ -133,7 +133,7 @@ class GoogleTTS(TTSEngine):
                     pass
         
         except Exception as e:
-            logger.error(f"❌ Erreur synthèse gTTS: {e}")
+            logger.error(f"Erreur synthèse gTTS: {e}")
             import traceback
             logger.error(traceback.format_exc())
             return b""
@@ -148,10 +148,10 @@ class TTSService:
 
     def synthesize(self, text: str, language: str = "ar", use_cache: bool = True) -> bytes:
         if not text or len(text.strip()) == 0:
-            logger.error("❌ TTSService: Texte vide reçu!")
+            logger.error("TTSService: Texte vide reçu!")
             return b""
         
-        logger.info(f"🎤 TTSService.synthesize() appelé:")
+        logger.info(f"TTSService.synthesize() appelé:")
         logger.info(f"   Texte: '{text[:100]}...'")
         logger.info(f"   Langue: {language}")
         
@@ -159,7 +159,7 @@ class TTSService:
             cache_key = self._get_cache_key(text, language)
             cache_path = self.cache_dir / f"{cache_key}.wav"
             if cache_path.exists():
-                logger.info(f"💾 Cache hit: {cache_path.name}")
+                logger.info(f"Cache hit: {cache_path.name}")
                 with open(cache_path, 'rb') as f:
                     return f.read()
 
@@ -171,31 +171,31 @@ class TTSService:
             try:
                 with open(cache_path, 'wb') as f:
                     f.write(audio_data)
-                logger.info(f"💾 Cache saved: {cache_path.name}")
+                logger.info(f"Cache saved: {cache_path.name}")
             except Exception as e:
                 logger.warning(f"Cache save failed: {e}")
 
         return audio_data
 
     def synthesize_to_file(self, text: str, output_path: Path, language: str = "ar", use_cache: bool = True) -> bool:
-        logger.info(f"📝 synthesize_to_file() appelé:")
+        logger.info(f"synthesize_to_file() appelé:")
         logger.info(f"   Texte: '{text[:100]}...'")
         logger.info(f"   Output: {output_path}")
         
         audio_data = self.synthesize(text, language, use_cache)
         
         if not audio_data:
-            logger.error("❌ Aucune donnée audio générée!")
+            logger.error("Aucune donnée audio générée!")
             return False
             
         try:
             output_path.parent.mkdir(parents=True, exist_ok=True)
             with open(output_path, 'wb') as f:
                 f.write(audio_data)
-            logger.info(f"✅ Audio sauvegardé: {output_path}")
+            logger.info(f"Audio sauvegardé: {output_path}")
             return True
         except Exception as e:
-            logger.error(f"❌ Erreur sauvegarde: {e}")
+            logger.error(f"Erreur sauvegarde: {e}")
             return False
 
     @staticmethod
@@ -208,14 +208,14 @@ def get_tts_service() -> TTSService:
     """Factory pour créer le service TTS"""
     from backend.config import settings
 
-    # ✅ Essayer Edge-TTS en priorité (voix féminine)
+    # Essayer Edge-TTS en priorité (voix féminine)
     try:
-        logger.info("🎤 Tentative d'utilisation de Edge-TTS (voix féminine)...")
+        logger.info("Tentative d'utilisation de Edge-TTS (voix féminine)...")
         engine = EdgeTTSEngine()
-        logger.info("✅ Edge-TTS sélectionné - Voix féminine arabe activée")
+        logger.info("Edge-TTS sélectionné - Voix féminine arabe activée")
     except Exception as e:
-        logger.warning(f"⚠️ Edge-TTS non disponible: {e}")
-        logger.info("🔄 Fallback sur gTTS...")
+        logger.warning(f"Edge-TTS non disponible: {e}")
+        logger.info("Fallback sur gTTS...")
         try:
             engine = GoogleTTS()
         except:

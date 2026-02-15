@@ -20,7 +20,7 @@ class EdgeTTSEngine:
             import edge_tts
             self.edge_tts = edge_tts
             
-            # ✅ Voix féminines arabes disponibles
+            # Voix féminines arabes disponibles
             self.voices = {
                 "ar": "ar-SA-ZariyahNeural",  # Voix féminine saoudienne (recommandée)
                 # Alternatives:
@@ -31,7 +31,7 @@ class EdgeTTSEngine:
                 "fr": "fr-FR-DeniseNeural"     # Voix féminine française
             }
             
-            logger.info("✅ Edge-TTS initialisé avec voix féminine")
+            logger.info("Edge-TTS initialisé avec voix féminine")
             logger.info(f"   Voix arabe: {self.voices['ar']}")
             
         except ImportError:
@@ -56,14 +56,14 @@ class EdgeTTSEngine:
             audio_data = asyncio.run(self._synthesize_async(text, voice))
             
             if audio_data and len(audio_data) > 0:
-                logger.info(f"✅ Audio généré: {len(audio_data)} bytes")
+                logger.info(f"Audio généré: {len(audio_data)} bytes")
                 return audio_data
             else:
-                logger.error("❌ Audio vide généré")
+                logger.error("Audio vide généré")
                 return b""
         
         except Exception as e:
-            logger.error(f"❌ Erreur synthèse Edge-TTS: {e}")
+            logger.error(f"Erreur synthèse Edge-TTS: {e}")
             import traceback
             logger.error(traceback.format_exc())
             return b""
@@ -112,6 +112,6 @@ class EdgeTTSEngine:
             return wav_io.getvalue()
         
         except Exception as e:
-            logger.warning(f"⚠️ Conversion WAV échouée: {e}")
+            logger.warning(f"Conversion WAV échouée: {e}")
             # Retourner le MP3 brut si la conversion échoue
             return mp3_data
