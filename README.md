@@ -92,7 +92,7 @@ python scripts/seed_job_positions.py
 ### Backend
 ```bash
 # Terminal 1 - Backend API
-python backend/main.py
+uvicorn backend.main:app --reload
 
 # API will be available at http://localhost:8000
 # Documentation: http://localhost:8000/docs
@@ -101,8 +101,7 @@ python backend/main.py
 ### Client
 ```bash
 # Terminal 2 - PySide6 Client
-cd client
-python main.py
+python -m client.main
 ```
 
 ## 📝 Usage

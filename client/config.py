@@ -4,7 +4,7 @@ from functools import lru_cache
 class Settings(BaseSettings):
     # Backend
     BACKEND_URL: str = "http://localhost:8000"
-    WEBSOCKET_URL: str = "ws://localhost:8000"  # ✅ AJOUTÉ
+    WEBSOCKET_URL: str = "ws://localhost:8000"  
     
     # Audio
     SAMPLE_RATE: int = 16000
@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = True
-        extra = "allow"  # ✅ AJOUTÉ pour permettre les champs supplémentaires
+        extra = "allow"  
 
 @lru_cache()
 def get_settings():
