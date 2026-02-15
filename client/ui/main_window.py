@@ -30,10 +30,43 @@ from client.config import settings
 import base64
 
 
+"""
+Fenêtre Principale - MODE VOCAL PUR
+Audio streamé directement en base64 (pas d'URLs)
+VERSION COMPLÈTE
+"""
+
+from PySide6.QtWidgets import (
+    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+    QMessageBox, QLabel, QLineEdit, QPushButton, QFrame, 
+    QGraphicsDropShadowEffect
+)
+from PySide6.QtCore import Qt, QSize, QByteArray, QBuffer, QIODevice, QTimer
+from PySide6.QtGui import QFont, QColor
+from PySide6.QtMultimedia import QAudioFormat, QAudioSink
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+from client.ui.stark_theme import StarkTheme
+from client.ui.icons import StarkIcons
+from client.ui.video_player_widget import VideoPlayerWidget
+from client.ui.interview_widget import InterviewWidget
+from client.core.websocket_client import WebSocketClient
+from client.core.audio_recorder import AudioRecorder
+from client.config import settings
+import base64
+import logging
+
+# Configuration du logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+
 class MainWindow(QMainWindow):
     """
     Fenêtre Principale - MODE VOCAL PUR
-    Interface optimisée pour questions vocales uniquement
+    Audio direct via WebSocket (pas d'URLs)
     """
     
     def __init__(self):
@@ -44,14 +77,16 @@ class MainWindow(QMainWindow):
         self.session_id = None
         self.is_connecting = False
         
-        # Lecteur audio pour les questions vocales
-        self.audio_player = QMediaPlayer()
-        self.audio_output = QAudioOutput()
-        self.audio_player.setAudioOutput(self.audio_output)
-        self.audio_output.setVolume(1.0)
+        # ✅ Configuration audio pour lecture directe
+        self.audio_format = QAudioFormat()
+        self.audio_format.setSampleRate(16000)
+        self.audio_format.setChannelCount(1)
+        self.audio_format.setSampleFormat(QAudioFormat.SampleFormat.Int16)
         
-        # Connecter les signaux du lecteur audio
-        self.audio_player.mediaStatusChanged.connect(self._on_audio_status_changed)
+        self.audio_sink = QAudioSink(self.audio_format)
+        self.audio_buffer = None
+        self.audio_io_buffer = None
+        self.audio_check_timer = None
         
         self._setup_ui()
     
@@ -236,7 +271,7 @@ class MainWindow(QMainWindow):
         title.setStyleSheet(f"color: {StarkTheme.ORANGE_ACCENT}; letter-spacing: 2px;")
         card_layout.addWidget(title)
         
-        subtitle = QLabel("Questions en audio uniquement - Écoutez bien")
+        subtitle = QLabel("L'avatar parle naturellement - Audio direct")
         subtitle.setFont(QFont(StarkTheme.FONT_FAMILY_PRIMARY, 11))
         subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
         subtitle.setStyleSheet(f"color: {StarkTheme.GRAY_MEDIUM};")
@@ -319,7 +354,7 @@ class MainWindow(QMainWindow):
                 border-top: 1px solid {StarkTheme.GRAY_LIGHT};
             }}
         """)
-        status_bar.showMessage("🎧 Mode Vocal Pur Activé - Prêt à Démarrer")
+        status_bar.showMessage("🎧 Mode Vocal Pur Activé - L'avatar parle naturellement")
     
     def _connect_to_interview(self):
         """Connecter à l'entretien"""
@@ -343,6 +378,8 @@ class MainWindow(QMainWindow):
         self.session_input.setEnabled(False)
     
         ws_url = f"{settings.WEBSOCKET_URL}/ws/interview/{session_id}"
+        logger.info(f"🔌 Connexion WebSocket: {ws_url}")
+        
         self.websocket_client = WebSocketClient(ws_url)
     
         self.websocket_client.disconnected.connect(self._on_websocket_disconnected)
@@ -358,6 +395,7 @@ class MainWindow(QMainWindow):
     
     def _on_websocket_connected(self):
         """WebSocket connecté"""
+        logger.info("✅ WebSocket connecté")
         self.status_label.setText("VALIDATION")
         self.status_label.setStyleSheet(f"color: {StarkTheme.WARNING}; letter-spacing: 1px; font-weight: bold;")
         self.status_detail.setText("Vérification de session...")
@@ -365,6 +403,8 @@ class MainWindow(QMainWindow):
     
     def _on_websocket_disconnected(self, code: int, reason: str):
         """WebSocket déconnecté"""
+        logger.info(f"🔌 WebSocket déconnecté: code={code}, reason={reason}")
+        
         if self.is_connecting:
             if code == 4003:
                 error_msg = reason if reason else "Session invalide ou expirée"
@@ -382,6 +422,8 @@ class MainWindow(QMainWindow):
         """Message WebSocket reçu"""
         msg_type = data.get("type")
         msg_data = data.get("data", {})
+        
+        logger.info(f"📨 Message reçu: type={msg_type}")
         
         if msg_type == "error":
             error_msg = msg_data.get("message", "Erreur inconnue")
@@ -402,7 +444,7 @@ class MainWindow(QMainWindow):
             self.status_label.setStyleSheet(f"color: {StarkTheme.SUCCESS}; letter-spacing: 1px; font-weight: bold;")
             self.status_detail.setText("Mode vocal actif")
             
-            self.statusBar().showMessage(f"🎧 Mode vocal activé - Écoutez bien les questions")
+            self.statusBar().showMessage(f"🎧 Mode vocal activé - L'avatar va parler")
             
             self.connection_widget.setVisible(False)
             self.interview_container.setVisible(True)
@@ -411,74 +453,119 @@ class MainWindow(QMainWindow):
                 self.audio_recorder = AudioRecorder()
                 self.audio_recorder.audio_chunk_ready.connect(self._on_audio_chunk)
             
-            # Jouer l'audio de bienvenue
-            audio_url = msg_data.get("audio_url")
-            if audio_url:
-                self._play_question_audio(audio_url)
+            # ✅ Jouer l'audio directement
+            audio_data = msg_data.get("audio_data")
+            if audio_data:
+                logger.info("🔊 Lecture audio de bienvenue...")
+                self._play_audio_direct(audio_data)
+            else:
+                logger.warning("⚠️ Pas d'audio dans le message de bienvenue")
             
             self.video_player.set_speaking()
             
         elif msg_type == "question":
-            # QUESTION VOCALE UNIQUEMENT
             progress = msg_data.get("progress", {})
-            audio_url = msg_data.get("audio_url")
+            audio_data = msg_data.get("audio_data")
             
-            # Mettre à jour la progression (sans texte)
+            logger.info(f"📝 Question reçue: {progress.get('current')}/{progress.get('total')}")
+            
             self.interview_widget.update_question(progress)
             
-            # Jouer l'audio de la question
-            if audio_url:
-                self._play_question_audio(audio_url)
+            # ✅ Jouer l'audio automatiquement
+            if audio_data:
+                logger.info("🔊 Lecture audio de la question...")
+                self._play_audio_direct(audio_data)
                 self.interview_widget.set_audio_playing()
             else:
+                logger.warning("⚠️ Pas d'audio dans la question")
                 self.statusBar().showMessage("⚠️ Audio de question non disponible")
                 self.interview_widget.enable_recording(True)
             
             self.video_player.set_speaking()
             
         elif msg_type == "answer_saved":
+            logger.info("✅ Réponse sauvegardée")
             self.statusBar().showMessage("✅ Réponse enregistrée")
             self.video_player.set_idle()
             
         elif msg_type == "interview_completed":
-            message = msg_data.get("message", "Entretien terminé")
-            audio_url = msg_data.get("audio_url")
+            logger.info("🎉 Entretien terminé")
+            audio_data = msg_data.get("audio_data")
             
-            if audio_url:
-                self._play_question_audio(audio_url)
+            if audio_data:
+                self._play_audio_direct(audio_data)
             
+            message = "شكراً لك! انتهت المقابلة." if msg_data.get("language") == "ar" else "Thank you! The interview is complete."
             self._show_info_dialog("Entretien Terminé", message)
             self.statusBar().showMessage("🎉 Entretien complété avec succès!")
     
-    def _play_question_audio(self, audio_url: str):
-        """Jouer l'audio d'une question"""
+    def _play_audio_direct(self, audio_data_b64: str):
+        """
+        ✅ NOUVEAU: Jouer l'audio directement depuis base64
+        L'avatar parle naturellement sans URLs
+        """
         try:
-            full_url = f"{settings.BACKEND_URL}{audio_url}"
-            self.audio_player.setSource(QUrl(full_url))
-            self.audio_player.play()
+            logger.info("🎵 Décodage audio base64...")
             
-            self.statusBar().showMessage(f"🔊 Lecture audio en cours...")
-            logger = logging.getLogger(__name__)
-            logger.info(f"🔊 Lecture audio: {full_url}")
+            # Décoder le base64
+            audio_bytes = base64.b64decode(audio_data_b64)
+            logger.info(f"   Taille: {len(audio_bytes)} bytes")
+            
+            # Arrêter la lecture en cours
+            if self.audio_sink:
+                self.audio_sink.stop()
+            
+            # Arrêter le timer précédent
+            if self.audio_check_timer:
+                self.audio_check_timer.stop()
+            
+            # Créer un buffer Qt
+            self.audio_buffer = QByteArray(audio_bytes)
+            self.audio_io_buffer = QBuffer(self.audio_buffer)
+            self.audio_io_buffer.open(QIODevice.OpenModeFlag.ReadOnly)
+            
+            # Jouer via QAudioSink
+            self.audio_sink.start(self.audio_io_buffer)
+            
+            logger.info("✅ Lecture audio démarrée")
+            
+            # Mettre à jour l'UI
+            self.video_player.set_speaking()
+            self.statusBar().showMessage("🔊 L'avatar parle...")
+            
+            # ✅ Timer pour détecter la fin de lecture
+            self.audio_check_timer = QTimer()
+            self.audio_check_timer.timeout.connect(self._check_audio_finished)
+            self.audio_check_timer.start(100)  # Vérifier toutes les 100ms
+            
         except Exception as e:
-            self.statusBar().showMessage(f"⚠️ Erreur lecture audio: {e}")
-    
-    def _on_audio_status_changed(self, status):
-        """Callback: changement de statut du lecteur audio"""
-        from PySide6.QtMultimedia import QMediaPlayer
-        
-        if status == QMediaPlayer.MediaStatus.EndOfMedia:
-            # Audio terminé, activer l'enregistrement
+            logger.error(f"❌ Erreur lecture audio: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            self.statusBar().showMessage(f"⚠️ Erreur: {e}")
             self.interview_widget.enable_recording(True)
-            self.statusBar().showMessage("✅ Question terminée - Vous pouvez répondre")
+    
+    def _check_audio_finished(self):
+        """Vérifier si la lecture audio est terminée"""
+        if self.audio_sink.state() == QAudioSink.State.IdleState:
+            logger.info("✅ Audio terminé")
+            
+            self.video_player.set_idle()
+            self.interview_widget.enable_recording(True)
+            self.statusBar().showMessage("✅ Vous pouvez répondre")
+            
+            if self.audio_check_timer:
+                self.audio_check_timer.stop()
     
     def _on_websocket_error(self, error: str):
         """Erreur WebSocket"""
+        logger.error(f"❌ Erreur WebSocket: {error}")
         self._show_error_dialog("Erreur WebSocket", error)
         self.statusBar().showMessage(f"❌ Erreur: {error}")
     
     def _on_start_recording(self):
         """Démarrer l'enregistrement"""
+        logger.info("🎤 Démarrage enregistrement")
         if self.audio_recorder:
             self.audio_recorder.start_recording()
             self.video_player.set_listening()
@@ -486,6 +573,7 @@ class MainWindow(QMainWindow):
     
     def _on_stop_recording(self):
         """Arrêter l'enregistrement"""
+        logger.info("⏹️ Arrêt enregistrement")
         if self.audio_recorder:
             self.audio_recorder.stop_recording()
             
@@ -523,6 +611,8 @@ class MainWindow(QMainWindow):
     
     def _handle_connection_failure(self, error_message: str):
         """Gérer échec de connexion"""
+        logger.error(f"❌ Échec connexion: {error_message}")
+        
         self.is_connecting = False
         self.connect_btn.setEnabled(True)
         self.connect_btn.setText("DÉMARRER L'ENTRETIEN")
@@ -556,17 +646,18 @@ class MainWindow(QMainWindow):
     
     def closeEvent(self, event):
         """Nettoyage à la fermeture"""
+        logger.info("🔚 Fermeture de l'application")
+        
         if self.websocket_client:
             self.websocket_client.disconnect_from_server()
         
         if self.audio_recorder:
             self.audio_recorder.cleanup()
         
-        if self.audio_player:
-            self.audio_player.stop()
+        if self.audio_sink:
+            self.audio_sink.stop()
+        
+        if self.audio_check_timer:
+            self.audio_check_timer.stop()
         
         super().closeEvent(event)
-
-
-import logging
-logging.basicConfig(level=logging.INFO)
