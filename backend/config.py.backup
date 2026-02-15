@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     WHISPER_LANGUAGE: str = "ar"
 
     # ================= TTS (Text-to-Speech) =================
-    TTS_ENGINE: str = "gtts"  # pyttsx3 | coqui
+    TTS_ENGINE: str = "pyttsx3"  # pyttsx3 | coqui
     TTS_LANGUAGE: str = "ar"
     TTS_CACHE_DIR: Path = BASE_DIR / "uploads" / "tts_cache"
 
