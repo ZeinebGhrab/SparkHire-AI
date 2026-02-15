@@ -50,6 +50,10 @@ class InterviewHandler:
             if not is_valid:
                 return
             
+            # Attendre que le WebSocket soit vraiment prêt
+            import asyncio
+            await asyncio.sleep(0.1)  # 100ms de délai
+            
             # 2. Message de bienvenue
             await self._send_welcome()
             

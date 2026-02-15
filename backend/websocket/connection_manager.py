@@ -35,7 +35,9 @@ class ConnectionManager:
             try:
                 await websocket.send_json(data)
             except Exception as e:
-                logger.error(f"Erreur envoi message: {e}")
+                logger.error(f"Erreur envoi message: {type(e).__name__}: {str(e)}")
+                import traceback
+                logger.error(traceback.format_exc())  
                 self.disconnect(session_id)
     
     async def broadcast(self, message: dict):
