@@ -23,9 +23,9 @@ class EdgeTTSEngine:
             # Voix féminines arabes disponibles
             self.voices = {
                 # "ar": "ar-SA-ZariyahNeural",  # Voix féminine saoudienne (MEILLEURE)
-                # "ar": "ar-EG-SalmaNeural",  # Voix féminine égyptienne
+                "ar": "ar-EG-SalmaNeural",  # Voix féminine égyptienne
                 # "ar": "ar-AE-FatimaNeural",  # Voix féminine émiratie
-                "ar": "ar-TN-ReemNeural",    # Voix féminine tunisienne
+                # "ar": "ar-TN-ReemNeural",    # Voix féminine tunisienne
                 "en": "en-US-AriaNeural",      # Voix féminine anglaise
                 "fr": "fr-FR-DeniseNeural"     # Voix féminine française
             }
@@ -47,7 +47,7 @@ class EdgeTTSEngine:
             # Choisir la voix appropriée
             voice = self.voices.get(language, self.voices["ar"])
             
-            logger.info(f"🎤 Edge-TTS: Synthèse avec voix féminine")
+            logger.info(f"Edge-TTS: Synthèse avec voix féminine")
             logger.info(f"   Texte: '{text[:100]}...'")
             logger.info(f"   Langue: {language}")
             logger.info(f"   Voix: {voice}")

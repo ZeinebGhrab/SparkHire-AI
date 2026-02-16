@@ -1,6 +1,7 @@
 """
-Service TTS (Text-to-Speech) - VERSION AVEC EDGE-TTS
+Service TTS (Text-to-Speech) - VERSION CORRIGÉE
 Support pour Edge-TTS (voix féminines Microsoft)
+Cache basé sur texte + langue + voix
 """
 
 import logging
@@ -65,6 +66,8 @@ class EdgeTTSEngine(TTSEngine):
         try:
             from backend.services.edge_tts_engine import EdgeTTSEngine as EdgeEngine
             self.engine = EdgeEngine()
+            # Stocker les voix pour le cache
+            self.voices = self.engine.voices
             logger.info("Edge-TTS (Microsoft) initialisé - Voix féminine")
         except ImportError:
             raise ImportError("Edge-TTS non installé: pip install edge-tts")
@@ -80,6 +83,8 @@ class GoogleTTS(TTSEngine):
         try:
             from gtts import gTTS
             self.gTTS = gTTS
+            # Pas de voix multiples pour gTTS
+            self.voices = {"ar": "gtts-ar", "en": "gtts-en", "fr": "gtts-fr"}
             logger.info("gTTS (Google Text-to-Speech) initialisé")
         except ImportError:
             raise ImportError("gTTS non installé: pip install gtts")
@@ -147,37 +152,52 @@ class TTSService:
             cache_dir.mkdir(parents=True, exist_ok=True)
 
     def synthesize(self, text: str, language: str = "ar", use_cache: bool = True) -> bytes:
+        """
+        Synthétiser du texte en audio
+        
+        Le cache inclut la voix utilisée
+        """
         if not text or len(text.strip()) == 0:
             logger.error("TTSService: Texte vide reçu!")
             return b""
         
-        logger.info(f"TTSService.synthesize() appelé:")
+        # Obtenir le nom de la voix depuis l'engine
+        voice_name = "unknown"
+        if hasattr(self.engine, 'voices') and isinstance(self.engine.voices, dict):
+            voice_name = self.engine.voices.get(language, "unknown")
+        
+        logger.info(f"🎙️ TTSService.synthesize() appelé:")
         logger.info(f"   Texte: '{text[:100]}...'")
         logger.info(f"   Langue: {language}")
+        logger.info(f"   Voix: {voice_name}")
         
+        # Vérifier le cache avec le nom de la voix
         if use_cache and self.cache_dir:
-            cache_key = self._get_cache_key(text, language)
+            cache_key = self._get_cache_key(text, language, voice_name)
             cache_path = self.cache_dir / f"{cache_key}.wav"
             if cache_path.exists():
-                logger.info(f"Cache hit: {cache_path.name}")
+                logger.info(f"Cache hit: {cache_path.name} (voix: {voice_name})")
                 with open(cache_path, 'rb') as f:
                     return f.read()
 
+        # Générer l'audio
         audio_data = self.engine.synthesize(text, language)
 
+        # Sauvegarder dans le cache avec le nom de la voix
         if use_cache and self.cache_dir and audio_data:
-            cache_key = self._get_cache_key(text, language)
+            cache_key = self._get_cache_key(text, language, voice_name)
             cache_path = self.cache_dir / f"{cache_key}.wav"
             try:
                 with open(cache_path, 'wb') as f:
                     f.write(audio_data)
-                logger.info(f"Cache saved: {cache_path.name}")
+                logger.info(f"Cache saved: {cache_path.name} (voix: {voice_name})")
             except Exception as e:
                 logger.warning(f"Cache save failed: {e}")
 
         return audio_data
 
     def synthesize_to_file(self, text: str, output_path: Path, language: str = "ar", use_cache: bool = True) -> bool:
+        """Synthétiser et sauvegarder directement dans un fichier"""
         logger.info(f"synthesize_to_file() appelé:")
         logger.info(f"   Texte: '{text[:100]}...'")
         logger.info(f"   Output: {output_path}")
@@ -199,33 +219,39 @@ class TTSService:
             return False
 
     @staticmethod
-    def _get_cache_key(text: str, language: str) -> str:
-        content = f"{text}_{language}"
+    def _get_cache_key(text: str, language: str, voice: str = "") -> str:
+        """
+        Générer une clé de cache incluant le texte, la langue ET la voix
+        
+        Cela permet d'avoir des caches différents pour chaque voix,
+        évitant ainsi le problème d'entendre l'ancienne voix quand on change.
+        """
+        content = f"{text}_{language}_{voice}"
         return hashlib.md5(content.encode()).hexdigest()
 
 
 def get_tts_service() -> TTSService:
-    """Factory pour créer le service TTS avec voix féminine"""
+    """Factory pour créer le service TTS avec Edge-TTS en priorité"""
     from backend.config import settings
 
-    # ✅ PRIORITÉ 1: Edge-TTS (Microsoft) - Voix féminine naturelle GRATUITE
+    # Essayer Edge-TTS en priorité (voix féminine naturelle)
     try:
-        logger.info("🎙️ Initialisation Edge-TTS (voix féminine Microsoft)...")
+        logger.info("Initialisation Edge-TTS (voix féminine Microsoft)...")
         engine = EdgeTTSEngine()
-        logger.info("✅ Edge-TTS activé - Voix féminine arabe naturelle")
+        logger.info("Edge-TTS activé - Voix féminine arabe naturelle")
         return TTSService(engine, cache_dir=settings.TTS_CACHE_DIR)
     except Exception as e:
-        logger.error(f"❌ Edge-TTS indisponible: {e}")
+        logger.error(f"Edge-TTS indisponible: {e}")
         import traceback
         logger.error(traceback.format_exc())
 
-    # ⚠️ FALLBACK: gTTS (voix robotique - moins bonne qualité)
+    # Fallback sur gTTS (voix robotique)
     try:
-        logger.warning("🔄 Fallback sur gTTS (voix robotique)...")
+        logger.warning("Fallback sur gTTS (voix robotique)...")
         engine = GoogleTTS()
-        logger.warning("⚠️ gTTS utilisé - Qualité audio limitée (voix robotique)")
+        logger.warning("gTTS utilisé - Qualité audio limitée (voix robotique)")
         return TTSService(engine, cache_dir=settings.TTS_CACHE_DIR)
     except Exception as e:
-        logger.error(f"❌ gTTS indisponible: {e}")
+        logger.error(f"gTTS indisponible: {e}")
 
-    raise ValueError("❌ Aucun moteur TTS disponible!")
+    raise ValueError("Aucun moteur TTS disponible!")
