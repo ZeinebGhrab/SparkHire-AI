@@ -205,20 +205,27 @@ class TTSService:
 
 
 def get_tts_service() -> TTSService:
-    """Factory pour créer le service TTS"""
+    """Factory pour créer le service TTS avec voix féminine"""
     from backend.config import settings
 
-    # Essayer gTTS en priorité (voix féminine)
+    # ✅ PRIORITÉ 1: Edge-TTS (Microsoft) - Voix féminine naturelle GRATUITE
     try:
-        logger.info("Tentative d'utilisation de gTTS (voix féminine)...")
-        engine = GoogleTTS()
-        logger.info("Edge-TTS sélectionné - Voix féminine arabe activée")
+        logger.info("🎙️ Initialisation Edge-TTS (voix féminine Microsoft)...")
+        engine = EdgeTTSEngine()
+        logger.info("✅ Edge-TTS activé - Voix féminine arabe naturelle")
+        return TTSService(engine, cache_dir=settings.TTS_CACHE_DIR)
     except Exception as e:
-        logger.warning(f"Edge-TTS non disponible: {e}")
-        logger.info("Fallback sur gTTS...")
-        try:
-            engine = GoogleTTS()
-        except:
-            raise ValueError(f"Aucun moteur TTS disponible")
+        logger.error(f"❌ Edge-TTS indisponible: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
 
-    return TTSService(engine, cache_dir=settings.TTS_CACHE_DIR)
+    # ⚠️ FALLBACK: gTTS (voix robotique - moins bonne qualité)
+    try:
+        logger.warning("🔄 Fallback sur gTTS (voix robotique)...")
+        engine = GoogleTTS()
+        logger.warning("⚠️ gTTS utilisé - Qualité audio limitée (voix robotique)")
+        return TTSService(engine, cache_dir=settings.TTS_CACHE_DIR)
+    except Exception as e:
+        logger.error(f"❌ gTTS indisponible: {e}")
+
+    raise ValueError("❌ Aucun moteur TTS disponible!")

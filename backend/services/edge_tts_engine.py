@@ -7,7 +7,7 @@ import logging
 import asyncio
 import tempfile
 import os
-from pathlib import Path
+import threading
 
 logger = logging.getLogger(__name__)
 
@@ -22,11 +22,10 @@ class EdgeTTSEngine:
             
             # Voix féminines arabes disponibles
             self.voices = {
-                "ar": "ar-SA-ZariyahNeural",  # Voix féminine saoudienne (recommandée)
-                # Alternatives:
-                # "ar-EG-SalmaNeural"  # Voix féminine égyptienne
-                # "ar-AE-FatimaNeural"  # Voix féminine émiratie
-                # "ar-TN-ReemNeural"    # Voix féminine tunisienne
+                # "ar": "ar-SA-ZariyahNeural",  # Voix féminine saoudienne (MEILLEURE)
+                # "ar": "ar-EG-SalmaNeural",  # Voix féminine égyptienne
+                # "ar": "ar-AE-FatimaNeural",  # Voix féminine émiratie
+                "ar": "ar-TN-ReemNeural",    # Voix féminine tunisienne
                 "en": "en-US-AriaNeural",      # Voix féminine anglaise
                 "fr": "fr-FR-DeniseNeural"     # Voix féminine française
             }
@@ -34,14 +33,15 @@ class EdgeTTSEngine:
             logger.info("Edge-TTS initialisé avec voix féminine")
             logger.info(f"   Voix arabe: {self.voices['ar']}")
             
-        except ImportError:
+        except ImportError as e:
+            logger.error(f"Import Error: {e}")
             raise ImportError("Edge-TTS non installé: pip install edge-tts")
     
     def synthesize(self, text: str, language: str = "ar") -> bytes:
         """Synthétiser texte en audio avec voix féminine"""
         try:
             if not text or len(text.strip()) == 0:
-                logger.error("❌ Texte vide fourni à Edge-TTS")
+                logger.error("Texte vide fourni à Edge-TTS")
                 return b""
             
             # Choisir la voix appropriée
@@ -52,8 +52,41 @@ class EdgeTTSEngine:
             logger.info(f"   Langue: {language}")
             logger.info(f"   Voix: {voice}")
             
-            # Synthétiser (nécessite asyncio)
-            audio_data = asyncio.run(self._synthesize_async(text, voice))
+            # Utiliser un thread séparé avec sa propre boucle asyncio
+            result = {'audio': None, 'error': None}
+            
+            def run_synthesis():
+                """Exécuter la synthèse dans un thread séparé"""
+                try:
+                    # Créer une nouvelle boucle asyncio pour ce thread
+                    new_loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(new_loop)
+                    
+                    try:
+                        # Exécuter la synthèse
+                        audio_data = new_loop.run_until_complete(
+                            self._synthesize_async(text, voice)
+                        )
+                        result['audio'] = audio_data
+                    finally:
+                        new_loop.close()
+                        
+                except Exception as e:
+                    result['error'] = e
+            
+            # Lancer dans un thread et attendre
+            thread = threading.Thread(target=run_synthesis)
+            thread.start()
+            thread.join(timeout=30)  # Timeout de 30 secondes
+            
+            if thread.is_alive():
+                logger.error("Timeout lors de la synthèse")
+                return b""
+            
+            if result['error']:
+                raise result['error']
+            
+            audio_data = result['audio']
             
             if audio_data and len(audio_data) > 0:
                 logger.info(f"Audio généré: {len(audio_data)} bytes")
