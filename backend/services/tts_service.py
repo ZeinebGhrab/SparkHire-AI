@@ -208,10 +208,10 @@ def get_tts_service() -> TTSService:
     """Factory pour créer le service TTS"""
     from backend.config import settings
 
-    # Essayer Edge-TTS en priorité (voix féminine)
+    # Essayer gTTS en priorité (voix féminine)
     try:
-        logger.info("Tentative d'utilisation de Edge-TTS (voix féminine)...")
-        engine = EdgeTTSEngine()
+        logger.info("Tentative d'utilisation de gTTS (voix féminine)...")
+        engine = GoogleTTS()
         logger.info("Edge-TTS sélectionné - Voix féminine arabe activée")
     except Exception as e:
         logger.warning(f"Edge-TTS non disponible: {e}")
