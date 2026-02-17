@@ -1,50 +1,20 @@
 """
-Fenêtre Principale - MODE VOCAL PUR
-Les questions sont posées uniquement en audio, sans affichage de texte
-
-MODIFICATIONS CLÉS:
-- Pas d'affichage du texte des questions
-- Lecture automatique de l'audio des questions
-- Interface simplifiée centrée sur l'écoute
+Fenêtre Principale - FIX AUDIO COMPLET
+Problème résolu: QAudioSink configuré dynamiquement selon le vrai sample rate
+du TTS (Coqui génère du 22050Hz ou 24000Hz, pas du 16000Hz fixe).
 """
 
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QMessageBox, QLabel, QLineEdit, QPushButton, QFrame, 
-    QGraphicsDropShadowEffect
-)
-from PySide6.QtCore import Qt, QSize, QUrl
-from PySide6.QtGui import QFont, QColor
-from PySide6.QtMultimedia import QAudio
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from client.ui.stark_theme import StarkTheme
-from client.ui.icons import StarkIcons
-from client.ui.video_player_widget import VideoPlayerWidget
-from client.ui.interview_widget import InterviewWidget  # Version vocal
-from client.core.websocket_client import WebSocketClient
-from client.core.audio_recorder import AudioRecorder
-from client.config import settings
-import base64
-
-
-"""
-Fenêtre Principale - MODE VOCAL PUR
-Audio streamé directement en base64 (pas d'URLs)
-VERSION COMPLÈTE
-"""
-
-from PySide6.QtWidgets import (
-    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QMessageBox, QLabel, QLineEdit, QPushButton, QFrame, 
+    QMessageBox, QLabel, QLineEdit, QPushButton, QFrame,
     QGraphicsDropShadowEffect
 )
 from PySide6.QtCore import Qt, QSize, QByteArray, QBuffer, QIODevice, QTimer
 from PySide6.QtGui import QFont, QColor
-from PySide6.QtMultimedia import QAudioFormat, QAudioSink
+from PySide6.QtMultimedia import QAudioFormat, QAudioSink, QAudio, QMediaDevices
 import sys
+import base64
+import logging
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -55,77 +25,117 @@ from client.ui.interview_widget import InterviewWidget
 from client.core.websocket_client import WebSocketClient
 from client.core.audio_recorder import AudioRecorder
 from client.config import settings
-import base64
-import logging
 
-# Configuration du logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
 class MainWindow(QMainWindow):
-    """
-    Fenêtre Principale - MODE VOCAL PUR
-    Audio direct via WebSocket (pas d'URLs)
-    """
-    
+
     def __init__(self):
         super().__init__()
-        
+
         self.websocket_client = None
         self.audio_recorder = None
         self.session_id = None
         self.is_connecting = False
-        
-        # ✅ Configuration audio pour lecture directe
-        self.audio_format = QAudioFormat()
-        self.audio_format.setSampleRate(16000)
-        self.audio_format.setChannelCount(1)
-        self.audio_format.setSampleFormat(QAudioFormat.SampleFormat.Int16)
-        
-        self.audio_sink = QAudioSink(self.audio_format)
+
+        # ── Audio (sera reconfiguré dynamiquement selon le sample rate reçu) ──
+        self.audio_sink = None
         self.audio_buffer = None
         self.audio_io_buffer = None
         self.audio_check_timer = None
-        
+
+        # ── État chunks ──
+        self._pending_msg_type: str = ""
+        self._pending_msg_data: dict = {}
+        self._audio_chunks: list = []
+        self._audio_total_chunks: int = 0
+        self._audio_sample_rate: int = 22050   # sera mis à jour depuis les métadonnées
+        self._audio_channels: int = 1
+        self._audio_bits: int = 16
+
+        # Créer le sink audio par défaut
+        self._create_audio_sink(22050, 1, 16)
+
         self._setup_ui()
-    
+
+    # ================================================================
+    # GESTION AUDIO SINK DYNAMIQUE
+    # ================================================================
+
+    def _create_audio_sink(self, sample_rate: int, channels: int, bits: int):
+        """
+        Crée un QAudioSink avec le bon format.
+        Appelé au démarrage et à chaque nouveau format reçu.
+        """
+        if self.audio_sink:
+            self.audio_sink.stop()
+            self.audio_sink = None
+
+        fmt = QAudioFormat()
+        fmt.setSampleRate(sample_rate)
+        fmt.setChannelCount(channels)
+
+        if bits == 16:
+            fmt.setSampleFormat(QAudioFormat.SampleFormat.Int16)
+        elif bits == 32:
+            fmt.setSampleFormat(QAudioFormat.SampleFormat.Float)
+        else:
+            fmt.setSampleFormat(QAudioFormat.SampleFormat.Int16)
+
+        # Vérifier que le device supporte ce format
+        output_device = QMediaDevices.defaultAudioOutput()
+        if output_device and not output_device.isFormatSupported(fmt):
+            logger.warning(
+                f"Format {sample_rate}Hz {bits}bit non supporté nativement, "
+                f"Qt va resampler"
+            )
+
+        self.audio_sink = QAudioSink(fmt)
+        self.audio_sink.setVolume(1.0)
+        logger.info(f"🔊 AudioSink créé: {sample_rate}Hz, {channels}ch, {bits}bit")
+
+    def _ensure_audio_format(self, sample_rate: int, channels: int, bits: int):
+        """Reconfigure le sink si le format a changé."""
+        if (sample_rate != self._audio_sample_rate
+                or channels != self._audio_channels
+                or bits != self._audio_bits):
+            logger.info(
+                f"Format audio changé: {self._audio_sample_rate}Hz → {sample_rate}Hz"
+            )
+            self._audio_sample_rate = sample_rate
+            self._audio_channels = channels
+            self._audio_bits = bits
+            self._create_audio_sink(sample_rate, channels, bits)
+
+    # ================================================================
+    # UI
+    # ================================================================
+
     def _setup_ui(self):
-        """Initialiser l'interface"""
-        self.setWindowTitle("Stark Recruitment AI - Entretien Vocal Intelligent (Mode Vocal Pur)")
+        self.setWindowTitle("Stark Recruitment AI - Entretien Vocal")
         self.showMaximized()
-        
-        self.setStyleSheet(f"""
-            QMainWindow {{
-                background: {StarkTheme.GRADIENT_BACKGROUND};
-            }}
-        """)
-        
+        self.setStyleSheet(f"QMainWindow {{ background: {StarkTheme.GRADIENT_BACKGROUND}; }}")
+
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
-        
         main_layout = QVBoxLayout(central_widget)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
-        
-        # EN-TÊTE
-        header = self._create_header()
-        main_layout.addWidget(header)
-        
-        # ZONE DE CONNEXION
+
+        main_layout.addWidget(self._create_header())
+
         self.connection_widget = self._create_connection_widget()
         main_layout.addWidget(self.connection_widget)
-        
-        # ZONE D'ENTRETIEN
+
         self.interview_container = self._create_interview_container()
         self.interview_container.setVisible(False)
         main_layout.addWidget(self.interview_container)
-        
-        # BARRE DE STATUT
+
         self._setup_statusbar()
-    
+
     def _create_header(self) -> QWidget:
-        """Créer l'en-tête"""
         header = QFrame()
         header.setStyleSheet(f"""
             QFrame {{
@@ -134,99 +144,88 @@ class MainWindow(QMainWindow):
             }}
         """)
         header.setFixedHeight(80)
-        
         shadow = QGraphicsDropShadowEffect()
         shadow.setBlurRadius(15)
         shadow.setColor(QColor(StarkTheme.BLUE_DARK))
         shadow.setOffset(0, 3)
         header.setGraphicsEffect(shadow)
-        
+
         layout = QHBoxLayout(header)
         layout.setContentsMargins(40, 15, 40, 15)
-        
-        # Logo + Titre
+
         title_container = QWidget()
-        title_layout = QHBoxLayout(title_container)
-        title_layout.setContentsMargins(0, 0, 0, 0)
-        title_layout.setSpacing(15)
-        
-        logo_label = QLabel()
-        logo_label.setPixmap(StarkIcons.logo_stark().pixmap(QSize(50, 50)))
-        title_layout.addWidget(logo_label)
-        
-        text_widget = QWidget()
-        text_layout = QVBoxLayout(text_widget)
-        text_layout.setContentsMargins(0, 0, 0, 0)
-        text_layout.setSpacing(2)
-        
+        tl = QHBoxLayout(title_container)
+        tl.setContentsMargins(0, 0, 0, 0)
+        tl.setSpacing(15)
+
+        logo = QLabel()
+        logo.setPixmap(StarkIcons.logo_stark().pixmap(QSize(50, 50)))
+        tl.addWidget(logo)
+
+        tw = QWidget()
+        twl = QVBoxLayout(tw)
+        twl.setContentsMargins(0, 0, 0, 0)
+        twl.setSpacing(2)
+
         main_title = QLabel("STARK RECRUITMENT AI")
         main_title.setFont(QFont(StarkTheme.FONT_FAMILY_PRIMARY, 20, QFont.Weight.ExtraBold))
         main_title.setStyleSheet(f"color: {StarkTheme.WHITE}; letter-spacing: 2px;")
-        text_layout.addWidget(main_title)
-        
+        twl.addWidget(main_title)
+
         subtitle = QLabel("Entretien Vocal Intelligent - Mode Vocal Pur")
         subtitle.setFont(QFont(StarkTheme.FONT_FAMILY_PRIMARY, 10))
         subtitle.setStyleSheet(f"color: {StarkTheme.BLUE_EXTRA_LIGHT};")
-        text_layout.addWidget(subtitle)
-        
-        title_layout.addWidget(text_widget)
+        twl.addWidget(subtitle)
+
+        tl.addWidget(tw)
         layout.addWidget(title_container)
         layout.addStretch()
-        
-        # Indicateur de statut
         self.status_container = self._create_status_indicator()
         layout.addWidget(self.status_container)
-        
         return header
-    
+
     def _create_status_indicator(self) -> QWidget:
-        """Créer l'indicateur de statut"""
         container = QFrame()
         container.setStyleSheet(f"""
             QFrame {{
-                background: rgba(255, 255, 255, 0.1);
-                border: 1px solid rgba(255, 255, 255, 0.2);
+                background: rgba(255,255,255,0.1);
+                border: 1px solid rgba(255,255,255,0.2);
                 border-radius: {StarkTheme.RADIUS_MEDIUM};
                 padding: 8px 15px;
             }}
         """)
-        
         layout = QHBoxLayout(container)
         layout.setContentsMargins(10, 5, 10, 5)
         layout.setSpacing(10)
-        
+
         self.status_icon_label = QLabel()
         self.status_icon_label.setPixmap(StarkIcons.activity().pixmap(QSize(24, 24)))
         layout.addWidget(self.status_icon_label)
-        
-        status_text_container = QWidget()
-        status_text_layout = QVBoxLayout(status_text_container)
-        status_text_layout.setContentsMargins(0, 0, 0, 0)
-        status_text_layout.setSpacing(0)
-        
+
+        stc = QWidget()
+        stl = QVBoxLayout(stc)
+        stl.setContentsMargins(0, 0, 0, 0)
+        stl.setSpacing(0)
+
         self.status_label = QLabel("DÉCONNECTÉ")
         self.status_label.setFont(QFont(StarkTheme.FONT_FAMILY_PRIMARY, 11, QFont.Weight.Bold))
         self.status_label.setStyleSheet(f"color: {StarkTheme.WHITE}; letter-spacing: 1px;")
-        status_text_layout.addWidget(self.status_label)
-        
+        stl.addWidget(self.status_label)
+
         self.status_detail = QLabel("En attente de connexion")
         self.status_detail.setFont(QFont(StarkTheme.FONT_FAMILY_PRIMARY, 8))
         self.status_detail.setStyleSheet(f"color: {StarkTheme.BLUE_EXTRA_LIGHT};")
-        status_text_layout.addWidget(self.status_detail)
-        
-        layout.addWidget(status_text_container)
-        
+        stl.addWidget(self.status_detail)
+
+        layout.addWidget(stc)
         return container
-    
+
     def _create_connection_widget(self) -> QWidget:
-        """Créer le widget de connexion"""
         widget = QFrame()
         widget.setStyleSheet("QFrame { background: transparent; }")
-        
         layout = QVBoxLayout(widget)
         layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.setSpacing(30)
-        
+
         card = QFrame()
         card.setStyleSheet(f"""
             QFrame {{
@@ -235,48 +234,41 @@ class MainWindow(QMainWindow):
                 border-radius: {StarkTheme.RADIUS_XLARGE};
             }}
         """)
-        card.setFixedSize(550, 450)
-        
+        card.setFixedSize(550, 420)
         shadow = QGraphicsDropShadowEffect()
         shadow.setBlurRadius(30)
         shadow.setColor(QColor(StarkTheme.BLUE_PRIMARY))
         shadow.setOffset(0, 8)
         card.setGraphicsEffect(shadow)
-        
+
         card_layout = QVBoxLayout(card)
-        card_layout.setContentsMargins(50, 50, 50, 50)
-        card_layout.setSpacing(25)
-        
+        card_layout.setContentsMargins(50, 40, 50, 40)
+        card_layout.setSpacing(20)
+
         icon_container = QFrame()
-        icon_container.setStyleSheet(f"""
-            QFrame {{
-                background: {StarkTheme.BLUE_EXTRA_LIGHT};
-                border-radius: 40px;
-            }}
-        """)
+        icon_container.setStyleSheet(
+            f"QFrame {{ background: {StarkTheme.BLUE_EXTRA_LIGHT}; border-radius: 40px; }}"
+        )
         icon_container.setFixedSize(80, 80)
-        
-        icon_layout = QVBoxLayout(icon_container)
-        icon_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        
+        il = QVBoxLayout(icon_container)
+        il.setAlignment(Qt.AlignmentFlag.AlignCenter)
         shield_icon = QLabel()
         shield_icon.setPixmap(StarkIcons.headphones(StarkTheme.ORANGE_ACCENT).pixmap(QSize(50, 50)))
-        icon_layout.addWidget(shield_icon)
-        
+        il.addWidget(shield_icon)
         card_layout.addWidget(icon_container, alignment=Qt.AlignmentFlag.AlignCenter)
-        
+
         title = QLabel("MODE VOCAL PUR")
         title.setFont(QFont(StarkTheme.FONT_FAMILY_PRIMARY, 20, QFont.Weight.ExtraBold))
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title.setStyleSheet(f"color: {StarkTheme.ORANGE_ACCENT}; letter-spacing: 2px;")
         card_layout.addWidget(title)
-        
-        subtitle = QLabel("L'avatar parle naturellement - Audio direct")
+
+        subtitle = QLabel("Entrez votre identifiant de session")
         subtitle.setFont(QFont(StarkTheme.FONT_FAMILY_PRIMARY, 11))
         subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
         subtitle.setStyleSheet(f"color: {StarkTheme.GRAY_MEDIUM};")
         card_layout.addWidget(subtitle)
-        
+
         self.session_input = QLineEdit()
         self.session_input.setPlaceholderText("session_xxxxxxxxxxxxx")
         self.session_input.setFont(QFont(StarkTheme.FONT_FAMILY_MONO, 12, QFont.Weight.Bold))
@@ -296,368 +288,338 @@ class MainWindow(QMainWindow):
             }}
         """)
         card_layout.addWidget(self.session_input)
-        
+
         self.connect_btn = QPushButton("DÉMARRER L'ENTRETIEN")
         self.connect_btn.setFont(QFont(StarkTheme.FONT_FAMILY_PRIMARY, 13, QFont.Weight.Bold))
         self.connect_btn.setMinimumHeight(55)
         self.connect_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.connect_btn.setStyleSheet(StarkTheme.get_button_style("accent"))
         self.connect_btn.clicked.connect(self._connect_to_interview)
-        
-        btn_shadow = QGraphicsDropShadowEffect()
-        btn_shadow.setBlurRadius(15)
-        btn_shadow.setColor(QColor(StarkTheme.ORANGE_ACCENT))
-        btn_shadow.setOffset(0, 4)
-        self.connect_btn.setGraphicsEffect(btn_shadow)
-        
         card_layout.addWidget(self.connect_btn)
-        
+
         layout.addWidget(card)
-        
         return widget
-    
+
     def _create_interview_container(self) -> QWidget:
-        """Créer le conteneur d'entretien"""
         container = QWidget()
         container.setStyleSheet("QWidget { background: transparent; }")
-        
         layout = QHBoxLayout(container)
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(20)
-        
-        # AVATAR
+
         self.video_player = VideoPlayerWidget()
         layout.addWidget(self.video_player, stretch=2)
-        
-        # CONTRÔLES (version vocal)
+
         self.interview_widget = InterviewWidget()
         self.interview_widget.setMaximumWidth(450)
-        
         self.interview_widget.start_recording.connect(self._on_start_recording)
         self.interview_widget.stop_recording.connect(self._on_stop_recording)
         self.interview_widget.end_interview.connect(self._on_end_interview)
-        
         layout.addWidget(self.interview_widget, stretch=1)
-        
+
         return container
-    
+
     def _setup_statusbar(self):
-        """Configurer la barre de statut"""
-        status_bar = self.statusBar()
-        status_bar.setStyleSheet(f"""
+        self.statusBar().setStyleSheet(f"""
             QStatusBar {{
                 background: {StarkTheme.WHITE};
                 color: {StarkTheme.GRAY_DARK};
-                font-size: 11px;
-                font-weight: bold;
+                font-size: 11px; font-weight: bold;
                 padding: 8px;
                 border-top: 1px solid {StarkTheme.GRAY_LIGHT};
             }}
         """)
-        status_bar.showMessage("🎧 Mode Vocal Pur Activé - L'avatar parle naturellement")
-    
+        self.statusBar().showMessage("🎧 Mode Vocal Pur Activé")
+
+    # ================================================================
+    # CONNEXION
+    # ================================================================
+
     def _connect_to_interview(self):
-        """Connecter à l'entretien"""
         if self.is_connecting:
             return
-    
         session_id = self.session_input.text().strip()
-    
         if not session_id or not session_id.startswith("session_"):
-            self._show_error_dialog(
-                "❌ Erreur", 
-                "Veuillez entrer un identifiant de session valide.\n\nFormat: session_xxxxxxxxxxxxx"
-            )
+            self._show_error_dialog("❌ Erreur", "Format attendu: session_xxxxxxxxxxxxx")
             return
-    
+
         self.session_id = session_id
         self.is_connecting = True
-    
         self.connect_btn.setEnabled(False)
         self.connect_btn.setText("CONNEXION EN COURS...")
         self.session_input.setEnabled(False)
-    
+
         ws_url = f"{settings.WEBSOCKET_URL}/ws/interview/{session_id}"
-        logger.info(f"🔌 Connexion WebSocket: {ws_url}")
-        
         self.websocket_client = WebSocketClient(ws_url)
-    
         self.websocket_client.disconnected.connect(self._on_websocket_disconnected)
         self.websocket_client.connected.connect(self._on_websocket_connected)
         self.websocket_client.message_received.connect(self._on_websocket_message)
         self.websocket_client.error_occurred.connect(self._on_websocket_error)
-    
-        try:
-            self.websocket_client.connect_to_server()
-            self.statusBar().showMessage("🔍 Validation de session en cours...")
-        except Exception as e:
-            self._handle_connection_failure(f"Impossible de se connecter: {e}")
-    
+        self.websocket_client.connect_to_server()
+        self.statusBar().showMessage("🔍 Connexion...")
+
     def _on_websocket_connected(self):
-        """WebSocket connecté"""
         logger.info("✅ WebSocket connecté")
         self.status_label.setText("VALIDATION")
-        self.status_label.setStyleSheet(f"color: {StarkTheme.WARNING}; letter-spacing: 1px; font-weight: bold;")
-        self.status_detail.setText("Vérification de session...")
-        self.statusBar().showMessage("🔍 Validation de session en cours...")
-    
+        self.status_label.setStyleSheet(
+            f"color: {StarkTheme.WARNING}; letter-spacing: 1px; font-weight: bold;"
+        )
+
     def _on_websocket_disconnected(self, code: int, reason: str):
-        """WebSocket déconnecté"""
-        logger.info(f"🔌 WebSocket déconnecté: code={code}, reason={reason}")
-        
         if self.is_connecting:
-            if code == 4003:
-                error_msg = reason if reason else "Session invalide ou expirée"
-                self._handle_connection_failure(error_msg)
-            else:
-                self._handle_connection_failure(f"Erreur de connexion (code {code}): {reason}")
+            self._handle_connection_failure(reason or f"Code {code}")
             return
-    
         self.status_label.setText("DÉCONNECTÉ")
         self.status_label.setStyleSheet(f"color: {StarkTheme.ERROR}; letter-spacing: 1px;")
-        self.status_detail.setText("Connexion perdue")
-        self.statusBar().showMessage("❌ Déconnecté du serveur")
-    
+
+    def _on_websocket_error(self, error: str):
+        self.statusBar().showMessage(f"❌ {error}")
+
+    # ================================================================
+    # RÉCEPTION MESSAGES + CHUNKS
+    # ================================================================
+
     def _on_websocket_message(self, data: dict):
-        """Message WebSocket reçu"""
         msg_type = data.get("type")
         msg_data = data.get("data", {})
-        
-        logger.info(f"📨 Message reçu: type={msg_type}")
-        
+
+        logger.info(f"📨 {msg_type}")
+
         if msg_type == "error":
-            error_msg = msg_data.get("message", "Erreur inconnue")
-            error_type = msg_data.get("error_type", "GENERAL_ERROR")
-        
-            if error_type == "SESSION_INVALID":
-                self._handle_connection_failure(error_msg)
-                return
-        
-            self._show_error_dialog("Erreur", error_msg)
-            self.statusBar().showMessage(f"❌ {error_msg}")
+            err = msg_data.get("message", "Erreur")
+            if msg_data.get("error_type") == "SESSION_INVALID":
+                self._handle_connection_failure(err)
+            else:
+                self._show_error_dialog("Erreur", err)
             return
-        
-        if msg_type == "welcome":
-            self.is_connecting = False
-            
-            self.status_label.setText("CONNECTÉ")
-            self.status_label.setStyleSheet(f"color: {StarkTheme.SUCCESS}; letter-spacing: 1px; font-weight: bold;")
-            self.status_detail.setText("Mode vocal actif")
-            
-            self.statusBar().showMessage(f"🎧 Mode vocal activé - L'avatar va parler")
-            
-            self.connection_widget.setVisible(False)
-            self.interview_container.setVisible(True)
-            
-            if not self.audio_recorder:
-                self.audio_recorder = AudioRecorder()
-                self.audio_recorder.audio_chunk_ready.connect(self._on_audio_chunk)
-            
-            # ✅ Jouer l'audio directement
-            audio_data = msg_data.get("audio_data")
-            if audio_data:
-                logger.info("🔊 Lecture audio de bienvenue...")
-                self._play_audio_direct(audio_data)
-            else:
-                logger.warning("⚠️ Pas d'audio dans le message de bienvenue")
-            
+
+        if msg_type == "question_loading":
+            self.interview_widget.update_question(msg_data.get("progress", {}))
+            self.statusBar().showMessage("⏳ Génération audio...")
             self.video_player.set_speaking()
-            
-        elif msg_type == "question":
-            progress = msg_data.get("progress", {})
-            audio_data = msg_data.get("audio_data")
-            
-            logger.info(f"📝 Question reçue: {progress.get('current')}/{progress.get('total')}")
-            
-            self.interview_widget.update_question(progress)
-            
-            # ✅ Jouer l'audio automatiquement
-            if audio_data:
-                logger.info("🔊 Lecture audio de la question...")
-                self._play_audio_direct(audio_data)
-                self.interview_widget.set_audio_playing()
+            return
+
+        if msg_type in ("welcome", "question", "interview_completed"):
+            if msg_data.get("audio_mode") == "chunked":
+                # ── Stocker les métadonnées de FORMAT ──
+                self._pending_msg_type = msg_type
+                self._pending_msg_data = msg_data
+                self._audio_chunks = []
+                self._audio_total_chunks = msg_data.get("total_chunks", 0)
+
+                # Récupérer le vrai sample rate envoyé par le serveur
+                sr   = msg_data.get("sample_rate", 22050)
+                ch   = msg_data.get("channels", 1)
+                bits = msg_data.get("bits_per_sample", 16)
+
+                # Reconfigurer le sink si nécessaire
+                self._ensure_audio_format(sr, ch, bits)
+
+                logger.info(
+                    f"Chunked: {self._audio_total_chunks} chunks "
+                    f"@ {sr}Hz {ch}ch {bits}bit pour '{msg_type}'"
+                )
+                return
+
+            # Fallback inline
+            audio_b64 = msg_data.get("audio_data")
+            if audio_b64:
+                self._play_bytes_direct(base64.b64decode(audio_b64))
+            self._finalize_message(msg_type, msg_data)
+            return
+
+        if msg_type == "audio_chunk_data":
+            self._audio_chunks.append(msg_data.get("data", ""))
+            idx   = msg_data.get("chunk_index", 0)
+            total = msg_data.get("total", 1)
+            self.statusBar().showMessage(f"📦 Audio {idx + 1}/{total}...")
+            return
+
+        if msg_type == "audio_chunk_end":
+            if self._audio_chunks:
+                try:
+                    # Assembler tous les chunks
+                    pcm_bytes = b"".join(
+                        base64.b64decode(c) for c in self._audio_chunks
+                    )
+                    logger.info(
+                        f"✅ PCM assemblé: {len(self._audio_chunks)} chunks "
+                        f"→ {len(pcm_bytes):,} bytes "
+                        f"@ {self._audio_sample_rate}Hz"
+                    )
+                    # Jouer directement (PCM pur, format déjà configuré)
+                    self._play_pcm(pcm_bytes)
+                except Exception as e:
+                    logger.error(f"❌ Assemblage: {e}")
+                    self.interview_widget.enable_recording(True)
             else:
-                logger.warning("⚠️ Pas d'audio dans la question")
-                self.statusBar().showMessage("⚠️ Audio de question non disponible")
                 self.interview_widget.enable_recording(True)
-            
-            self.video_player.set_speaking()
-            
-        elif msg_type == "answer_saved":
+
+            self._finalize_message(self._pending_msg_type, self._pending_msg_data)
+            self._audio_chunks = []
+            self._pending_msg_type = ""
+            self._pending_msg_data = {}
+            return
+
+        if msg_type == "answer_saved":
             logger.info("✅ Réponse sauvegardée")
             self.statusBar().showMessage("✅ Réponse enregistrée")
             self.video_player.set_idle()
-            
+
+    def _finalize_message(self, msg_type: str, msg_data: dict):
+        if msg_type == "welcome":
+            self.is_connecting = False
+            self.status_label.setText("CONNECTÉ")
+            self.status_label.setStyleSheet(
+                f"color: {StarkTheme.SUCCESS}; letter-spacing: 1px; font-weight: bold;"
+            )
+            self.status_detail.setText("Mode vocal actif")
+            self.connection_widget.setVisible(False)
+            self.interview_container.setVisible(True)
+            if not self.audio_recorder:
+                self.audio_recorder = AudioRecorder()
+                self.audio_recorder.audio_chunk_ready.connect(self._on_audio_chunk)
+            self.video_player.set_speaking()
+            self.statusBar().showMessage("🎧 Bienvenue — écoutez le message d'accueil")
+
+        elif msg_type == "question":
+            self.interview_widget.update_question(msg_data.get("progress", {}))
+            self.interview_widget.set_audio_playing()
+            self.video_player.set_speaking()
+            self.statusBar().showMessage("🔊 Question en lecture...")
+
         elif msg_type == "interview_completed":
-            logger.info("🎉 Entretien terminé")
-            audio_data = msg_data.get("audio_data")
-            
-            if audio_data:
-                self._play_audio_direct(audio_data)
-            
-            message = "شكراً لك! انتهت المقابلة." if msg_data.get("language") == "ar" else "Thank you! The interview is complete."
-            self._show_info_dialog("Entretien Terminé", message)
-            self.statusBar().showMessage("🎉 Entretien complété avec succès!")
-    
-    def _play_audio_direct(self, audio_data_b64: str):
+            self._show_info_dialog("Entretien Terminé", "شكراً لك! انتهت المقابلة.")
+            self.statusBar().showMessage("🎉 Terminé!")
+
+    # ================================================================
+    # LECTURE PCM BRUT
+    # ================================================================
+
+    def _play_pcm(self, pcm_bytes: bytes):
         """
-        ✅ NOUVEAU: Jouer l'audio directement depuis base64
-        L'avatar parle naturellement sans URLs
+        Joue du PCM brut (s16le) via QAudioSink.
+        Le format (sample_rate, channels, bits) a été configuré à la réception
+        des métadonnées dans audio_mode=chunked.
         """
         try:
-            logger.info("🎵 Décodage audio base64...")
-            
-            # Décoder le base64
-            audio_bytes = base64.b64decode(audio_data_b64)
-            logger.info(f"   Taille: {len(audio_bytes)} bytes")
-            
-            # Arrêter la lecture en cours
             if self.audio_sink:
                 self.audio_sink.stop()
-            
-            # Arrêter le timer précédent
             if self.audio_check_timer:
                 self.audio_check_timer.stop()
-            
-            # Créer un buffer Qt
-            self.audio_buffer = QByteArray(audio_bytes)
+
+            self.audio_buffer    = QByteArray(pcm_bytes)
             self.audio_io_buffer = QBuffer(self.audio_buffer)
             self.audio_io_buffer.open(QIODevice.OpenModeFlag.ReadOnly)
-            
-            # Jouer via QAudioSink
             self.audio_sink.start(self.audio_io_buffer)
-            
-            logger.info("✅ Lecture audio démarrée")
-            
-            # Mettre à jour l'UI
-            self.video_player.set_speaking()
-            self.statusBar().showMessage("🔊 L'avatar parle...")
-            
-            # ✅ Timer pour détecter la fin de lecture
+
+            logger.info(f"▶️ Lecture: {len(pcm_bytes):,} bytes PCM @ {self._audio_sample_rate}Hz")
+
             self.audio_check_timer = QTimer()
             self.audio_check_timer.timeout.connect(self._check_audio_finished)
-            self.audio_check_timer.start(100)  # Vérifier toutes les 100ms
-            
+            self.audio_check_timer.start(100)
+
         except Exception as e:
-            logger.error(f"❌ Erreur lecture audio: {e}")
-            import traceback
-            logger.error(traceback.format_exc())
-            self.statusBar().showMessage(f"⚠️ Erreur: {e}")
+            logger.error(f"❌ Lecture: {e}")
             self.interview_widget.enable_recording(True)
-    
+
+    def _play_bytes_direct(self, audio_bytes: bytes):
+        """Fallback: joue des bytes WAV inline (extraire PCM d'abord)."""
+        if audio_bytes[:4] == b'RIFF':
+            import struct
+            idx = audio_bytes.find(b'data', 12)
+            if idx != -1:
+                # Lire sample rate depuis le WAV header
+                fmt_idx = audio_bytes.find(b'fmt ', 12)
+                if fmt_idx != -1:
+                    sr = struct.unpack_from('<I', audio_bytes, fmt_idx + 12)[0]
+                    ch = struct.unpack_from('<H', audio_bytes, fmt_idx + 10)[0]
+                    bps = struct.unpack_from('<H', audio_bytes, fmt_idx + 22)[0]
+                    self._ensure_audio_format(sr, ch, bps)
+                self._play_pcm(audio_bytes[idx + 8:])
+                return
+        self._play_pcm(audio_bytes)
+
     def _check_audio_finished(self):
-        """Vérifier si la lecture audio est terminée"""
-        if self.audio_sink.state() == QAudio.State.IdleState:
-            logger.info("✅ Audio terminé")
-            
+        if self.audio_sink and self.audio_sink.state() == QAudio.State.IdleState:
+            logger.info("✅ Lecture terminée")
             self.video_player.set_idle()
             self.interview_widget.enable_recording(True)
             self.statusBar().showMessage("✅ Vous pouvez répondre")
-            
             if self.audio_check_timer:
                 self.audio_check_timer.stop()
-    
-    def _on_websocket_error(self, error: str):
-        """Erreur WebSocket"""
-        logger.error(f"❌ Erreur WebSocket: {error}")
-        self._show_error_dialog("Erreur WebSocket", error)
-        self.statusBar().showMessage(f"❌ Erreur: {error}")
-    
+
+    # ================================================================
+    # ENREGISTREMENT
+    # ================================================================
+
     def _on_start_recording(self):
-        """Démarrer l'enregistrement"""
-        logger.info("🎤 Démarrage enregistrement")
         if self.audio_recorder:
             self.audio_recorder.start_recording()
             self.video_player.set_listening()
-            self.statusBar().showMessage("🎤 Enregistrement en cours...")
-    
+            self.statusBar().showMessage("🎤 Enregistrement...")
+
     def _on_stop_recording(self):
-        """Arrêter l'enregistrement"""
-        logger.info("⏹️ Arrêt enregistrement")
         if self.audio_recorder:
             self.audio_recorder.stop_recording()
-            
             if self.websocket_client:
-                self.websocket_client.send_message({
-                    "type": "answer_complete"
-                })
-            
+                self.websocket_client.send_message({"type": "answer_complete"})
             self.video_player.set_idle()
-            self.statusBar().showMessage("⏹️ Enregistrement arrêté, traitement...")
             self.interview_widget.enable_recording(False)
-    
+
     def _on_audio_chunk(self, audio_data: bytes):
-        """Chunk audio reçu"""
         if self.websocket_client:
-            audio_b64 = base64.b64encode(audio_data).decode('utf-8')
             self.websocket_client.send_message({
-                "type": "audio_chunk",
-                "audio_data": audio_b64
+                "type":       "audio_chunk",
+                "audio_data": base64.b64encode(audio_data).decode("utf-8"),
             })
-    
+
     def _on_end_interview(self):
-        """Terminer l'entretien"""
         reply = QMessageBox.question(
-            self,
-            "Terminer l'Entretien",
-            "Êtes-vous sûr de vouloir terminer l'entretien maintenant?",
+            self, "Terminer", "Confirmer la fin de l'entretien?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
         )
-        
-        if reply == QMessageBox.StandardButton.Yes:
-            if self.websocket_client:
-                self.websocket_client.send_message({"type": "end_interview"})
-            self.statusBar().showMessage("🔚 Entretien terminé")
-    
-    def _handle_connection_failure(self, error_message: str):
-        """Gérer échec de connexion"""
-        logger.error(f"❌ Échec connexion: {error_message}")
-        
+        if reply == QMessageBox.StandardButton.Yes and self.websocket_client:
+            self.websocket_client.send_message({"type": "end_interview"})
+
+    # ================================================================
+    # UTILITAIRES
+    # ================================================================
+
+    def _handle_connection_failure(self, msg: str):
         self.is_connecting = False
         self.connect_btn.setEnabled(True)
         self.connect_btn.setText("DÉMARRER L'ENTRETIEN")
         self.session_input.setEnabled(True)
-    
         if self.websocket_client:
             try:
                 self.websocket_client.disconnect_from_server()
-            except:
+            except Exception:
                 pass
             self.websocket_client = None
-    
-        self._show_error_dialog("Connexion Impossible", error_message)
-        self.statusBar().showMessage("❌ Connexion échouée")
-    
-    def _show_error_dialog(self, title: str, message: str):
-        """Dialogue d'erreur"""
-        msg_box = QMessageBox(self)
-        msg_box.setIcon(QMessageBox.Icon.Critical)
-        msg_box.setWindowTitle(title)
-        msg_box.setText(message)
-        msg_box.exec()
-    
-    def _show_info_dialog(self, title: str, message: str):
-        """Dialogue d'information"""
-        msg_box = QMessageBox(self)
-        msg_box.setIcon(QMessageBox.Icon.Information)
-        msg_box.setWindowTitle(title)
-        msg_box.setText(message)
-        msg_box.exec()
-    
+        self._show_error_dialog("Connexion impossible", msg)
+
+    def _show_error_dialog(self, title: str, msg: str):
+        b = QMessageBox(self)
+        b.setIcon(QMessageBox.Icon.Critical)
+        b.setWindowTitle(title)
+        b.setText(msg)
+        b.exec()
+
+    def _show_info_dialog(self, title: str, msg: str):
+        b = QMessageBox(self)
+        b.setIcon(QMessageBox.Icon.Information)
+        b.setWindowTitle(title)
+        b.setText(msg)
+        b.exec()
+
     def closeEvent(self, event):
-        """Nettoyage à la fermeture"""
-        logger.info("🔚 Fermeture de l'application")
-        
         if self.websocket_client:
             self.websocket_client.disconnect_from_server()
-        
         if self.audio_recorder:
             self.audio_recorder.cleanup()
-        
         if self.audio_sink:
             self.audio_sink.stop()
-        
         if self.audio_check_timer:
             self.audio_check_timer.stop()
-        
         super().closeEvent(event)
