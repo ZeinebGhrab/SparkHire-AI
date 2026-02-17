@@ -17,72 +17,67 @@ from backend.export.routes import router as export_router
 from backend.websocket.interview_handler import handle_interview_websocket
 from backend.config import settings
 
-# Configuration logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
-
 logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("=" * 60)
-    logger.info("DÉMARRAGE - Pré-chargement des services ASR/TTS...")
-    logger.info("(Cette étape peut prendre 30-60 secondes)")
+    logger.info("DÉMARRAGE RAPIDE - Chargement des services...")
     logger.info("=" * 60)
 
     from backend.websocket import interview_handler as ih
 
-    # Charger ASR
+    # ── ASR (Vosk est rapide à charger) ──
     try:
         from backend.services import get_asr_service
         ih._asr_service = get_asr_service()
-        logger.info(" Service ASR (Vosk) chargé et prêt")
+        logger.info("✅ ASR chargé")
     except Exception as e:
-        logger.error(f" Échec chargement ASR: {e}")
+        logger.error(f"❌ ASR: {e}")
         ih._asr_service = None
 
-    # Charger TTS
+    # ── TTS : INSTANTANÉ (Edge-TTS démarre, Coqui charge en arrière-plan) ──
     try:
         from backend.services import get_tts_service
         ih._tts_service = get_tts_service()
-        logger.info(" Service TTS (Coqui/Edge) chargé et prêt")
+        logger.info("✅ TTS actif (Coqui se charge en arrière-plan...)")
     except Exception as e:
-        logger.error(f" Échec chargement TTS: {e}")
+        logger.error(f"❌ TTS: {e}")
         ih._tts_service = None
 
-    # Charger Avatar
+    # ── Avatar ──
     try:
         from backend.services import get_avatar_service
         ih._avatar_service = get_avatar_service()
-        logger.info(" Service Avatar chargé et prêt")
+        logger.info("✅ Avatar chargé")
     except Exception as e:
-        logger.error(f" Échec chargement Avatar: {e}")
+        logger.error(f"❌ Avatar: {e}")
         ih._avatar_service = None
 
     logger.info("=" * 60)
-    logger.info(" Serveur prêt à recevoir des connexions WebSocket")
+    logger.info("✅ Serveur prêt IMMÉDIATEMENT - Coqui TTS charge en fond")
+    logger.info("   (qualité Coqui disponible après ~60s)")
     logger.info("=" * 60)
 
-    yield  #  Application démarre ici
+    yield
 
-    # (optionnel) code d'arrêt ici si nécessaire
-    logger.info(" Arrêt du serveur...")
+    logger.info("Arrêt du serveur...")
 
-# Application
+
 app = FastAPI(
     title=settings.API_TITLE,
     description="API complète pour le système de recrutement intelligent avec IA vocale",
     version=settings.API_VERSION,
     docs_url="/docs",
     redoc_url="/redoc",
-    lifespan=lifespan  
+    lifespan=lifespan
 )
 
-
-# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -91,14 +86,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Monter dossiers statiques
 Path(settings.UPLOAD_DIR).mkdir(exist_ok=True)
 Path(settings.TTS_CACHE_DIR).mkdir(parents=True, exist_ok=True)
 
 app.mount("/uploads", StaticFiles(directory=settings.UPLOAD_DIR), name="uploads")
 app.mount("/audio", StaticFiles(directory=settings.TTS_CACHE_DIR), name="audio")
 
-# Routes REST
 app.include_router(auth_router)
 app.include_router(jobs_router)
 app.include_router(candidates_router)
@@ -110,44 +103,36 @@ app.include_router(notifications_router)
 app.include_router(export_router)
 
 
-# WebSocket
 @app.websocket("/ws/interview/{session_id}")
 async def websocket_interview(websocket: WebSocket, session_id: str):
-    """WebSocket pour entretien vocal"""
     await handle_interview_websocket(websocket, session_id)
 
 
-# Endpoints
 @app.get("/")
 async def root():
     return {
         "message": "Stark Recruitment AI API",
         "version": settings.API_VERSION,
         "documentation": "/docs",
-        "features": [
-            "Authentication & Authorization",
-            "Candidate Management",
-            "Job Positions",
-            "CV/Job Matching",
-            "Voice Interviews",
-            "Media Management",
-            "Analytics & Statistics",
-            "Notifications",
-            "Data Export"
-        ]
     }
 
 
 @app.get("/health")
 async def health():
     from backend.websocket import interview_handler as ih
+    tts_status = "unavailable"
+    if ih._tts_service:
+        if hasattr(ih._tts_service, 'is_coqui_ready') and ih._tts_service.is_coqui_ready():
+            tts_status = "coqui_ready"
+        else:
+            tts_status = "edge_tts_active_coqui_loading"
     return {
         "status": "ok",
         "api_version": settings.API_VERSION,
         "services": {
             "database": "connected",
             "asr": "ready" if ih._asr_service else "unavailable",
-            "tts": "ready" if ih._tts_service else "unavailable",
+            "tts": tts_status,
             "avatar": "ready" if ih._avatar_service else "unavailable",
         }
     }
@@ -155,7 +140,6 @@ async def health():
 
 @app.get("/api/info")
 async def api_info():
-    """Informations détaillées sur l'API"""
     return {
         "api_name": settings.API_TITLE,
         "version": settings.API_VERSION,
@@ -171,10 +155,6 @@ async def api_info():
             "export": "/export",
             "websocket": "/ws/interview/{session_id}"
         },
-        "documentation": {
-            "swagger": "/docs",
-            "redoc": "/redoc"
-        }
     }
 
 
