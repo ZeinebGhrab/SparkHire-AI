@@ -1,15 +1,14 @@
 """
 Moteur TTS avec Coqui-TTS (Open Source)
 Alternative gratuite et open-source à Edge-TTS
-✅ Support multilingue avec arabe
-✅ Qualité vocale élevée
-✅ Fonctionne offline
+- Support multilingue avec arabe
+- Qualité vocale élevée
+- Fonctionne offline
 """
 
 import logging
 import os
 import tempfile
-import threading
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -28,21 +27,21 @@ class CoquiTTSEngine:
             
             # Vérifier si le modèle existe localement
             if os.path.exists(model_path) and os.path.exists(os.path.join(model_path, "model.pth")):
-                logger.info(f"⏳ Chargement du modèle Coqui-TTS depuis: {model_path}")
-                logger.info("   ✅ Modèle local détecté (pas de téléchargement)")
+                logger.info(f" Chargement du modèle Coqui-TTS depuis: {model_path}")
+                logger.info("    Modèle local détecté (pas de téléchargement)")
                 
                 # Charger depuis le dossier local
                 self.tts = TTS(model_path=model_path, config_path=os.path.join(model_path, "config.json"))
             else:
-                logger.info("⏳ Chargement du modèle Coqui-TTS XTTS-v2...")
-                logger.warning(f"   ⚠️ Modèle local non trouvé dans {model_path}")
-                logger.info("   ⚠️ Téléchargement automatique ~2GB depuis HuggingFace")
+                logger.info(" Chargement du modèle Coqui-TTS XTTS-v2...")
+                logger.warning(f"   Modèle local non trouvé dans {model_path}")
+                logger.info("    Téléchargement automatique ~2GB depuis HuggingFace")
                 
                 # Télécharger automatiquement si absent
                 # Ce modèle supporte: ar, en, es, fr, de, it, pt, pl, tr, ru, nl, cs, zh-cn, ja, ko, hu
                 self.tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2")
             
-            logger.info("✅ Coqui-TTS XTTS-v2 chargé avec succès")
+            logger.info(" Coqui-TTS XTTS-v2 chargé avec succès")
             
             # Mapping des langues
             self.languages = {
@@ -61,12 +60,12 @@ class CoquiTTSEngine:
             logger.info(f"   Paramètres: Temp={self.generation_params['temperature']}, Speed={self.generation_params['speed']}")
             
         except ImportError as e:
-            logger.error("❌ Coqui-TTS non installé")
+            logger.error(" Coqui-TTS non installé")
             logger.error("   Solution: pip install TTS")
             raise ImportError("Installez Coqui-TTS: pip install TTS")
         
         except Exception as e:
-            logger.error(f"❌ Erreur initialisation Coqui-TTS: {e}")
+            logger.error(f" Erreur initialisation Coqui-TTS: {e}")
             import traceback
             logger.error(traceback.format_exc())
             raise
@@ -85,13 +84,13 @@ class CoquiTTSEngine:
         """
         try:
             if not text or len(text.strip()) == 0:
-                logger.error("❌ Texte vide fourni à Coqui-TTS")
+                logger.error(" Texte vide fourni à Coqui-TTS")
                 return b""
             
             # Obtenir le code langue
             lang = self.languages.get(language, "ar")
             
-            logger.info(f"🎤 Coqui-TTS: Synthèse audio")
+            logger.info(f" Coqui-TTS: Synthèse audio")
             logger.info(f"   Texte: '{text[:100]}...'")
             logger.info(f"   Langue: {lang}")
             if speaker_wav:
@@ -118,7 +117,7 @@ class CoquiTTSEngine:
                     logger.info("   Mode: Voix par défaut")
                 
                 # Générer l'audio
-                logger.info("   ⏳ Génération en cours...")
+                logger.info("    Génération en cours...")
                 self.tts.tts_to_file(**generation_kwargs)
                 
                 # Lire le fichier généré
@@ -126,10 +125,10 @@ class CoquiTTSEngine:
                     audio_data = f.read()
                 
                 if audio_data and len(audio_data) > 0:
-                    logger.info(f"✅ Audio généré: {len(audio_data)} bytes")
+                    logger.info(f" Audio généré: {len(audio_data)} bytes")
                     return audio_data
                 else:
-                    logger.error("❌ Audio vide généré")
+                    logger.error(" Audio vide généré")
                     return b""
             
             finally:
@@ -140,7 +139,7 @@ class CoquiTTSEngine:
                     pass
         
         except Exception as e:
-            logger.error(f"❌ Erreur synthèse Coqui-TTS: {e}")
+            logger.error(f" Erreur synthèse Coqui-TTS: {e}")
             import traceback
             logger.error(traceback.format_exc())
             return b""
@@ -154,9 +153,9 @@ class CoquiTTSEngine:
         """
         if 0.5 <= speed <= 2.0:
             self.generation_params["speed"] = speed
-            logger.info(f"✅ Vitesse ajustée: {speed}")
+            logger.info(f" Vitesse ajustée: {speed}")
         else:
-            logger.warning(f"⚠️ Vitesse invalide: {speed} (doit être entre 0.5 et 2.0)")
+            logger.warning(f" Vitesse invalide: {speed} (doit être entre 0.5 et 2.0)")
     
     def set_temperature(self, temperature: float):
         """
@@ -167,9 +166,9 @@ class CoquiTTSEngine:
         """
         if 0.5 <= temperature <= 1.0:
             self.generation_params["temperature"] = temperature
-            logger.info(f"✅ Température ajustée: {temperature}")
+            logger.info(f" Température ajustée: {temperature}")
         else:
-            logger.warning(f"⚠️ Température invalide: {temperature} (doit être entre 0.5 et 1.0)")
+            logger.warning(f" Température invalide: {temperature} (doit être entre 0.5 et 1.0)")
 
 
 # Test rapide du moteur
@@ -181,7 +180,7 @@ if __name__ == "__main__":
     )
     
     print("\n" + "="*60)
-    print("🧪 TEST DU MOTEUR COQUI-TTS")
+    print(" TEST DU MOTEUR COQUI-TTS")
     print("="*60 + "\n")
     
     try:
@@ -192,7 +191,7 @@ if __name__ == "__main__":
         test_text = "مرحبا بكم في ستارك ريكروتمنت. أنا مساعدة الموارد البشرية."
         
         # Générer l'audio
-        print("\n📝 Génération audio de test...")
+        print("\n Génération audio de test...")
         audio = engine.synthesize(test_text, language="ar")
         
         if audio and len(audio) > 0:
@@ -200,15 +199,15 @@ if __name__ == "__main__":
             test_file = "test_coqui_output.wav"
             with open(test_file, 'wb') as f:
                 f.write(audio)
-            print(f"\n✅ Test réussi!")
-            print(f"📁 Audio sauvegardé: {test_file}")
-            print(f"📊 Taille: {len(audio)} bytes")
-            print(f"\n🎧 Écoutez le fichier pour évaluer la qualité!")
+            print(f"\n Test réussi!")
+            print(f" Audio sauvegardé: {test_file}")
+            print(f" Taille: {len(audio)} bytes")
+            print(f"\n Écoutez le fichier pour évaluer la qualité!")
         else:
-            print("\n❌ Échec de la génération audio")
+            print("\n Échec de la génération audio")
     
     except Exception as e:
-        print(f"\n❌ Erreur: {e}")
+        print(f"\n Erreur: {e}")
         import traceback
         traceback.print_exc()
     
