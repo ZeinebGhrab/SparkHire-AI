@@ -2,6 +2,9 @@
 Fenêtre Principale - FIX AUDIO COMPLET
 Problème résolu: QAudioSink configuré dynamiquement selon le vrai sample rate
 du TTS (Coqui génère du 22050Hz ou 24000Hz, pas du 16000Hz fixe).
+
+FIX VOIX COUPÉE: le timer de surveillance IdleState ne démarre qu'après
+la durée théorique de l'audio, évitant les faux positifs au démarrage.
 """
 
 from PySide6.QtWidgets import (
@@ -45,6 +48,7 @@ class MainWindow(QMainWindow):
         self.audio_buffer = None
         self.audio_io_buffer = None
         self.audio_check_timer = None
+        self._audio_delay_timer = None  # FIX: timer de délai avant check IdleState
 
         # ── État chunks ──
         self._pending_msg_type: str = ""
@@ -455,6 +459,10 @@ class MainWindow(QMainWindow):
             else:
                 self.interview_widget.enable_recording(True)
 
+            # FIX: _finalize_message est appelé ici mais enable_recording
+            # sera géré par _check_audio_finished une fois l'audio terminé.
+            # On appelle _finalize_message uniquement pour la mise à jour UI
+            # (progression, statuts), PAS pour enable_recording.
             self._finalize_message(self._pending_msg_type, self._pending_msg_data)
             self._audio_chunks = []
             self._pending_msg_type = ""
@@ -493,35 +501,71 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage("🎉 Terminé!")
 
     # ================================================================
-    # LECTURE PCM BRUT
+    # LECTURE PCM BRUT  ← FIX PRINCIPAL : voix coupée
     # ================================================================
 
     def _play_pcm(self, pcm_bytes: bytes):
         """
         Joue du PCM brut (s16le) via QAudioSink.
-        Le format (sample_rate, channels, bits) a été configuré à la réception
-        des métadonnées dans audio_mode=chunked.
+
+        FIX voix coupée :
+        - On calcule la durée théorique de l'audio depuis la taille des données.
+        - On attend (durée - 300 ms) avant de commencer à surveiller IdleState.
+        - Cela évite le faux positif IdleState qui se produit au tout début
+          de la lecture (QAudioSink passe brièvement en IdleState avant que
+          le premier sample ne soit consommé).
         """
         try:
+            # Stopper toute lecture en cours + annuler les timers
             if self.audio_sink:
                 self.audio_sink.stop()
             if self.audio_check_timer:
                 self.audio_check_timer.stop()
+                self.audio_check_timer = None
+            if self._audio_delay_timer:
+                self._audio_delay_timer.stop()
+                self._audio_delay_timer = None
 
+            # Monter le buffer PCM
             self.audio_buffer    = QByteArray(pcm_bytes)
             self.audio_io_buffer = QBuffer(self.audio_buffer)
             self.audio_io_buffer.open(QIODevice.OpenModeFlag.ReadOnly)
             self.audio_sink.start(self.audio_io_buffer)
 
-            logger.info(f"▶️ Lecture: {len(pcm_bytes):,} bytes PCM @ {self._audio_sample_rate}Hz")
+            # ── Calcul durée théorique ──
+            bytes_per_sample = self._audio_bits // 8
+            if bytes_per_sample > 0 and self._audio_sample_rate > 0 and self._audio_channels > 0:
+                total_samples = len(pcm_bytes) / (bytes_per_sample * self._audio_channels)
+                expected_ms   = int((total_samples / self._audio_sample_rate) * 1000)
+            else:
+                expected_ms = 3000  # fallback 3 s
 
-            self.audio_check_timer = QTimer()
-            self.audio_check_timer.timeout.connect(self._check_audio_finished)
-            self.audio_check_timer.start(100)
+            # Démarrer le check IdleState 300 ms avant la fin théorique,
+            # mais jamais avant 500 ms (pour ne pas attraper le démarrage)
+            delay_ms = max(expected_ms - 300, 500)
+
+            logger.info(
+                f"▶️ Lecture PCM: {len(pcm_bytes):,} bytes "
+                f"@ {self._audio_sample_rate}Hz {self._audio_channels}ch {self._audio_bits}bit "
+                f"| durée estimée: {expected_ms} ms | check IdleState dans: {delay_ms} ms"
+            )
+
+            # Lancer le timer de délai (one-shot)
+            self._audio_delay_timer = QTimer()
+            self._audio_delay_timer.setSingleShot(True)
+            self._audio_delay_timer.timeout.connect(self._start_idle_check)
+            self._audio_delay_timer.start(delay_ms)
 
         except Exception as e:
-            logger.error(f"❌ Lecture: {e}")
+            logger.error(f"❌ _play_pcm: {e}")
             self.interview_widget.enable_recording(True)
+
+    def _start_idle_check(self):
+        """Démarre la surveillance de l'IdleState après le délai calculé."""
+        self._audio_delay_timer = None
+        self.audio_check_timer = QTimer()
+        self.audio_check_timer.timeout.connect(self._check_audio_finished)
+        self.audio_check_timer.start(100)
 
     def _play_bytes_direct(self, audio_bytes: bytes):
         """Fallback: joue des bytes WAV inline (extraire PCM d'abord)."""
@@ -541,13 +585,14 @@ class MainWindow(QMainWindow):
         self._play_pcm(audio_bytes)
 
     def _check_audio_finished(self):
+        """Vérifie si QAudioSink a terminé la lecture (IdleState)."""
         if self.audio_sink and self.audio_sink.state() == QAudio.State.IdleState:
             logger.info("✅ Lecture terminée → envoi audio_finished")
             if self.audio_check_timer:
                 self.audio_check_timer.stop()
+                self.audio_check_timer = None
             self.video_player.set_idle()
             # Signaler au serveur que la lecture est terminée
-            # Le serveur attend ce signal avant d'envoyer la prochaine étape
             if self.websocket_client:
                 self.websocket_client.send_message({"type": "audio_finished"})
             self.interview_widget.enable_recording(True)
@@ -626,4 +671,6 @@ class MainWindow(QMainWindow):
             self.audio_sink.stop()
         if self.audio_check_timer:
             self.audio_check_timer.stop()
+        if self._audio_delay_timer:
+            self._audio_delay_timer.stop()
         super().closeEvent(event)
