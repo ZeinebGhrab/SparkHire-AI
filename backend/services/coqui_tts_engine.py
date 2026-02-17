@@ -1,21 +1,6 @@
 """
 Moteur TTS Coqui-TTS (Open Source / XTTS-v2)
 
-CORRECTIFS APPLIQUÉS (par ordre d'exécution) :
-
-1. PATCH torch.load — PyTorch 2.6
-   PyTorch 2.6 passe `weights_only` de False → True par défaut.
-   On monkey-patche avant tout import de TTS.
-
-2. PATCH torchvision stub avec __spec__ valide
-   torchvision plante à l'import (operator nms does not exist).
-   On supprime le module cassé et on injecte un stub propre avec
-   __spec__ != None pour que importlib.util.find_spec() fonctionne.
-
-3. PATCH transformers.GPT2PreTrainedModel manquant
-   Les versions récentes de transformers (≥ 4.45) ont retiré
-   GPT2PreTrainedModel du __init__ public.
-   TTS/XTTS en a besoin → on le réinjecte dans le namespace transformers.
 """
 
 import importlib.util
@@ -45,10 +30,10 @@ try:
         return _original_torch_load(f, map_location=map_location, **kwargs)
 
     torch.load = _patched_torch_load
-    logger.info("✅ Patch torch.load appliqué (weights_only=False pour PyTorch 2.6)")
+    logger.info(" Patch torch.load appliqué (weights_only=False pour PyTorch 2.6)")
 
 except ImportError:
-    logger.warning("⚠️ PyTorch non disponible, patch torch.load non appliqué")
+    logger.warning(" PyTorch non disponible, patch torch.load non appliqué")
 
 
 # ==================================================================
@@ -67,19 +52,17 @@ def _make_stub_module(name: str) -> types.ModuleType:
 
 try:
     import torchvision  # noqa: F401
-    logger.info("✅ torchvision importé normalement")
+    logger.info(" torchvision importé normalement")
 
 except Exception as _tv_err:
     logger.warning(
-        f"⚠️ torchvision non disponible ({_tv_err}) — création d'un stub"
+        f" torchvision non disponible ({_tv_err}) — création d'un stub"
     )
 
-    # Purger le module cassé (__spec__ = None) du cache
     for _k in list(sys.modules.keys()):
         if _k == "torchvision" or _k.startswith("torchvision."):
             del sys.modules[_k]
 
-    # Injecter les stubs
     _tv_root = _make_stub_module("torchvision")
     sys.modules["torchvision"] = _tv_root
 
@@ -97,11 +80,7 @@ except Exception as _tv_err:
         setattr(_tv_root, _sub.split(".")[-1], _stub)
         sys.modules[_sub] = _stub
 
-    # InterpolationMode utilisé par transformers.
-    # On utilise un objet dynamique plutôt qu'un Enum figé pour être
-    # compatible avec toutes les versions de torchvision (0.15 → 0.20+).
     class _DynamicInterpolationMode:
-        """Stub dynamique : retourne un objet nommé pour n'importe quel attribut."""
         BILINEAR = "bilinear"
         NEAREST = "nearest"
         BICUBIC = "bicubic"
@@ -111,7 +90,6 @@ except Exception as _tv_err:
         LANCZOS = "lanczos"
 
         def __getattr__(self, name: str):
-            # Pour tout autre attribut inconnu, retourner la chaîne elle-même
             return name
 
     sys.modules["torchvision.transforms"].InterpolationMode = _DynamicInterpolationMode()
@@ -120,9 +98,6 @@ except Exception as _tv_err:
 
 # ==================================================================
 # PATCH 3 : GPT2PreTrainedModel manquant dans transformers récents
-# transformers ≥ 4.45 ne l'exporte plus depuis le __init__ global.
-# TTS.tts.layers.xtts.gpt_inference l'importe directement depuis
-# `transformers`, donc on le remet en place avant l'import TTS.
 # ==================================================================
 try:
     import transformers  # noqa: F401
@@ -130,15 +105,38 @@ try:
     if not hasattr(transformers, "GPT2PreTrainedModel"):
         from transformers.models.gpt2.modeling_gpt2 import GPT2PreTrainedModel as _GPT2PT
         transformers.GPT2PreTrainedModel = _GPT2PT
-        logger.info(
-            "✅ Patch transformers.GPT2PreTrainedModel appliqué "
-            "(absent du __init__ public dans cette version)"
-        )
+        logger.info(" Patch transformers.GPT2PreTrainedModel appliqué")
     else:
-        logger.info("✅ transformers.GPT2PreTrainedModel déjà disponible")
+        logger.info(" transformers.GPT2PreTrainedModel déjà disponible")
 
 except Exception as _tf_err:
-    logger.warning(f"⚠️ Impossible de patcher transformers: {_tf_err}")
+    logger.warning(f" Impossible de patcher transformers: {_tf_err}")
+
+
+# ==================================================================
+# PATCH 4 : GPT2InferenceModel manque GenerationMixin
+# Doit être appelé APRES l'import de TTS (dans __init__)
+# ==================================================================
+def _patch_gpt2_inference_model():
+    """
+    Injecter GenerationMixin dans GPT2InferenceModel.
+    transformers >= 4.50 retire GenerationMixin de PreTrainedModel,
+    ce qui prive GPT2InferenceModel de la méthode .generate().
+    """
+    try:
+        from transformers import GenerationMixin
+        from TTS.tts.layers.xtts.gpt_inference import GPT2InferenceModel
+
+        if not issubclass(GPT2InferenceModel, GenerationMixin):
+            GPT2InferenceModel.__bases__ = (GenerationMixin,) + GPT2InferenceModel.__bases__
+            logger.info(" Patch GPT2InferenceModel : GenerationMixin injecté")
+        else:
+            logger.info(" GPT2InferenceModel hérite déjà de GenerationMixin")
+
+    except ImportError as e:
+        logger.warning(f" Patch GPT2InferenceModel impossible (import): {e}")
+    except Exception as e:
+        logger.warning(f" Patch GPT2InferenceModel impossible: {e}")
 
 
 # ==================================================================
@@ -153,22 +151,61 @@ class CoquiTTSEngine:
         try:
             from TTS.api import TTS
 
+            # Appliquer PATCH 4 maintenant que TTS est importé
+            _patch_gpt2_inference_model()
+
             model_path = "models/xtts_v2"
 
             if os.path.exists(model_path) and os.path.exists(
                 os.path.join(model_path, "model.pth")
             ):
-                logger.info(f"⏳ Chargement du modèle Coqui-TTS depuis: {model_path}")
-                logger.info("   ✅ Modèle local détecté (pas de téléchargement)")
+                logger.info(f" Chargement du modèle Coqui-TTS depuis: {model_path}")
+                logger.info("    Modèle local détecté (pas de téléchargement)")
                 self.tts = TTS(
                     model_path=model_path,
                     config_path=os.path.join(model_path, "config.json"),
                 )
             else:
-                logger.info("⏳ Chargement XTTS-v2 depuis HuggingFace...")
+                logger.info(" Chargement XTTS-v2 depuis HuggingFace...")
                 self.tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2")
 
-            logger.info("✅ Coqui-TTS XTTS-v2 chargé avec succès")
+            logger.info(" Coqui-TTS XTTS-v2 chargé avec succès")
+
+            # FIX 5 : Récupérer les speakers disponibles
+            try:
+                speakers_raw = getattr(self.tts, "speakers", None)
+                if not speakers_raw and hasattr(self.tts, "synthesizer"):
+                    sm = getattr(self.tts.synthesizer, "tts_model", None)
+                    if sm:
+                        smanager = getattr(sm, "speaker_manager", None)
+                        if smanager and hasattr(smanager, "speaker_names"):
+                            speakers_raw = smanager.speaker_names
+
+                self.available_speakers = list(speakers_raw) if speakers_raw else []
+            except Exception as _sp_err:
+                logger.warning(f"    Impossible de lister les speakers: {_sp_err}")
+                self.available_speakers = []
+
+            # Liste officielle XTTS-v2 si détection échoue
+            if not self.available_speakers:
+                logger.warning(
+                    "    Speakers non détectés — utilisation de la liste XTTS-v2 par défaut"
+                )
+                self.available_speakers = [
+                    "Ana Florence", "Daisy Studious", "Gracie Wise",
+                    "Tammie Ema", "Alison Dietlinde", "Viktor Eka",
+                    "Royston Min", "Abrahan Mack", "Adde Michal",
+                    "Baldur Sanjin", "Craig Gutsy", "Damien Black",
+                ]
+
+            self.default_speaker = self.available_speakers[0] if self.available_speakers else None
+
+            logger.info(
+                f"   Speakers disponibles ({len(self.available_speakers)}): "
+                f"{self.available_speakers[:5]}"
+                f"{'...' if len(self.available_speakers) > 5 else ''}"
+            )
+            logger.info(f"   Speaker par défaut: {self.default_speaker}")
 
             self.languages = {"ar": "ar", "en": "en", "fr": "fr"}
             self.voices = {
@@ -180,11 +217,11 @@ class CoquiTTSEngine:
             logger.info(f"   Langues supportées: {list(self.languages.keys())}")
 
         except ImportError as e:
-            logger.error("❌ Coqui-TTS non installé — Solution: pip install TTS")
+            logger.error(" Coqui-TTS non installé — Solution: pip install TTS")
             raise ImportError("Installez Coqui-TTS: pip install TTS") from e
 
         except Exception as e:
-            logger.error(f"❌ Erreur initialisation Coqui-TTS: {e}")
+            logger.error(f" Erreur initialisation Coqui-TTS: {e}")
             import traceback
             logger.error(traceback.format_exc())
             raise
@@ -208,7 +245,7 @@ class CoquiTTSEngine:
         """
         try:
             if not text or not text.strip():
-                logger.error("❌ Texte vide fourni à Coqui-TTS")
+                logger.error(" Texte vide fourni à Coqui-TTS")
                 return b""
 
             lang = self.languages.get(language, "ar")
@@ -227,9 +264,12 @@ class CoquiTTSEngine:
 
                 if speaker_wav and os.path.exists(speaker_wav):
                     kwargs["speaker_wav"] = speaker_wav
-                    logger.info("   Mode: clonage de voix")
+                    logger.info("   Mode: clonage de voix (speaker_wav)")
+                elif self.default_speaker:
+                    kwargs["speaker"] = self.default_speaker
+                    logger.info(f"   Mode: speaker par défaut ({self.default_speaker})")
                 else:
-                    logger.info("   Mode: voix par défaut")
+                    logger.warning("    Aucun speaker — tentative sans speaker")
 
                 self.tts.tts_to_file(**kwargs)
 
@@ -237,10 +277,10 @@ class CoquiTTSEngine:
                     audio_data = f.read()
 
                 if audio_data:
-                    logger.info(f"✅ Audio généré: {len(audio_data)} bytes")
+                    logger.info(f" Audio généré: {len(audio_data)} bytes")
                     return audio_data
                 else:
-                    logger.error("❌ Audio vide généré")
+                    logger.error(" Audio vide généré")
                     return b""
 
             finally:
@@ -250,7 +290,31 @@ class CoquiTTSEngine:
                     pass
 
         except Exception as e:
-            logger.error(f"❌ Erreur synthèse Coqui-TTS: {e}")
+            logger.error(f" Erreur synthèse Coqui-TTS: {e}")
             import traceback
             logger.error(traceback.format_exc())
             return b""
+
+    def list_speakers(self) -> list:
+        """Retourner la liste de tous les speakers disponibles"""
+        return self.available_speakers
+
+    def set_default_speaker(self, speaker_name: str) -> bool:
+        """
+        Changer le speaker par défaut.
+
+        Args:
+            speaker_name: Nom exact du speaker
+        Returns:
+            bool: True si succès
+        """
+        if speaker_name in self.available_speakers:
+            self.default_speaker = speaker_name
+            logger.info(f"Speaker par défaut changé: {speaker_name}")
+            return True
+        else:
+            logger.error(
+                f" Speaker '{speaker_name}' introuvable. "
+                f"Disponibles: {self.available_speakers[:5]}"
+            )
+            return False
