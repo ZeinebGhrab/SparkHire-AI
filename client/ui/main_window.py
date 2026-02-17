@@ -542,12 +542,16 @@ class MainWindow(QMainWindow):
 
     def _check_audio_finished(self):
         if self.audio_sink and self.audio_sink.state() == QAudio.State.IdleState:
-            logger.info("✅ Lecture terminée")
-            self.video_player.set_idle()
-            self.interview_widget.enable_recording(True)
-            self.statusBar().showMessage("✅ Vous pouvez répondre")
+            logger.info("✅ Lecture terminée → envoi audio_finished")
             if self.audio_check_timer:
                 self.audio_check_timer.stop()
+            self.video_player.set_idle()
+            # Signaler au serveur que la lecture est terminée
+            # Le serveur attend ce signal avant d'envoyer la prochaine étape
+            if self.websocket_client:
+                self.websocket_client.send_message({"type": "audio_finished"})
+            self.interview_widget.enable_recording(True)
+            self.statusBar().showMessage("✅ Vous pouvez répondre")
 
     # ================================================================
     # ENREGISTREMENT

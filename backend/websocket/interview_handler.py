@@ -186,6 +186,42 @@ class InterviewHandler:
         return result
 
     # ----------------------------------------------------------
+    # ATTENTE FIN LECTURE AUDIO CLIENT
+    # ----------------------------------------------------------
+
+    async def _wait_for_audio_finished(self, timeout: float = 120.0):
+        """
+        Bloque jusqu'à recevoir {"type":"audio_finished"} du client.
+        Le client l'envoie quand QAudioSink passe en IdleState (lecture terminée).
+        Indispensable pour ne pas envoyer la prochaine question pendant que
+        la précédente joue encore — ce qui couperait l'audio en cours.
+        """
+        logger.info(f"⏳ Attente audio_finished (max {int(timeout)}s)...")
+        loop = asyncio.get_event_loop()
+        deadline = loop.time() + timeout
+        while True:
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                logger.warning("⚠️ Timeout audio_finished — on continue sans attendre")
+                return
+            try:
+                data = await asyncio.wait_for(
+                    self.websocket.receive_json(),
+                    timeout=min(remaining, 5.0)
+                )
+                msg_type = data.get("type")
+                if msg_type == "audio_finished":
+                    logger.info("✅ Client prêt (audio terminé)")
+                    return
+                elif msg_type == "end_interview":
+                    await self._cancel_interview()
+                    raise WebSocketDisconnect(code=1000, reason="Terminé par l'utilisateur")
+                else:
+                    logger.debug(f"Message ignoré pendant attente audio: {msg_type}")
+            except asyncio.TimeoutError:
+                self._check_connected()
+
+    # ----------------------------------------------------------
     # HANDLE PRINCIPAL
     # ----------------------------------------------------------
 
@@ -200,14 +236,19 @@ class InterviewHandler:
             self._check_connected()
             await self._send_welcome()
 
-            await asyncio.sleep(1.0)
+            # Attendre que le client finisse de jouer le message de bienvenue
+            await self._wait_for_audio_finished(timeout=120.0)
+
             self._check_connected()
             await self._start_interview()
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(0.3)
 
             while self.session.status == "in_progress":
                 self._check_connected()
                 await self._send_current_question()
+
+                # Attendre que le client finisse de jouer la question
+                await self._wait_for_audio_finished(timeout=60.0)
 
                 self._check_connected()
                 await self._wait_for_answer()
@@ -218,7 +259,7 @@ class InterviewHandler:
                     break
                 else:
                     self.session = InterviewSessionCRUD.increment_question_index(self.session_id)
-                    await asyncio.sleep(0.5)
+                    await asyncio.sleep(0.3)
 
         except WebSocketDisconnect as e:
             logger.info(f"Déconnexion (code={e.code}): {self.session_id}")
