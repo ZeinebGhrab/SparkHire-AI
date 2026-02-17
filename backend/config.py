@@ -30,9 +30,14 @@ class Settings(BaseSettings):
     WHISPER_LANGUAGE: str = "ar"
 
     # ================= TTS (Text-to-Speech) =================
-    TTS_ENGINE: str = "gtts"  # pyttsx3 | coqui
+    # TTS Configuration
+    TTS_ENGINE: str = "coqui"  # coqui | edge-tts | gtts
     TTS_LANGUAGE: str = "ar"
     TTS_CACHE_DIR: Path = BASE_DIR / "uploads" / "tts_cache"
+    
+    # Coqui TTS
+    COQUI_OPTIMIZED_ARABIC: bool = True  # True = CSS10, False = XTTS-v2
+    COQUI_MODEL: str = "tts_models/multilingual/multi-dataset/xtts_v2"
 
     # ================= Avatar =================
     AVATAR_PROVIDER: str = "simple"  # simple | wav2lip | did

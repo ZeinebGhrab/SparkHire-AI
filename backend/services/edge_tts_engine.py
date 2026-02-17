@@ -22,8 +22,8 @@ class EdgeTTSEngine:
             
             # Voix féminines arabes disponibles
             self.voices = {
-                # "ar": "ar-SA-ZariyahNeural",  # Voix féminine saoudienne 
-                # "ar": "ar-EG-SalmaNeural",  # Voix féminine égyptienne
+                # "ar": "ar-SA-ZariyahNeural", # Voix féminine saoudienne 
+                # "ar": "ar-EG-SalmaNeural",   # Voix féminine égyptienne
                 # "ar": "ar-AE-FatimaNeural",  # Voix féminine émiratie
                 # "ar": "ar-TN-ReemNeural",    # Voix féminine tunisienne
                 "ar": "ar-LB-LaylaNeural",     # Voix féminine Libanaise
