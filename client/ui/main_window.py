@@ -1,10 +1,7 @@
 """
-Fenêtre Principale - FIX AUDIO COMPLET
-Problème résolu: QAudioSink configuré dynamiquement selon le vrai sample rate
-du TTS (Coqui génère du 22050Hz ou 24000Hz, pas du 16000Hz fixe).
-
-FIX VOIX COUPÉE: le timer de surveillance IdleState ne démarre qu'après
-la durée théorique de l'audio, évitant les faux positifs au démarrage.
+Fenêtre Principale - FIX DÉFINITIF v5
+Remplacement de QAudioSink (non fiable sur Windows pour grands buffers)
+par pygame.mixer : déjà dans le projet, fiable sur Windows, API simple.
 """
 
 from PySide6.QtWidgets import (
@@ -12,13 +9,15 @@ from PySide6.QtWidgets import (
     QMessageBox, QLabel, QLineEdit, QPushButton, QFrame,
     QGraphicsDropShadowEffect
 )
-from PySide6.QtCore import Qt, QSize, QByteArray, QBuffer, QIODevice, QTimer
+from PySide6.QtCore import Qt, QSize, QTimer
 from PySide6.QtGui import QFont, QColor
-from PySide6.QtMultimedia import QAudioFormat, QAudioSink, QAudio, QMediaDevices
 import sys
 import base64
+import io
+import wave
 import logging
 from pathlib import Path
+import pygame
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from client.ui.stark_theme import StarkTheme
@@ -43,75 +42,111 @@ class MainWindow(QMainWindow):
         self.session_id = None
         self.is_connecting = False
 
-        # ── Audio (sera reconfiguré dynamiquement selon le sample rate reçu) ──
-        self.audio_sink = None
-        self.audio_buffer = None
-        self.audio_io_buffer = None
-        self.audio_check_timer = None
-        self._audio_delay_timer = None  # FIX: timer de délai avant check IdleState
+        # Token : identifie le WS actif, ignore les signaux des anciens
+        self._session_token: int = 0
 
-        # ── État chunks ──
+        # Audio (pygame)
+        self._pygame_sound = None       # Sound en cours de lecture
+        self.audio_check_timer = None   # Poll get_busy()
+
+        # Format audio courant
+        self._audio_sample_rate: int = 22050
+        self._audio_channels: int = 1
+        self._audio_bits: int = 16
+
+        # État chunks
         self._pending_msg_type: str = ""
         self._pending_msg_data: dict = {}
         self._audio_chunks: list = []
         self._audio_total_chunks: int = 0
-        self._audio_sample_rate: int = 22050   # sera mis à jour depuis les métadonnées
-        self._audio_channels: int = 1
-        self._audio_bits: int = 16
 
-        # Créer le sink audio par défaut
-        self._create_audio_sink(22050, 1, 16)
+        # Initialiser pygame.mixer
+        pygame.mixer.init(
+            frequency=self._audio_sample_rate,
+            size=-16,
+            channels=self._audio_channels,
+            buffer=4096,
+        )
+        logger.info(f"🎵 pygame.mixer initialisé: {self._audio_sample_rate}Hz")
 
         self._setup_ui()
 
     # ================================================================
-    # GESTION AUDIO SINK DYNAMIQUE
+    # GESTION AUDIO — pygame.mixer (fiable sur Windows)
     # ================================================================
 
-    def _create_audio_sink(self, sample_rate: int, channels: int, bits: int):
-        """
-        Crée un QAudioSink avec le bon format.
-        Appelé au démarrage et à chaque nouveau format reçu.
-        """
-        if self.audio_sink:
-            self.audio_sink.stop()
-            self.audio_sink = None
-
-        fmt = QAudioFormat()
-        fmt.setSampleRate(sample_rate)
-        fmt.setChannelCount(channels)
-
-        if bits == 16:
-            fmt.setSampleFormat(QAudioFormat.SampleFormat.Int16)
-        elif bits == 32:
-            fmt.setSampleFormat(QAudioFormat.SampleFormat.Float)
-        else:
-            fmt.setSampleFormat(QAudioFormat.SampleFormat.Int16)
-
-        # Vérifier que le device supporte ce format
-        output_device = QMediaDevices.defaultAudioOutput()
-        if output_device and not output_device.isFormatSupported(fmt):
-            logger.warning(
-                f"Format {sample_rate}Hz {bits}bit non supporté nativement, "
-                f"Qt va resampler"
-            )
-
-        self.audio_sink = QAudioSink(fmt)
-        self.audio_sink.setVolume(1.0)
-        logger.info(f"🔊 AudioSink créé: {sample_rate}Hz, {channels}ch, {bits}bit")
-
     def _ensure_audio_format(self, sample_rate: int, channels: int, bits: int):
-        """Reconfigure le sink si le format a changé."""
+        """Reconfigure pygame.mixer si le format change."""
         if (sample_rate != self._audio_sample_rate
                 or channels != self._audio_channels
                 or bits != self._audio_bits):
-            logger.info(
-                f"Format audio changé: {self._audio_sample_rate}Hz → {sample_rate}Hz"
-            )
+            logger.info(f"Format: {self._audio_sample_rate}Hz → {sample_rate}Hz")
             self._audio_sample_rate = sample_rate
             self._audio_channels = channels
             self._audio_bits = bits
-            self._create_audio_sink(sample_rate, channels, bits)
+            pygame.mixer.quit()
+            pygame.mixer.init(
+                frequency=sample_rate,
+                size=-(bits),
+                channels=channels,
+                buffer=4096,
+            )
+            logger.info(f"🎵 pygame.mixer réinitialisé: {sample_rate}Hz {channels}ch {bits}bit")
+
+    def _reset_audio_state(self):
+        """Reset complet de l'état audio entre deux sessions."""
+        if self.audio_check_timer:
+            self.audio_check_timer.stop()
+            self.audio_check_timer = None
+
+        try:
+            pygame.mixer.stop()
+        except Exception:
+            pass
+
+        self._pygame_sound = None
+
+        # Invalider le format → force reconfiguration même si format identique
+        self._audio_sample_rate = -1
+        self._audio_channels = -1
+        self._audio_bits = -1
+
+        self._audio_chunks = []
+        self._audio_total_chunks = 0
+        self._pending_msg_type = ""
+        self._pending_msg_data = {}
+
+        # Remettre pygame.mixer à l'état initial
+        try:
+            pygame.mixer.quit()
+        except Exception:
+            pass
+        pygame.mixer.init(frequency=22050, size=-16, channels=1, buffer=4096)
+        self._audio_sample_rate = 22050
+        self._audio_channels = 1
+        self._audio_bits = 16
+
+        logger.info("🔄 État audio réinitialisé")
+
+    def _reset_ui_for_new_session(self):
+        """Remet l'UI dans l'état initial."""
+        self.interview_container.setVisible(False)
+        self.connection_widget.setVisible(True)
+        self.connect_btn.setEnabled(True)
+        self.connect_btn.setText("DÉMARRER L'ENTRETIEN")
+        self.session_input.setEnabled(True)
+        self.session_input.clear()
+        self.status_label.setText("DÉCONNECTÉ")
+        self.status_label.setStyleSheet(f"color: {StarkTheme.WHITE}; letter-spacing: 1px;")
+        self.status_detail.setText("En attente de connexion")
+        self.statusBar().showMessage("🎧 Mode Vocal Pur Activé")
+        if self.audio_recorder:
+            try:
+                self.audio_recorder.cleanup()
+            except Exception:
+                pass
+            self.audio_recorder = None
+        logger.info("🔄 UI réinitialisée")
 
     # ================================================================
     # UI
@@ -257,7 +292,9 @@ class MainWindow(QMainWindow):
         il = QVBoxLayout(icon_container)
         il.setAlignment(Qt.AlignmentFlag.AlignCenter)
         shield_icon = QLabel()
-        shield_icon.setPixmap(StarkIcons.headphones(StarkTheme.ORANGE_ACCENT).pixmap(QSize(50, 50)))
+        shield_icon.setPixmap(
+            StarkIcons.headphones(StarkTheme.ORANGE_ACCENT).pixmap(QSize(50, 50))
+        )
         il.addWidget(shield_icon)
         card_layout.addWidget(icon_container, alignment=Qt.AlignmentFlag.AlignCenter)
 
@@ -347,6 +384,27 @@ class MainWindow(QMainWindow):
             self._show_error_dialog("❌ Erreur", "Format attendu: session_xxxxxxxxxxxxx")
             return
 
+        # Déconnecter l'ancien WS sans déclencher ses slots
+        if self.websocket_client:
+            try:
+                self.websocket_client.disconnected.disconnect()
+                self.websocket_client.connected.disconnect()
+                self.websocket_client.message_received.disconnect()
+                self.websocket_client.error_occurred.disconnect()
+            except Exception:
+                pass
+            try:
+                self.websocket_client.disconnect_from_server()
+            except Exception:
+                pass
+            self.websocket_client = None
+
+        # Incrémenter le token → invalide tous les anciens slots
+        self._session_token += 1
+        current_token = self._session_token
+
+        self._reset_audio_state()
+
         self.session_id = session_id
         self.is_connecting = True
         self.connect_btn.setEnabled(False)
@@ -355,38 +413,61 @@ class MainWindow(QMainWindow):
 
         ws_url = f"{settings.WEBSOCKET_URL}/ws/interview/{session_id}"
         self.websocket_client = WebSocketClient(ws_url)
-        self.websocket_client.disconnected.connect(self._on_websocket_disconnected)
-        self.websocket_client.connected.connect(self._on_websocket_connected)
-        self.websocket_client.message_received.connect(self._on_websocket_message)
-        self.websocket_client.error_occurred.connect(self._on_websocket_error)
+
+        self.websocket_client.disconnected.connect(
+            lambda code, reason: self._on_ws_disconnected(code, reason, current_token)
+        )
+        self.websocket_client.connected.connect(
+            lambda: self._on_ws_connected(current_token)
+        )
+        self.websocket_client.message_received.connect(
+            lambda data: self._on_ws_message(data, current_token)
+        )
+        self.websocket_client.error_occurred.connect(
+            lambda err: self._on_ws_error(err, current_token)
+        )
+
         self.websocket_client.connect_to_server()
         self.statusBar().showMessage("🔍 Connexion...")
 
-    def _on_websocket_connected(self):
+    def _is_active(self, token: int) -> bool:
+        return token == self._session_token
+
+    def _on_ws_connected(self, token: int):
+        if not self._is_active(token):
+            return
         logger.info("✅ WebSocket connecté")
         self.status_label.setText("VALIDATION")
         self.status_label.setStyleSheet(
             f"color: {StarkTheme.WARNING}; letter-spacing: 1px; font-weight: bold;"
         )
 
-    def _on_websocket_disconnected(self, code: int, reason: str):
+    def _on_ws_disconnected(self, code: int, reason: str, token: int):
+        if not self._is_active(token):
+            logger.debug(f"Déconnexion ignorée (token périmé {token})")
+            return
         if self.is_connecting:
             self._handle_connection_failure(reason or f"Code {code}")
             return
-        self.status_label.setText("DÉCONNECTÉ")
-        self.status_label.setStyleSheet(f"color: {StarkTheme.ERROR}; letter-spacing: 1px;")
+        logger.info(f"Session terminée (code={code})")
+        self._reset_audio_state()
+        self._reset_ui_for_new_session()
 
-    def _on_websocket_error(self, error: str):
+    def _on_ws_error(self, error: str, token: int):
+        if not self._is_active(token):
+            return
         self.statusBar().showMessage(f"❌ {error}")
 
     # ================================================================
-    # RÉCEPTION MESSAGES + CHUNKS
+    # MESSAGES WEBSOCKET
     # ================================================================
 
-    def _on_websocket_message(self, data: dict):
+    def _on_ws_message(self, data: dict, token: int):
+        if not self._is_active(token):
+            return
+
         msg_type = data.get("type")
         msg_data = data.get("data", {})
-
         logger.info(f"📨 {msg_type}")
 
         if msg_type == "error":
@@ -405,27 +486,16 @@ class MainWindow(QMainWindow):
 
         if msg_type in ("welcome", "question", "interview_completed"):
             if msg_data.get("audio_mode") == "chunked":
-                # ── Stocker les métadonnées de FORMAT ──
                 self._pending_msg_type = msg_type
                 self._pending_msg_data = msg_data
                 self._audio_chunks = []
                 self._audio_total_chunks = msg_data.get("total_chunks", 0)
-
-                # Récupérer le vrai sample rate envoyé par le serveur
                 sr   = msg_data.get("sample_rate", 22050)
                 ch   = msg_data.get("channels", 1)
                 bits = msg_data.get("bits_per_sample", 16)
-
-                # Reconfigurer le sink si nécessaire
                 self._ensure_audio_format(sr, ch, bits)
-
-                logger.info(
-                    f"Chunked: {self._audio_total_chunks} chunks "
-                    f"@ {sr}Hz {ch}ch {bits}bit pour '{msg_type}'"
-                )
+                logger.info(f"Chunked: {self._audio_total_chunks} @ {sr}Hz pour '{msg_type}'")
                 return
-
-            # Fallback inline
             audio_b64 = msg_data.get("audio_data")
             if audio_b64:
                 self._play_bytes_direct(base64.b64decode(audio_b64))
@@ -434,24 +504,18 @@ class MainWindow(QMainWindow):
 
         if msg_type == "audio_chunk_data":
             self._audio_chunks.append(msg_data.get("data", ""))
-            idx   = msg_data.get("chunk_index", 0)
-            total = msg_data.get("total", 1)
+            idx, total = msg_data.get("chunk_index", 0), msg_data.get("total", 1)
             self.statusBar().showMessage(f"📦 Audio {idx + 1}/{total}...")
             return
 
         if msg_type == "audio_chunk_end":
             if self._audio_chunks:
                 try:
-                    # Assembler tous les chunks
-                    pcm_bytes = b"".join(
-                        base64.b64decode(c) for c in self._audio_chunks
-                    )
+                    pcm_bytes = b"".join(base64.b64decode(c) for c in self._audio_chunks)
                     logger.info(
-                        f"✅ PCM assemblé: {len(self._audio_chunks)} chunks "
-                        f"→ {len(pcm_bytes):,} bytes "
-                        f"@ {self._audio_sample_rate}Hz"
+                        f"✅ PCM: {len(self._audio_chunks)} chunks → "
+                        f"{len(pcm_bytes):,} B @ {self._audio_sample_rate}Hz"
                     )
-                    # Jouer directement (PCM pur, format déjà configuré)
                     self._play_pcm(pcm_bytes)
                 except Exception as e:
                     logger.error(f"❌ Assemblage: {e}")
@@ -459,10 +523,6 @@ class MainWindow(QMainWindow):
             else:
                 self.interview_widget.enable_recording(True)
 
-            # FIX: _finalize_message est appelé ici mais enable_recording
-            # sera géré par _check_audio_finished une fois l'audio terminé.
-            # On appelle _finalize_message uniquement pour la mise à jour UI
-            # (progression, statuts), PAS pour enable_recording.
             self._finalize_message(self._pending_msg_type, self._pending_msg_data)
             self._audio_chunks = []
             self._pending_msg_type = ""
@@ -499,104 +559,84 @@ class MainWindow(QMainWindow):
         elif msg_type == "interview_completed":
             self._show_info_dialog("Entretien Terminé", "شكراً لك! انتهت المقابلة.")
             self.statusBar().showMessage("🎉 Terminé!")
+            self._reset_audio_state()
+            self._reset_ui_for_new_session()
 
     # ================================================================
-    # LECTURE PCM BRUT  ← FIX PRINCIPAL : voix coupée
+    # LECTURE AUDIO — pygame.mixer
     # ================================================================
 
     def _play_pcm(self, pcm_bytes: bytes):
         """
-        Joue du PCM brut (s16le) via QAudioSink.
+        Joue du PCM brut via pygame.mixer.Sound.
 
-        FIX voix coupée :
-        - On calcule la durée théorique de l'audio depuis la taille des données.
-        - On attend (durée - 300 ms) avant de commencer à surveiller IdleState.
-        - Cela évite le faux positif IdleState qui se produit au tout début
-          de la lecture (QAudioSink passe brièvement en IdleState avant que
-          le premier sample ne soit consommé).
+        Pourquoi pygame plutôt que QAudioSink :
+        QAudioSink sur Windows ne passe pas en IdleState de façon fiable
+        pour les grands buffers (> 500KB). pygame.mixer.get_busy() est
+        simple, fiable, et indépendant de la taille ou durée de l'audio.
         """
         try:
-            # Stopper toute lecture en cours + annuler les timers
-            if self.audio_sink:
-                self.audio_sink.stop()
             if self.audio_check_timer:
                 self.audio_check_timer.stop()
                 self.audio_check_timer = None
-            if self._audio_delay_timer:
-                self._audio_delay_timer.stop()
-                self._audio_delay_timer = None
 
-            # Monter le buffer PCM
-            self.audio_buffer    = QByteArray(pcm_bytes)
-            self.audio_io_buffer = QBuffer(self.audio_buffer)
-            self.audio_io_buffer.open(QIODevice.OpenModeFlag.ReadOnly)
-            self.audio_sink.start(self.audio_io_buffer)
+            pygame.mixer.stop()
+            self._pygame_sound = None
 
-            # ── Calcul durée théorique ──
-            bytes_per_sample = self._audio_bits // 8
-            if bytes_per_sample > 0 and self._audio_sample_rate > 0 and self._audio_channels > 0:
-                total_samples = len(pcm_bytes) / (bytes_per_sample * self._audio_channels)
-                expected_ms   = int((total_samples / self._audio_sample_rate) * 1000)
-            else:
-                expected_ms = 3000  # fallback 3 s
+            # Construire un WAV en mémoire à partir du PCM brut
+            wav_buf = io.BytesIO()
+            with wave.open(wav_buf, 'wb') as wf:
+                wf.setnchannels(self._audio_channels)
+                wf.setsampwidth(self._audio_bits // 8)
+                wf.setframerate(self._audio_sample_rate)
+                wf.writeframes(pcm_bytes)
+            wav_buf.seek(0)
 
-            # Démarrer le check IdleState 300 ms avant la fin théorique,
-            # mais jamais avant 500 ms (pour ne pas attraper le démarrage)
-            delay_ms = max(expected_ms - 300, 500)
+            self._pygame_sound = pygame.mixer.Sound(wav_buf)
+            self._pygame_sound.play()
 
             logger.info(
-                f"▶️ Lecture PCM: {len(pcm_bytes):,} bytes "
-                f"@ {self._audio_sample_rate}Hz {self._audio_channels}ch {self._audio_bits}bit "
-                f"| durée estimée: {expected_ms} ms | check IdleState dans: {delay_ms} ms"
+                f"▶️ Lecture: {len(pcm_bytes):,} B "
+                f"@ {self._audio_sample_rate}Hz {self._audio_channels}ch {self._audio_bits}bit"
             )
 
-            # Lancer le timer de délai (one-shot)
-            self._audio_delay_timer = QTimer()
-            self._audio_delay_timer.setSingleShot(True)
-            self._audio_delay_timer.timeout.connect(self._start_idle_check)
-            self._audio_delay_timer.start(delay_ms)
+            # Démarrer le poll — pygame.mixer.get_busy() est fiable
+            self.audio_check_timer = QTimer()
+            self.audio_check_timer.timeout.connect(self._check_audio_finished)
+            self.audio_check_timer.start(200)
 
         except Exception as e:
             logger.error(f"❌ _play_pcm: {e}")
             self.interview_widget.enable_recording(True)
 
-    def _start_idle_check(self):
-        """Démarre la surveillance de l'IdleState après le délai calculé."""
-        self._audio_delay_timer = None
-        self.audio_check_timer = QTimer()
-        self.audio_check_timer.timeout.connect(self._check_audio_finished)
-        self.audio_check_timer.start(100)
-
-    def _play_bytes_direct(self, audio_bytes: bytes):
-        """Fallback: joue des bytes WAV inline (extraire PCM d'abord)."""
-        if audio_bytes[:4] == b'RIFF':
-            import struct
-            idx = audio_bytes.find(b'data', 12)
-            if idx != -1:
-                # Lire sample rate depuis le WAV header
-                fmt_idx = audio_bytes.find(b'fmt ', 12)
-                if fmt_idx != -1:
-                    sr = struct.unpack_from('<I', audio_bytes, fmt_idx + 12)[0]
-                    ch = struct.unpack_from('<H', audio_bytes, fmt_idx + 10)[0]
-                    bps = struct.unpack_from('<H', audio_bytes, fmt_idx + 22)[0]
-                    self._ensure_audio_format(sr, ch, bps)
-                self._play_pcm(audio_bytes[idx + 8:])
-                return
-        self._play_pcm(audio_bytes)
-
     def _check_audio_finished(self):
-        """Vérifie si QAudioSink a terminé la lecture (IdleState)."""
-        if self.audio_sink and self.audio_sink.state() == QAudio.State.IdleState:
-            logger.info("✅ Lecture terminée → envoi audio_finished")
+        """Détecte la fin de lecture via pygame.mixer.get_busy()."""
+        if not pygame.mixer.get_busy():
+            logger.info("✅ Lecture terminée → audio_finished")
             if self.audio_check_timer:
                 self.audio_check_timer.stop()
                 self.audio_check_timer = None
+            self._pygame_sound = None
             self.video_player.set_idle()
-            # Signaler au serveur que la lecture est terminée
             if self.websocket_client:
                 self.websocket_client.send_message({"type": "audio_finished"})
             self.interview_widget.enable_recording(True)
             self.statusBar().showMessage("✅ Vous pouvez répondre")
+
+    def _play_bytes_direct(self, audio_bytes: bytes):
+        """Fallback: joue des bytes WAV inline."""
+        if audio_bytes[:4] == b'RIFF':
+            import struct
+            fmt_idx = audio_bytes.find(b'fmt ', 12)
+            data_idx = audio_bytes.find(b'data', 12)
+            if fmt_idx != -1 and data_idx != -1:
+                sr  = struct.unpack_from('<I', audio_bytes, fmt_idx + 12)[0]
+                ch  = struct.unpack_from('<H', audio_bytes, fmt_idx + 10)[0]
+                bps = struct.unpack_from('<H', audio_bytes, fmt_idx + 22)[0]
+                self._ensure_audio_format(sr, ch, bps)
+                self._play_pcm(audio_bytes[data_idx + 8:])
+                return
+        self._play_pcm(audio_bytes)
 
     # ================================================================
     # ENREGISTREMENT
@@ -637,10 +677,18 @@ class MainWindow(QMainWindow):
 
     def _handle_connection_failure(self, msg: str):
         self.is_connecting = False
+        self._reset_audio_state()
         self.connect_btn.setEnabled(True)
         self.connect_btn.setText("DÉMARRER L'ENTRETIEN")
         self.session_input.setEnabled(True)
         if self.websocket_client:
+            try:
+                self.websocket_client.disconnected.disconnect()
+                self.websocket_client.connected.disconnect()
+                self.websocket_client.message_received.disconnect()
+                self.websocket_client.error_occurred.disconnect()
+            except Exception:
+                pass
             try:
                 self.websocket_client.disconnect_from_server()
             except Exception:
@@ -664,13 +712,21 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event):
         if self.websocket_client:
+            try:
+                self.websocket_client.disconnected.disconnect()
+                self.websocket_client.connected.disconnect()
+                self.websocket_client.message_received.disconnect()
+                self.websocket_client.error_occurred.disconnect()
+            except Exception:
+                pass
             self.websocket_client.disconnect_from_server()
         if self.audio_recorder:
             self.audio_recorder.cleanup()
-        if self.audio_sink:
-            self.audio_sink.stop()
         if self.audio_check_timer:
             self.audio_check_timer.stop()
-        if self._audio_delay_timer:
-            self._audio_delay_timer.stop()
+        try:
+            pygame.mixer.stop()
+            pygame.mixer.quit()
+        except Exception:
+            pass
         super().closeEvent(event)
