@@ -1,7 +1,10 @@
 """
-Fenêtre Principale - FIX DÉFINITIF v5
-Remplacement de QAudioSink (non fiable sur Windows pour grands buffers)
-par pygame.mixer : déjà dans le projet, fiable sur Windows, API simple.
+Fenêtre Principale - FIX AUDIO v7
+Corrections :
+1. _reset_audio_state ne fait PLUS de quit/init pygame → évite le double init
+2. Remplace pygame.mixer.Sound par pygame.mixer.music (streaming fichier temp)
+   → fiable quelle que soit la taille (2.5MB Edge-TTS ou 560KB Coqui)
+3. Garde-fou durée minimale pour éviter les faux "finished"
 """
 
 from PySide6.QtWidgets import (
@@ -12,9 +15,12 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QSize, QTimer
 from PySide6.QtGui import QFont, QColor
 import sys
+import os
 import base64
 import io
+import time
 import wave
+import tempfile
 import logging
 from pathlib import Path
 import pygame
@@ -45,14 +51,16 @@ class MainWindow(QMainWindow):
         # Token : identifie le WS actif, ignore les signaux des anciens
         self._session_token: int = 0
 
-        # Audio (pygame)
-        self._pygame_sound = None       # Sound en cours de lecture
-        self.audio_check_timer = None   # Poll get_busy()
+        # ── Audio ───────────────────────────────────────────────────
+        self._tmp_audio_path: str | None = None   # Fichier WAV temporaire courant
+        self._audio_play_start: float = 0.0        # time.monotonic() * 1000 au démarrage
+        self._audio_min_duration: float = 0.0      # durée minimale (ms) avant "finished"
+        self.audio_check_timer = None
 
         # Format audio courant
-        self._audio_sample_rate: int = 22050
-        self._audio_channels: int = 1
-        self._audio_bits: int = 16
+        self._audio_sample_rate: int = -1   # -1 = non initialisé
+        self._audio_channels: int = -1
+        self._audio_bits: int = -1
 
         # État chunks
         self._pending_msg_type: str = ""
@@ -60,53 +68,72 @@ class MainWindow(QMainWindow):
         self._audio_chunks: list = []
         self._audio_total_chunks: int = 0
 
-        # Initialiser pygame.mixer
-        pygame.mixer.init(
-            frequency=self._audio_sample_rate,
-            size=-16,
-            channels=self._audio_channels,
-            buffer=4096,
-        )
+        # Initialiser pygame.mixer UNE SEULE FOIS au démarrage
+        pygame.mixer.init(frequency=22050, size=-16, channels=1, buffer=4096)
+        self._audio_sample_rate = 22050
+        self._audio_channels = 1
+        self._audio_bits = 16
         logger.info(f"🎵 pygame.mixer initialisé: {self._audio_sample_rate}Hz")
 
         self._setup_ui()
 
     # ================================================================
-    # GESTION AUDIO — pygame.mixer (fiable sur Windows)
+    # GESTION AUDIO
     # ================================================================
 
     def _ensure_audio_format(self, sample_rate: int, channels: int, bits: int):
-        """Reconfigure pygame.mixer si le format change."""
-        if (sample_rate != self._audio_sample_rate
-                or channels != self._audio_channels
-                or bits != self._audio_bits):
-            logger.info(f"Format: {self._audio_sample_rate}Hz → {sample_rate}Hz")
-            self._audio_sample_rate = sample_rate
-            self._audio_channels = channels
-            self._audio_bits = bits
-            pygame.mixer.quit()
-            pygame.mixer.init(
-                frequency=sample_rate,
-                size=-(bits),
-                channels=channels,
-                buffer=4096,
-            )
-            logger.info(f"🎵 pygame.mixer réinitialisé: {sample_rate}Hz {channels}ch {bits}bit")
+        """
+        Reconfigure pygame.mixer si le format change.
+        Appelé UNE SEULE FOIS par session (depuis audio_chunk_end).
+        """
+        if (sample_rate == self._audio_sample_rate
+                and channels == self._audio_channels
+                and bits == self._audio_bits):
+            return  # Meme format -> rien a faire
+
+        logger.info(
+            f"Format audio: {self._audio_sample_rate}Hz/{self._audio_channels}ch"
+            f" -> {sample_rate}Hz/{channels}ch/{bits}bit"
+        )
+        try:
+            pygame.mixer.music.stop()
+            pygame.mixer.music.unload()
+        except Exception:
+            pass
+        pygame.mixer.quit()
+        pygame.mixer.init(
+            frequency=sample_rate,
+            size=-(bits),
+            channels=channels,
+            buffer=4096,
+        )
+        self._audio_sample_rate = sample_rate
+        self._audio_channels = channels
+        self._audio_bits = bits
+        logger.info(f"🎵 pygame.mixer reinitialisé: {sample_rate}Hz {channels}ch {bits}bit")
 
     def _reset_audio_state(self):
-        """Reset complet de l'état audio entre deux sessions."""
+        """
+        Reset de l'etat audio entre deux sessions.
+        NE PAS reinitialiser pygame.mixer ici pour eviter le double init.
+        On arrete juste la lecture et on invalide le format courant.
+        """
         if self.audio_check_timer:
             self.audio_check_timer.stop()
             self.audio_check_timer = None
 
         try:
-            pygame.mixer.stop()
+            pygame.mixer.music.stop()
+            pygame.mixer.music.unload()
         except Exception:
             pass
 
-        self._pygame_sound = None
+        self._cleanup_tmp_file()
 
-        # Invalider le format → force reconfiguration même si format identique
+        self._audio_play_start = 0.0
+        self._audio_min_duration = 0.0
+
+        # Invalider le format -> _ensure_audio_format reinitalisera pygame
         self._audio_sample_rate = -1
         self._audio_channels = -1
         self._audio_bits = -1
@@ -116,20 +143,18 @@ class MainWindow(QMainWindow):
         self._pending_msg_type = ""
         self._pending_msg_data = {}
 
-        # Remettre pygame.mixer à l'état initial
-        try:
-            pygame.mixer.quit()
-        except Exception:
-            pass
-        pygame.mixer.init(frequency=22050, size=-16, channels=1, buffer=4096)
-        self._audio_sample_rate = 22050
-        self._audio_channels = 1
-        self._audio_bits = 16
+        logger.info("🔄 Etat audio reinitialise")
 
-        logger.info("🔄 État audio réinitialisé")
+    def _cleanup_tmp_file(self):
+        """Supprime le fichier WAV temporaire s'il existe."""
+        if self._tmp_audio_path:
+            try:
+                os.unlink(self._tmp_audio_path)
+            except Exception:
+                pass
+            self._tmp_audio_path = None
 
     def _reset_ui_for_new_session(self):
-        """Remet l'UI dans l'état initial."""
         self.interview_container.setVisible(False)
         self.connection_widget.setVisible(True)
         self.connect_btn.setEnabled(True)
@@ -146,7 +171,7 @@ class MainWindow(QMainWindow):
             except Exception:
                 pass
             self.audio_recorder = None
-        logger.info("🔄 UI réinitialisée")
+        logger.info("🔄 UI reinitialisee")
 
     # ================================================================
     # UI
@@ -384,7 +409,6 @@ class MainWindow(QMainWindow):
             self._show_error_dialog("❌ Erreur", "Format attendu: session_xxxxxxxxxxxxx")
             return
 
-        # Déconnecter l'ancien WS sans déclencher ses slots
         if self.websocket_client:
             try:
                 self.websocket_client.disconnected.disconnect()
@@ -399,7 +423,6 @@ class MainWindow(QMainWindow):
                 pass
             self.websocket_client = None
 
-        # Incrémenter le token → invalide tous les anciens slots
         self._session_token += 1
         current_token = self._session_token
 
@@ -444,7 +467,6 @@ class MainWindow(QMainWindow):
 
     def _on_ws_disconnected(self, code: int, reason: str, token: int):
         if not self._is_active(token):
-            logger.debug(f"Déconnexion ignorée (token périmé {token})")
             return
         if self.is_connecting:
             self._handle_connection_failure(reason or f"Code {code}")
@@ -518,7 +540,7 @@ class MainWindow(QMainWindow):
                     )
                     self._play_pcm(pcm_bytes)
                 except Exception as e:
-                    logger.error(f"❌ Assemblage: {e}")
+                    logger.error(f"❌ Assemblage PCM: {e}")
                     self.interview_widget.enable_recording(True)
             else:
                 self.interview_widget.enable_recording(True)
@@ -563,60 +585,99 @@ class MainWindow(QMainWindow):
             self._reset_ui_for_new_session()
 
     # ================================================================
-    # LECTURE AUDIO — pygame.mixer
+    # LECTURE AUDIO — pygame.mixer.music (streaming fichier temp)
     # ================================================================
 
     def _play_pcm(self, pcm_bytes: bytes):
         """
-        Joue du PCM brut via pygame.mixer.Sound.
+        Joue du PCM via pygame.mixer.music (streaming depuis fichier).
 
-        Pourquoi pygame plutôt que QAudioSink :
-        QAudioSink sur Windows ne passe pas en IdleState de façon fiable
-        pour les grands buffers (> 500KB). pygame.mixer.get_busy() est
-        simple, fiable, et indépendant de la taille ou durée de l'audio.
+        Pourquoi music plutot que Sound :
+        - Sound charge tout en RAM : instable pour >1MB sur Windows
+        - music streame depuis fichier : fiable quelle que soit la duree
+        - Pas de limite de taille connue sur Windows
         """
         try:
             if self.audio_check_timer:
                 self.audio_check_timer.stop()
                 self.audio_check_timer = None
 
-            pygame.mixer.stop()
-            self._pygame_sound = None
+            try:
+                pygame.mixer.music.stop()
+                pygame.mixer.music.unload()
+            except Exception:
+                pass
 
-            # Construire un WAV en mémoire à partir du PCM brut
-            wav_buf = io.BytesIO()
-            with wave.open(wav_buf, 'wb') as wf:
+            self._cleanup_tmp_file()
+
+            # Ecrire le PCM dans un fichier WAV temporaire
+            tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+            self._tmp_audio_path = tmp.name
+            tmp.close()
+
+            with wave.open(self._tmp_audio_path, "wb") as wf:
                 wf.setnchannels(self._audio_channels)
                 wf.setsampwidth(self._audio_bits // 8)
                 wf.setframerate(self._audio_sample_rate)
                 wf.writeframes(pcm_bytes)
-            wav_buf.seek(0)
 
-            self._pygame_sound = pygame.mixer.Sound(wav_buf)
-            self._pygame_sound.play()
+            # Durée théorique -> garde-fou anti faux-positifs
+            bytes_per_sec = (
+                self._audio_sample_rate * self._audio_channels * (self._audio_bits // 8)
+            )
+            theoretical_ms = (
+                (len(pcm_bytes) / bytes_per_sec) * 1000 if bytes_per_sec > 0 else 3000
+            )
+            # Attendre au moins 90% de la durée théorique (min 800ms)
+            self._audio_min_duration = max(theoretical_ms * 0.9, 800)
+            self._audio_play_start = time.monotonic() * 1000
+
+            pygame.mixer.music.load(self._tmp_audio_path)
+            pygame.mixer.music.play()
 
             logger.info(
                 f"▶️ Lecture: {len(pcm_bytes):,} B "
-                f"@ {self._audio_sample_rate}Hz {self._audio_channels}ch {self._audio_bits}bit"
+                f"@ {self._audio_sample_rate}Hz {self._audio_channels}ch {self._audio_bits}bit "
+                f"(~{theoretical_ms/1000:.1f}s, garde-fou {self._audio_min_duration/1000:.1f}s)"
             )
 
-            # Démarrer le poll — pygame.mixer.get_busy() est fiable
             self.audio_check_timer = QTimer()
             self.audio_check_timer.timeout.connect(self._check_audio_finished)
             self.audio_check_timer.start(200)
 
         except Exception as e:
             logger.error(f"❌ _play_pcm: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            self._cleanup_tmp_file()
             self.interview_widget.enable_recording(True)
 
     def _check_audio_finished(self):
-        """Détecte la fin de lecture via pygame.mixer.get_busy()."""
-        if not pygame.mixer.get_busy():
-            logger.info("✅ Lecture terminée → audio_finished")
+        """
+        Détecte la fin de lecture via pygame.mixer.music.get_busy().
+        Le garde-fou evite les faux positifs au demarrage.
+        """
+        now_ms = time.monotonic() * 1000
+        elapsed_ms = now_ms - self._audio_play_start
+
+        if elapsed_ms < self._audio_min_duration:
+            return
+
+        if not pygame.mixer.music.get_busy():
+            logger.info(
+                f"✅ Lecture terminée -> audio_finished "
+                f"(duree reelle: {elapsed_ms/1000:.1f}s)"
+            )
             if self.audio_check_timer:
                 self.audio_check_timer.stop()
                 self.audio_check_timer = None
-            self._pygame_sound = None
+
+            try:
+                pygame.mixer.music.unload()
+            except Exception:
+                pass
+            self._cleanup_tmp_file()
+
             self.video_player.set_idle()
             if self.websocket_client:
                 self.websocket_client.send_message({"type": "audio_finished"})
@@ -624,15 +685,15 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage("✅ Vous pouvez répondre")
 
     def _play_bytes_direct(self, audio_bytes: bytes):
-        """Fallback: joue des bytes WAV inline."""
-        if audio_bytes[:4] == b'RIFF':
+        """Fallback: joue des bytes WAV/PCM inline."""
+        if audio_bytes[:4] == b"RIFF":
             import struct
-            fmt_idx = audio_bytes.find(b'fmt ', 12)
-            data_idx = audio_bytes.find(b'data', 12)
+            fmt_idx = audio_bytes.find(b"fmt ", 12)
+            data_idx = audio_bytes.find(b"data", 12)
             if fmt_idx != -1 and data_idx != -1:
-                sr  = struct.unpack_from('<I', audio_bytes, fmt_idx + 12)[0]
-                ch  = struct.unpack_from('<H', audio_bytes, fmt_idx + 10)[0]
-                bps = struct.unpack_from('<H', audio_bytes, fmt_idx + 22)[0]
+                sr  = struct.unpack_from("<I", audio_bytes, fmt_idx + 12)[0]
+                ch  = struct.unpack_from("<H", audio_bytes, fmt_idx + 10)[0]
+                bps = struct.unpack_from("<H", audio_bytes, fmt_idx + 22)[0]
                 self._ensure_audio_format(sr, ch, bps)
                 self._play_pcm(audio_bytes[data_idx + 8:])
                 return
@@ -725,7 +786,12 @@ class MainWindow(QMainWindow):
         if self.audio_check_timer:
             self.audio_check_timer.stop()
         try:
-            pygame.mixer.stop()
+            pygame.mixer.music.stop()
+            pygame.mixer.music.unload()
+        except Exception:
+            pass
+        self._cleanup_tmp_file()
+        try:
             pygame.mixer.quit()
         except Exception:
             pass
