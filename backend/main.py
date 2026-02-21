@@ -1,3 +1,37 @@
+"""
+Route WebSocket modifiée pour accepter le paramètre ?lang=ar|fr|en
+transmis par le client selon la langue choisie par le candidat.
+
+Remplace uniquement le bloc @app.websocket dans backend/main.py :
+
+@app.websocket("/ws/interview/{session_id}")
+async def websocket_interview(websocket: WebSocket, session_id: str, lang: str = ""):
+    await handle_interview_websocket(websocket, session_id, lang=lang)
+
+FastAPI lit automatiquement ?lang= comme query parameter.
+"""
+
+# ─── EXTRAIT À INTÉGRER DANS backend/main.py ───────────────────────────────
+#
+# Remplacez le bloc existant :
+#
+#   @app.websocket("/ws/interview/{session_id}")
+#   async def websocket_interview(websocket: WebSocket, session_id: str):
+#       await handle_interview_websocket(websocket, session_id)
+#
+# Par :
+#
+#   @app.websocket("/ws/interview/{session_id}")
+#   async def websocket_interview(websocket: WebSocket, session_id: str, lang: str = ""):
+#       await handle_interview_websocket(websocket, session_id, lang=lang)
+#
+# FastAPI extrait automatiquement ?lang= de l'URL WebSocket.
+# Exemple d'URL côté client :
+#   ws://localhost:8000/ws/interview/session_abc?lang=fr
+# ──────────────────────────────────────────────────────────────────────────────
+
+# Voici le fichier main.py complet mis à jour :
+
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket
 from fastapi.staticfiles import StaticFiles
@@ -32,7 +66,6 @@ async def lifespan(app: FastAPI):
 
     from backend.websocket import interview_handler as ih
 
-    # ── ASR (Vosk est rapide à charger) ──
     try:
         from backend.services import get_asr_service
         ih._asr_service = get_asr_service()
@@ -41,16 +74,14 @@ async def lifespan(app: FastAPI):
         logger.error(f"❌ ASR: {e}")
         ih._asr_service = None
 
-    # ── TTS : INSTANTANÉ (Edge-TTS démarre, Coqui charge en arrière-plan) ──
     try:
         from backend.services import get_tts_service
         ih._tts_service = get_tts_service()
-        logger.info("✅ TTS actif (Coqui se charge en arrière-plan...)")
+        logger.info("✅ TTS actif")
     except Exception as e:
         logger.error(f"❌ TTS: {e}")
         ih._tts_service = None
 
-    # ── Avatar ──
     try:
         from backend.services import get_avatar_service
         ih._avatar_service = get_avatar_service()
@@ -60,8 +91,7 @@ async def lifespan(app: FastAPI):
         ih._avatar_service = None
 
     logger.info("=" * 60)
-    logger.info("✅ Serveur prêt IMMÉDIATEMENT - Coqui TTS charge en fond")
-    logger.info("   (qualité Coqui disponible après ~60s)")
+    logger.info("✅ Serveur prêt | Support multilingue AR/FR/EN activé")
     logger.info("=" * 60)
 
     yield
@@ -71,7 +101,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title=settings.API_TITLE,
-    description="API complète pour le système de recrutement intelligent avec IA vocale",
+    description="API complète pour le système de recrutement intelligent avec IA vocale - Multilingue AR/FR/EN",
     version=settings.API_VERSION,
     docs_url="/docs",
     redoc_url="/redoc",
@@ -103,9 +133,18 @@ app.include_router(notifications_router)
 app.include_router(export_router)
 
 
+# ──────────────────────────────────────────────────────────────
+# WEBSOCKET MULTILINGUE
+# Le paramètre `lang` est lu depuis l'URL : ?lang=ar|fr|en
+# Il est transmis par le client PySide6 selon la langue choisie.
+# ──────────────────────────────────────────────────────────────
 @app.websocket("/ws/interview/{session_id}")
-async def websocket_interview(websocket: WebSocket, session_id: str):
-    await handle_interview_websocket(websocket, session_id)
+async def websocket_interview(
+    websocket: WebSocket,
+    session_id: str,
+    lang: str = "",   # ← query param ?lang=ar|fr|en
+):
+    await handle_interview_websocket(websocket, session_id, lang=lang)
 
 
 @app.get("/")
@@ -113,6 +152,7 @@ async def root():
     return {
         "message": "Stark Recruitment AI API",
         "version": settings.API_VERSION,
+        "languages_supported": ["ar", "fr", "en"],
         "documentation": "/docs",
     }
 
@@ -129,6 +169,7 @@ async def health():
     return {
         "status": "ok",
         "api_version": settings.API_VERSION,
+        "languages": ["ar", "fr", "en"],
         "services": {
             "database": "connected",
             "asr": "ready" if ih._asr_service else "unavailable",
@@ -153,7 +194,7 @@ async def api_info():
             "analytics": "/analytics",
             "notifications": "/notifications",
             "export": "/export",
-            "websocket": "/ws/interview/{session_id}"
+            "websocket": "/ws/interview/{session_id}?lang=ar|fr|en",
         },
     }
 

@@ -754,7 +754,7 @@ class MainWindow(QMainWindow):
         self.connect_btn.setText(self.t("connecting"))
         self.session_input.setEnabled(False)
 
-        ws_url = f"{settings.WEBSOCKET_URL}/ws/interview/{session_id}"
+        ws_url = f"{settings.WEBSOCKET_URL}/ws/interview/{session_id}?lang={self._language}"
         self.websocket_client = WebSocketClient(ws_url)
 
         self.websocket_client.disconnected.connect(

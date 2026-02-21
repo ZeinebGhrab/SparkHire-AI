@@ -1,14 +1,10 @@
 """
 Handler WebSocket - AUDIO PCM PUR EN CHUNKS - MULTILINGUE AR/FR/EN
-Support complet arabe, français, anglais avec messages localisés.
+La langue est déterminée en priorité par le paramètre ?lang= de l'URL WebSocket
+(choix du candidat), avec fallback sur la langue stockée dans la session.
 """
 
-import logging
-import base64
-import io
-import wave
-import struct
-import asyncio
+import logging, base64, io, wave, struct, asyncio
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from typing import Optional
@@ -28,12 +24,8 @@ _avatar_service = None
 _tts_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="tts-worker")
 
 _WS_CLOSE_REASON_MAX_BYTES = 123
-AUDIO_CHUNK_SIZE = 64 * 1024  # 64 KB de PCM par chunk
-
-
-# ============================================================
-# TEXTES LOCALISÉS
-# ============================================================
+AUDIO_CHUNK_SIZE = 64 * 1024
+SUPPORTED_LANGUAGES = {"ar", "fr", "en"}
 
 LOCALIZED_TEXTS = {
     "welcome": {
@@ -46,204 +38,143 @@ LOCALIZED_TEXTS = {
         "fr": "Merci beaucoup ! L'entretien est terminé. Nous vous contacterons prochainement.",
         "en": "Thank you! The interview is complete. We will contact you soon.",
     },
-    "session_invalid": {
-        "ar": "❌ خطأ: معرّف الجلسة غير صالح أو غير موجود.\n\nيرجى التحقق من رقم الجلسة.",
-        "fr": "❌ ERREUR : Identifiant de session invalide ou introuvable.\n\nVeuillez vérifier votre identifiant de session.",
-        "en": "❌ ERROR: Session ID invalid or not found.\n\nPlease check your session identifier.",
-    },
 }
 
 
-def _get_text(key: str, language: str) -> str:
-    texts = LOCALIZED_TEXTS.get(key, {})
-    return texts.get(language, texts.get("en", ""))
+def _get_text(key, language):
+    return LOCALIZED_TEXTS.get(key, {}).get(language) or LOCALIZED_TEXTS.get(key, {}).get("en", "")
 
 
-def _truncate_close_reason(reason: str) -> str:
-    encoded = reason.encode("utf-8")
-    if len(encoded) <= _WS_CLOSE_REASON_MAX_BYTES:
+def _truncate_close_reason(reason):
+    enc = reason.encode("utf-8")
+    if len(enc) <= _WS_CLOSE_REASON_MAX_BYTES:
         return reason
-    truncated = encoded[:_WS_CLOSE_REASON_MAX_BYTES - 1]
-    return truncated.decode("utf-8", errors="ignore") + "…"
+    return enc[:_WS_CLOSE_REASON_MAX_BYTES - 1].decode("utf-8", errors="ignore") + "…"
 
 
 class InterviewHandler:
 
-    def __init__(self, session_id: str, websocket: WebSocket):
+    def __init__(self, session_id: str, websocket: WebSocket, preferred_language: str = ""):
         self.session_id = session_id
-        self.websocket = websocket
-        self.session = None
-        self.position = None
+        self.websocket  = websocket
+        self.session    = None
+        self.position   = None
         self.audio_buffer = bytearray()
         self.is_recording = False
-        self.asr_service = _asr_service
-        self.tts_service = _tts_service
+        self.asr_service  = _asr_service
+        self.tts_service  = _tts_service
         self.avatar_service = _avatar_service
+        # Langue choisie par le candidat (URL ?lang=)
+        self._preferred_language = (
+            preferred_language if preferred_language in SUPPORTED_LANGUAGES else ""
+        )
+        logger.info(f"Handler | session={session_id} | lang_client={preferred_language!r} | retenu={self._preferred_language or '(session)'}")
 
     @property
     def lang(self) -> str:
-        """Langue courante de la session"""
-        return getattr(self.session, "language", "ar") if self.session else "ar"
+        """Langue active : préférence candidat > session > ar"""
+        if self._preferred_language:
+            return self._preferred_language
+        if self.session:
+            return self.session.language or "ar"
+        return "ar"
 
     def _check_connected(self):
         if not manager.is_connected(self.session_id):
             raise WebSocketDisconnect(code=1006, reason="Client déconnecté")
 
-    # ----------------------------------------------------------
-    # EXTRACTION PCM + ENVOI CHUNKS
-    # ----------------------------------------------------------
+    # ── PCM ──────────────────────────────────────────────────────────────
 
     @staticmethod
-    def _extract_pcm_from_wav(wav_bytes: bytes) -> tuple:
+    def _extract_pcm_from_wav(wav_bytes):
         if len(wav_bytes) < 44 or wav_bytes[:4] != b'RIFF':
             return wav_bytes, 22050, 1, 16
-
-        sample_rate, channels, bits = 22050, 1, 16
+        sr, ch, bits = 22050, 1, 16
         offset = 12
-
         while offset + 8 <= len(wav_bytes):
-            chunk_id   = wav_bytes[offset:offset + 4]
-            chunk_size = struct.unpack_from('<I', wav_bytes, offset + 4)[0]
-            data_start = offset + 8
+            cid   = wav_bytes[offset:offset + 4]
+            csz   = struct.unpack_from('<I', wav_bytes, offset + 4)[0]
+            ds    = offset + 8
+            if cid == b'fmt ' and ds + 16 <= len(wav_bytes):
+                ch   = struct.unpack_from('<H', wav_bytes, ds + 2)[0]
+                sr   = struct.unpack_from('<I', wav_bytes, ds + 4)[0]
+                bits = struct.unpack_from('<H', wav_bytes, ds + 14)[0]
+            elif cid == b'data':
+                pcm = wav_bytes[ds:]
+                logger.info(f"WAV→PCM {len(wav_bytes):,}B→{len(pcm):,}B ({sr}Hz,{ch}ch,{bits}bit)")
+                return pcm, sr, ch, bits
+            offset = ds + csz + (csz % 2)
+        return wav_bytes, sr, ch, bits
 
-            if chunk_id == b'fmt ':
-                if data_start + 16 <= len(wav_bytes):
-                    channels    = struct.unpack_from('<H', wav_bytes, data_start + 2)[0]
-                    sample_rate = struct.unpack_from('<I', wav_bytes, data_start + 4)[0]
-                    bits        = struct.unpack_from('<H', wav_bytes, data_start + 14)[0]
-
-            elif chunk_id == b'data':
-                pcm_bytes = wav_bytes[data_start:]
-                logger.info(
-                    f"WAV → PCM: {len(wav_bytes):,}B → {len(pcm_bytes):,}B "
-                    f"({sample_rate}Hz, {channels}ch, {bits}bit)"
-                )
-                return pcm_bytes, sample_rate, channels, bits
-
-            offset = data_start + chunk_size
-            if chunk_size % 2 != 0:
-                offset += 1
-
-        logger.warning("Chunk 'data' introuvable dans le WAV")
-        return wav_bytes, sample_rate, channels, bits
-
-    async def _send_audio_chunked(self, audio_bytes: bytes, msg_type: str, extra_data: dict):
-        pcm_bytes, sample_rate, channels, bits = self._extract_pcm_from_wav(audio_bytes)
-
-        total_bytes  = len(pcm_bytes)
-        total_chunks = (total_bytes + AUDIO_CHUNK_SIZE - 1) // AUDIO_CHUNK_SIZE
-
-        logger.info(
-            f"Audio {msg_type}: {len(audio_bytes):,}B WAV → {total_bytes:,}B PCM "
-            f"({sample_rate}Hz) → {total_chunks} chunks"
-        )
-
-        msg_data = dict(extra_data)
-        msg_data.update({
-            "audio_mode":       "chunked",
-            "audio_format":     "pcm_s16le",
-            "sample_rate":      sample_rate,
-            "channels":         channels,
-            "bits_per_sample":  bits,
-            "total_chunks":     total_chunks,
-            "audio_size_bytes": total_bytes,
-        })
-
-        await manager.send_json(self.session_id, {
-            "type": msg_type,
-            "data": msg_data
-        })
-
-        for i in range(total_chunks):
+    async def _send_audio_chunked(self, audio_bytes, msg_type, extra_data):
+        pcm, sr, ch, bits = self._extract_pcm_from_wav(audio_bytes)
+        n_chunks = (len(pcm) + AUDIO_CHUNK_SIZE - 1) // AUDIO_CHUNK_SIZE
+        meta = {**extra_data,
+                "audio_mode": "chunked", "audio_format": "pcm_s16le",
+                "sample_rate": sr, "channels": ch, "bits_per_sample": bits,
+                "total_chunks": n_chunks, "audio_size_bytes": len(pcm)}
+        await manager.send_json(self.session_id, {"type": msg_type, "data": meta})
+        for i in range(n_chunks):
             self._check_connected()
-            chunk = pcm_bytes[i * AUDIO_CHUNK_SIZE:(i + 1) * AUDIO_CHUNK_SIZE]
+            chunk = pcm[i * AUDIO_CHUNK_SIZE:(i + 1) * AUDIO_CHUNK_SIZE]
             await manager.send_json(self.session_id, {
                 "type": "audio_chunk_data",
-                "data": {
-                    "chunk_index": i,
-                    "total":       total_chunks,
-                    "data":        base64.b64encode(chunk).decode("utf-8")
-                }
-            })
+                "data": {"chunk_index": i, "total": n_chunks,
+                         "data": base64.b64encode(chunk).decode()}})
             await asyncio.sleep(0)
+        await manager.send_json(self.session_id, {"type": "audio_chunk_end", "data": {"msg_type": msg_type}})
+        logger.info(f"✅ {n_chunks} chunks PCM pour '{msg_type}' [{self.lang}]")
 
-        await manager.send_json(self.session_id, {
-            "type": "audio_chunk_end",
-            "data": {"msg_type": msg_type}
-        })
+    # ── TTS ──────────────────────────────────────────────────────────────
 
-        logger.info(f"✅ {total_chunks} chunks PCM envoyés pour '{msg_type}'")
-
-    # ----------------------------------------------------------
-    # TTS ASYNCHRONE
-    # ----------------------------------------------------------
-
-    async def _synthesize_bytes(self, text: str, language: str) -> Optional[bytes]:
+    async def _synthesize_bytes(self, text: str) -> Optional[bytes]:
         if not self.tts_service:
             return None
-
+        language = self.lang
         loop = asyncio.get_event_loop()
-
         def _do():
             try:
-                data = self.tts_service.synthesize(text, language=language, use_cache=True)
-                return data if data else None
+                return self.tts_service.synthesize(text, language=language, use_cache=True) or None
             except Exception as e:
-                logger.error(f"TTS error: {e}")
+                logger.error(f"TTS [{language}]: {e}")
                 return None
-
         result = await loop.run_in_executor(_tts_executor, _do)
         if result:
-            logger.info(f"TTS: {len(result):,} bytes générés")
+            logger.info(f"TTS [{language}]: {len(result):,} bytes")
         return result
 
-    # ----------------------------------------------------------
-    # ATTENTE FIN LECTURE AUDIO CLIENT
-    # ----------------------------------------------------------
+    # ── Attente fin lecture ───────────────────────────────────────────────
 
-    async def _wait_for_audio_finished(self, timeout: float = 120.0):
-        logger.info(f"⏳ Attente audio_finished (max {int(timeout)}s)...")
+    async def _wait_for_audio_finished(self, timeout=120.0):
         loop = asyncio.get_event_loop()
         deadline = loop.time() + timeout
         while True:
             remaining = deadline - loop.time()
             if remaining <= 0:
-                logger.warning("⚠️ Timeout audio_finished — on continue sans attendre")
+                logger.warning("⚠️ Timeout audio_finished")
                 return
             try:
-                data = await asyncio.wait_for(
-                    self.websocket.receive_json(),
-                    timeout=min(remaining, 5.0)
-                )
-                msg_type = data.get("type")
-                if msg_type == "audio_finished":
-                    logger.info("✅ Client prêt (audio terminé)")
+                data = await asyncio.wait_for(self.websocket.receive_json(), timeout=min(remaining, 5.0))
+                t = data.get("type")
+                if t == "audio_finished":
                     return
-                elif msg_type == "end_interview":
+                elif t == "end_interview":
                     await self._cancel_interview()
-                    raise WebSocketDisconnect(code=1000, reason="Terminé par l'utilisateur")
-                else:
-                    logger.debug(f"Message ignoré pendant attente audio: {msg_type}")
+                    raise WebSocketDisconnect(code=1000, reason="Terminé")
             except asyncio.TimeoutError:
                 self._check_connected()
 
-    # ----------------------------------------------------------
-    # HANDLE PRINCIPAL
-    # ----------------------------------------------------------
+    # ── Handle principal ─────────────────────────────────────────────────
 
     async def handle(self):
         try:
-            logger.info(f"Handler démarré: {self.session_id}")
-
             if not await self._load_session():
                 return
-
+            logger.info(f"🌍 Langue active: {self.lang!r} (préférence: {self._preferred_language!r}, session: {self.session.language!r})")
             await asyncio.sleep(0.2)
             self._check_connected()
             await self._send_welcome()
-
-            await self._wait_for_audio_finished(timeout=120.0)
-
+            await self._wait_for_audio_finished(120)
             self._check_connected()
             await self._start_interview()
             await asyncio.sleep(0.3)
@@ -251,12 +182,9 @@ class InterviewHandler:
             while self.session.status == "in_progress":
                 self._check_connected()
                 await self._send_current_question()
-
-                await self._wait_for_audio_finished(timeout=60.0)
-
+                await self._wait_for_audio_finished(60)
                 self._check_connected()
                 await self._wait_for_answer()
-
                 if self.session.current_question_index + 1 >= len(self.position.questions):
                     self._check_connected()
                     await self._complete_interview()
@@ -266,7 +194,7 @@ class InterviewHandler:
                     await asyncio.sleep(0.3)
 
         except WebSocketDisconnect as e:
-            logger.info(f"Déconnexion (code={e.code}): {self.session_id}")
+            logger.info(f"Déconnexion code={e.code}: {self.session_id}")
         except Exception as e:
             logger.error(f"Erreur: {e}", exc_info=True)
             if manager.is_connected(self.session_id):
@@ -277,33 +205,22 @@ class InterviewHandler:
         finally:
             manager.disconnect(self.session_id)
 
-    # ----------------------------------------------------------
-    # SESSION
-    # ----------------------------------------------------------
+    # ── Session ──────────────────────────────────────────────────────────
 
     async def _load_session(self) -> bool:
         try:
-            session, is_valid, error_message = InterviewSessionCRUD.validate_session_access(
-                self.session_id
-            )
+            session, is_valid, err = InterviewSessionCRUD.validate_session_access(self.session_id)
             if not is_valid:
-                logger.warning(f"Session invalide: {error_message}")
-                await self._send_error(error_message, "SESSION_INVALID")
-                close_reason = _truncate_close_reason(error_message)
+                await self._send_error(err, "SESSION_INVALID")
                 try:
-                    await self.websocket.close(code=4003, reason=close_reason)
-                except Exception as e:
-                    logger.warning(f"Fermeture WS: {e}")
+                    await self.websocket.close(code=4003, reason=_truncate_close_reason(err))
+                except Exception:
+                    pass
                 return False
-
-            self.session = session
+            self.session  = session
             self.position = JobPositionCRUD.get_by_id(self.session.job_position_id)
-            logger.info(
-                f"Session OK: {self.position.title} | {len(self.position.questions)} questions | "
-                f"langue: {self.lang}"
-            )
+            logger.info(f"Session OK: {self.position.title} | {len(self.position.questions)} questions | langue={self.lang!r}")
             return True
-
         except WebSocketDisconnect:
             raise
         except Exception as e:
@@ -312,215 +229,161 @@ class InterviewHandler:
                 await self._send_error(str(e))
             return False
 
-    # ----------------------------------------------------------
-    # BIENVENUE
-    # ----------------------------------------------------------
+    # ── Bienvenue ─────────────────────────────────────────────────────────
 
     async def _send_welcome(self):
         text = _get_text("welcome", self.lang)
-
-        logger.info(f"Synthèse audio bienvenue (langue={self.lang})...")
-        audio_bytes = await self._synthesize_bytes(text, self.lang)
-
-        extra = {
-            "total_questions": len(self.position.questions),
-            "position_title":  self.position.title,
-            "expires_at":      self.session.expires_at.isoformat(),
-            "vocal_only":      True,
-            "language":        self.lang,
-        }
-
-        if audio_bytes:
-            await self._send_audio_chunked(audio_bytes, "welcome", extra)
+        logger.info(f"Bienvenue [{self.lang}]: {text[:60]}")
+        audio = await self._synthesize_bytes(text)
+        extra = {"total_questions": len(self.position.questions),
+                 "position_title": self.position.title,
+                 "expires_at": self.session.expires_at.isoformat(),
+                 "vocal_only": True, "language": self.lang}
+        if audio:
+            await self._send_audio_chunked(audio, "welcome", extra)
         else:
             await manager.send_json(self.session_id, {"type": "welcome", "data": extra})
 
-        logger.info("Welcome envoyé")
-
-    # ----------------------------------------------------------
-    # DÉMARRAGE
-    # ----------------------------------------------------------
-
     async def _start_interview(self):
         self.session = InterviewSessionCRUD.update_status(self.session_id, "in_progress")
-        logger.info(f"Entretien démarré: {self.session_id}")
+        logger.info(f"Entretien démarré [{self.lang}]")
 
-    # ----------------------------------------------------------
-    # QUESTION
-    # ----------------------------------------------------------
+    # ── Question ──────────────────────────────────────────────────────────
 
     async def _send_current_question(self):
         idx = self.session.current_question_index
         if idx >= len(self.position.questions):
             return
-
         question = self.position.questions[idx]
-        # Utilise la méthode get_text pour obtenir la bonne langue
+
+        # ✅ La question est lue dans la langue choisie par le candidat
         text = question.get_text(self.lang)
 
-        progress = {
-            "current":    idx + 1,
-            "total":      len(self.position.questions),
-            "percentage": int((idx + 1) / len(self.position.questions) * 100),
-        }
+        progress = {"current": idx + 1, "total": len(self.position.questions),
+                    "percentage": int((idx + 1) / len(self.position.questions) * 100)}
+        logger.info(f"Q{question.order} [{self.lang}]: {text[:80]}")
 
-        logger.info(f"Question {question.order}/{len(self.position.questions)} [{self.lang}]: '{text}'")
+        await manager.send_json(self.session_id, {"type": "question_loading", "data": {"progress": progress}})
 
-        await manager.send_json(self.session_id, {
-            "type": "question_loading",
-            "data": {"progress": progress}
-        })
-
-        audio_bytes = await self._synthesize_bytes(text, self.lang)
-
-        if not audio_bytes:
+        audio = await self._synthesize_bytes(text)
+        if not audio:
             await self._send_error("Impossible de générer l'audio")
             return
 
-        extra = {
-            "order":        question.order,
-            "max_duration": question.max_duration_seconds,
-            "progress":     progress,
-            "vocal_only":   True,
-        }
+        extra = {"order": question.order, "max_duration": question.max_duration_seconds,
+                 "progress": progress, "vocal_only": True, "language": self.lang}
+        await self._send_audio_chunked(audio, "question", extra)
 
-        await self._send_audio_chunked(audio_bytes, "question", extra)
-        logger.info(f"Question {question.order} envoyée")
-
-    # ----------------------------------------------------------
-    # ATTENTE RÉPONSE
-    # ----------------------------------------------------------
+    # ── Réponse ──────────────────────────────────────────────────────────
 
     async def _wait_for_answer(self):
         self.audio_buffer.clear()
         self.is_recording = False
         answer_start_time = None
-
         self._check_connected()
-
         try:
             while True:
                 data = await self.websocket.receive_json()
-                msg_type = data.get("type")
-
-                if msg_type == "audio_chunk":
+                t = data.get("type")
+                if t == "audio_chunk":
                     if not self.is_recording:
                         self.is_recording = True
                         answer_start_time = datetime.utcnow()
-                    audio_data = base64.b64decode(data.get("audio_data", ""))
-                    self.audio_buffer.extend(audio_data)
-
-                elif msg_type == "answer_complete":
-                    logger.info(f"Réponse: {len(self.audio_buffer):,} bytes")
+                    self.audio_buffer.extend(base64.b64decode(data.get("audio_data", "")))
+                elif t == "answer_complete":
                     break
-
-                elif msg_type == "end_interview":
+                elif t == "end_interview":
                     await self._cancel_interview()
-                    raise WebSocketDisconnect(code=1000, reason="Termine")
-
+                    raise WebSocketDisconnect(code=1000, reason="Terminé")
         except WebSocketDisconnect:
             raise
         except Exception as e:
             raise WebSocketDisconnect(code=1006, reason=str(e)[:100]) from e
-
         if self.audio_buffer:
             await self._process_answer(answer_start_time)
 
-    # ----------------------------------------------------------
-    # TRAITEMENT RÉPONSE
-    # ----------------------------------------------------------
-
-    async def _process_answer(self, start_time: Optional[datetime]):
-        idx = self.session.current_question_index
+    async def _process_answer(self, start_time):
+        idx      = self.session.current_question_index
         question = self.position.questions[idx]
         duration = (datetime.utcnow() - start_time).total_seconds() if start_time else 0.0
-
-        audio_path = (
-            settings.UPLOAD_DIR / "interviews"
-            / f"answer_{self.session_id}_{question.order}.wav"
-        )
+        audio_path = settings.UPLOAD_DIR / "interviews" / f"answer_{self.session_id}_{question.order}.wav"
         audio_path.parent.mkdir(parents=True, exist_ok=True)
-
-        audio_bytes = self._buffer_to_wav(bytes(self.audio_buffer))
-        audio_path.write_bytes(audio_bytes)
+        wav = self._buffer_to_wav(bytes(self.audio_buffer))
+        audio_path.write_bytes(wav)
 
         transcript = ""
         if self.asr_service:
             try:
                 loop = asyncio.get_event_loop()
-                svc, lang, ab = self.asr_service, self.lang, audio_bytes
-                transcript = await loop.run_in_executor(
-                    None, lambda: svc.transcribe(ab, language=lang)
-                )
-                logger.info(f"Transcription: '{transcript}'")
+                svc, lang, ab = self.asr_service, self.lang, wav
+                transcript = await loop.run_in_executor(None, lambda: svc.transcribe(ab, language=lang))
+                logger.info(f"Transcription [{lang}]: '{transcript}'")
             except Exception as e:
-                logger.error(f"ASR error: {e}")
+                logger.error(f"ASR: {e}")
 
-        answer = Answer(
+        InterviewSessionCRUD.add_answer(self.session_id, Answer(
             question_order=question.order,
             question_text=question.get_text(self.lang),
             transcript=transcript,
             audio_file_path=str(audio_path),
             duration_seconds=duration,
-        )
-        InterviewSessionCRUD.add_answer(self.session_id, answer)
+        ))
 
         if manager.is_connected(self.session_id):
             await manager.send_json(self.session_id, {
                 "type": "answer_saved",
-                "data": {"duration": duration, "question_order": question.order, "saved": True},
-            })
+                "data": {"duration": duration, "question_order": question.order, "saved": True}})
 
-    # ----------------------------------------------------------
-    # FIN
-    # ----------------------------------------------------------
+    # ── Fin ──────────────────────────────────────────────────────────────
 
     async def _complete_interview(self):
         self.session = InterviewSessionCRUD.update_status(self.session_id, "completed")
-
-        text = _get_text("completed", self.lang)
-        audio_bytes = await self._synthesize_bytes(text, self.lang)
-
-        extra = {
-            "total_questions": len(self.position.questions),
-            "total_answers":   len(self.session.answers),
-            "position_title":  self.position.title,
-        }
-
-        if audio_bytes:
-            await self._send_audio_chunked(audio_bytes, "interview_completed", extra)
+        text  = _get_text("completed", self.lang)
+        audio = await self._synthesize_bytes(text)
+        extra = {"total_questions": len(self.position.questions),
+                 "total_answers": len(self.session.answers),
+                 "position_title": self.position.title}
+        if audio:
+            await self._send_audio_chunked(audio, "interview_completed", extra)
         else:
-            await manager.send_json(self.session_id, {
-                "type": "interview_completed", "data": extra
-            })
+            await manager.send_json(self.session_id, {"type": "interview_completed", "data": extra})
 
     async def _cancel_interview(self):
         self.session = InterviewSessionCRUD.update_status(self.session_id, "cancelled")
 
-    async def _send_error(self, message: str, error_type: str = "GENERAL_ERROR"):
+    async def _send_error(self, message, error_type="GENERAL_ERROR"):
         if not manager.is_connected(self.session_id):
             return
         try:
-            await manager.send_json(self.session_id, {
-                "type": "error",
-                "data": {"message": message, "error_type": error_type},
-            })
+            await manager.send_json(self.session_id,
+                {"type": "error", "data": {"message": message, "error_type": error_type}})
         except WebSocketDisconnect:
             pass
 
-    def _buffer_to_wav(self, audio_data: bytes) -> bytes:
-        output = io.BytesIO()
-        with wave.open(output, "wb") as wf:
+    def _buffer_to_wav(self, audio_data):
+        out = io.BytesIO()
+        with wave.open(out, "wb") as wf:
             wf.setnchannels(settings.CHANNELS)
             wf.setsampwidth(2)
             wf.setframerate(settings.SAMPLE_RATE)
             wf.writeframes(audio_data)
-        return output.getvalue()
+        return out.getvalue()
 
 
-async def handle_interview_websocket(websocket: WebSocket, session_id: str):
-    logger.info(f"Connexion WebSocket: {session_id}")
+# ─────────────────────────────────────────────────────────────────────
+# POINT D'ENTRÉE WEBSOCKET
+# ─────────────────────────────────────────────────────────────────────
+
+async def handle_interview_websocket(
+    websocket: WebSocket,
+    session_id: str,
+    lang: str = "",
+):
+    """
+    lang : code langue transmis par le client via ?lang=ar|fr|en
+    """
+    logger.info(f"WS: {session_id} | lang={lang!r}")
     await manager.connect(session_id, websocket)
-    handler = InterviewHandler(session_id, websocket)
+    handler = InterviewHandler(session_id, websocket, preferred_language=lang)
     await handler.handle()
-    logger.info(f"Connexion fermée: {session_id}")
+    logger.info(f"WS fermé: {session_id}")
