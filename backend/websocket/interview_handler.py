@@ -1,7 +1,6 @@
 """
-Handler WebSocket - AUDIO PCM PUR EN CHUNKS
-Fix qualité audio: extrait le PCM brut du WAV avant d'envoyer les chunks.
-Le client reçoit du PCM s16le 16kHz mono, jouable directement par QAudioSink.
+Handler WebSocket - AUDIO PCM PUR EN CHUNKS - MULTILINGUE AR/FR/EN
+Support complet arabe, français, anglais avec messages localisés.
 """
 
 import logging
@@ -32,6 +31,34 @@ _WS_CLOSE_REASON_MAX_BYTES = 123
 AUDIO_CHUNK_SIZE = 64 * 1024  # 64 KB de PCM par chunk
 
 
+# ============================================================
+# TEXTES LOCALISÉS
+# ============================================================
+
+LOCALIZED_TEXTS = {
+    "welcome": {
+        "ar": "مرحبا بك في المقابلة الصوتية. سأطرح عليك مجموعة من الأسئلة الصوتية فقط. استمع جيداً وأجب بوضوح.",
+        "fr": "Bienvenue dans votre entretien vocal. Je vais vous poser des questions uniquement en audio. Écoutez attentivement et répondez clairement.",
+        "en": "Welcome to the voice interview. I will ask you questions in audio only. Listen carefully and answer clearly.",
+    },
+    "completed": {
+        "ar": "شكراً لك! انتهت المقابلة. سنتواصل معك قريباً.",
+        "fr": "Merci beaucoup ! L'entretien est terminé. Nous vous contacterons prochainement.",
+        "en": "Thank you! The interview is complete. We will contact you soon.",
+    },
+    "session_invalid": {
+        "ar": "❌ خطأ: معرّف الجلسة غير صالح أو غير موجود.\n\nيرجى التحقق من رقم الجلسة.",
+        "fr": "❌ ERREUR : Identifiant de session invalide ou introuvable.\n\nVeuillez vérifier votre identifiant de session.",
+        "en": "❌ ERROR: Session ID invalid or not found.\n\nPlease check your session identifier.",
+    },
+}
+
+
+def _get_text(key: str, language: str) -> str:
+    texts = LOCALIZED_TEXTS.get(key, {})
+    return texts.get(language, texts.get("en", ""))
+
+
 def _truncate_close_reason(reason: str) -> str:
     encoded = reason.encode("utf-8")
     if len(encoded) <= _WS_CLOSE_REASON_MAX_BYTES:
@@ -53,6 +80,11 @@ class InterviewHandler:
         self.tts_service = _tts_service
         self.avatar_service = _avatar_service
 
+    @property
+    def lang(self) -> str:
+        """Langue courante de la session"""
+        return getattr(self.session, "language", "ar") if self.session else "ar"
+
     def _check_connected(self):
         if not manager.is_connected(self.session_id):
             raise WebSocketDisconnect(code=1006, reason="Client déconnecté")
@@ -63,20 +95,11 @@ class InterviewHandler:
 
     @staticmethod
     def _extract_pcm_from_wav(wav_bytes: bytes) -> tuple:
-        """
-        Extrait les samples PCM + métadonnées de format depuis un fichier WAV.
-        Parcourt le RIFF chunk tree correctement.
-        Retourne: (pcm_bytes, sample_rate, channels, bits_per_sample)
-        """
-        import struct
-
         if len(wav_bytes) < 44 or wav_bytes[:4] != b'RIFF':
-            # Pas un WAV → supposer PCM 22050Hz mono 16bit (défaut Coqui)
             return wav_bytes, 22050, 1, 16
 
-        # Parcourir les chunks RIFF proprement
         sample_rate, channels, bits = 22050, 1, 16
-        offset = 12  # après 'RIFF' + size + 'WAVE'
+        offset = 12
 
         while offset + 8 <= len(wav_bytes):
             chunk_id   = wav_bytes[offset:offset + 4]
@@ -84,8 +107,6 @@ class InterviewHandler:
             data_start = offset + 8
 
             if chunk_id == b'fmt ':
-                # fmt chunk: audio_format(2) channels(2) sample_rate(4)
-                #            byte_rate(4) block_align(2) bits_per_sample(2)
                 if data_start + 16 <= len(wav_bytes):
                     channels    = struct.unpack_from('<H', wav_bytes, data_start + 2)[0]
                     sample_rate = struct.unpack_from('<I', wav_bytes, data_start + 4)[0]
@@ -99,7 +120,6 @@ class InterviewHandler:
                 )
                 return pcm_bytes, sample_rate, channels, bits
 
-            # Avancer au chunk suivant (padding à 2 bytes)
             offset = data_start + chunk_size
             if chunk_size % 2 != 0:
                 offset += 1
@@ -108,13 +128,9 @@ class InterviewHandler:
         return wav_bytes, sample_rate, channels, bits
 
     async def _send_audio_chunked(self, audio_bytes: bytes, msg_type: str, extra_data: dict):
-        """
-        Extrait le PCM pur du WAV avec le vrai sample_rate,
-        puis envoie les métadonnées + chunks au client.
-        """
         pcm_bytes, sample_rate, channels, bits = self._extract_pcm_from_wav(audio_bytes)
 
-        total_bytes = len(pcm_bytes)
+        total_bytes  = len(pcm_bytes)
         total_chunks = (total_bytes + AUDIO_CHUNK_SIZE - 1) // AUDIO_CHUNK_SIZE
 
         logger.info(
@@ -122,12 +138,11 @@ class InterviewHandler:
             f"({sample_rate}Hz) → {total_chunks} chunks"
         )
 
-        # Message principal : métadonnées EXACTES pour que le client configure QAudioSink
         msg_data = dict(extra_data)
         msg_data.update({
             "audio_mode":       "chunked",
             "audio_format":     "pcm_s16le",
-            "sample_rate":      sample_rate,   # ← vrai sample rate du TTS (22050Hz)
+            "sample_rate":      sample_rate,
             "channels":         channels,
             "bits_per_sample":  bits,
             "total_chunks":     total_chunks,
@@ -139,7 +154,6 @@ class InterviewHandler:
             "data": msg_data
         })
 
-        # Envoyer les chunks PCM
         for i in range(total_chunks):
             self._check_connected()
             chunk = pcm_bytes[i * AUDIO_CHUNK_SIZE:(i + 1) * AUDIO_CHUNK_SIZE]
@@ -151,10 +165,8 @@ class InterviewHandler:
                     "data":        base64.b64encode(chunk).decode("utf-8")
                 }
             })
-            # Yield pour ne pas bloquer la boucle asyncio
             await asyncio.sleep(0)
 
-        # Signal de fin
         await manager.send_json(self.session_id, {
             "type": "audio_chunk_end",
             "data": {"msg_type": msg_type}
@@ -163,7 +175,7 @@ class InterviewHandler:
         logger.info(f"✅ {total_chunks} chunks PCM envoyés pour '{msg_type}'")
 
     # ----------------------------------------------------------
-    # TTS ASYNCHRONE (thread pool)
+    # TTS ASYNCHRONE
     # ----------------------------------------------------------
 
     async def _synthesize_bytes(self, text: str, language: str) -> Optional[bytes]:
@@ -190,12 +202,6 @@ class InterviewHandler:
     # ----------------------------------------------------------
 
     async def _wait_for_audio_finished(self, timeout: float = 120.0):
-        """
-        Bloque jusqu'à recevoir {"type":"audio_finished"} du client.
-        Le client l'envoie quand QAudioSink passe en IdleState (lecture terminée).
-        Indispensable pour ne pas envoyer la prochaine question pendant que
-        la précédente joue encore — ce qui couperait l'audio en cours.
-        """
         logger.info(f"⏳ Attente audio_finished (max {int(timeout)}s)...")
         loop = asyncio.get_event_loop()
         deadline = loop.time() + timeout
@@ -236,7 +242,6 @@ class InterviewHandler:
             self._check_connected()
             await self._send_welcome()
 
-            # Attendre que le client finisse de jouer le message de bienvenue
             await self._wait_for_audio_finished(timeout=120.0)
 
             self._check_connected()
@@ -247,7 +252,6 @@ class InterviewHandler:
                 self._check_connected()
                 await self._send_current_question()
 
-                # Attendre que le client finisse de jouer la question
                 await self._wait_for_audio_finished(timeout=60.0)
 
                 self._check_connected()
@@ -294,7 +298,10 @@ class InterviewHandler:
 
             self.session = session
             self.position = JobPositionCRUD.get_by_id(self.session.job_position_id)
-            logger.info(f"Session OK: {self.position.title} | {len(self.position.questions)} questions")
+            logger.info(
+                f"Session OK: {self.position.title} | {len(self.position.questions)} questions | "
+                f"langue: {self.lang}"
+            )
             return True
 
         except WebSocketDisconnect:
@@ -310,20 +317,17 @@ class InterviewHandler:
     # ----------------------------------------------------------
 
     async def _send_welcome(self):
-        texts = {
-            "ar": "مرحبا بك في المقابلة الصوتية. سأطرح عليك مجموعة من الأسئلة الصوتية فقط. استمع جيداً وأجب بوضوح.",
-            "en": "Welcome to the voice interview. I will ask you questions in audio only. Listen carefully and answer clearly."
-        }
-        text = texts.get(self.session.language, texts["ar"])
+        text = _get_text("welcome", self.lang)
 
-        logger.info("Synthèse audio bienvenue...")
-        audio_bytes = await self._synthesize_bytes(text, self.session.language)
+        logger.info(f"Synthèse audio bienvenue (langue={self.lang})...")
+        audio_bytes = await self._synthesize_bytes(text, self.lang)
 
         extra = {
             "total_questions": len(self.position.questions),
             "position_title":  self.position.title,
             "expires_at":      self.session.expires_at.isoformat(),
             "vocal_only":      True,
+            "language":        self.lang,
         }
 
         if audio_bytes:
@@ -351,7 +355,8 @@ class InterviewHandler:
             return
 
         question = self.position.questions[idx]
-        text = question.question_ar if self.session.language == "ar" else question.question_en
+        # Utilise la méthode get_text pour obtenir la bonne langue
+        text = question.get_text(self.lang)
 
         progress = {
             "current":    idx + 1,
@@ -359,15 +364,14 @@ class InterviewHandler:
             "percentage": int((idx + 1) / len(self.position.questions) * 100),
         }
 
-        logger.info(f"Question {question.order}/{len(self.position.questions)}: '{text}'")
+        logger.info(f"Question {question.order}/{len(self.position.questions)} [{self.lang}]: '{text}'")
 
-        # Prévenir le client que l'audio est en cours de génération
         await manager.send_json(self.session_id, {
             "type": "question_loading",
             "data": {"progress": progress}
         })
 
-        audio_bytes = await self._synthesize_bytes(text, self.session.language)
+        audio_bytes = await self._synthesize_bytes(text, self.lang)
 
         if not audio_bytes:
             await self._send_error("Impossible de générer l'audio")
@@ -444,7 +448,7 @@ class InterviewHandler:
         if self.asr_service:
             try:
                 loop = asyncio.get_event_loop()
-                svc, lang, ab = self.asr_service, self.session.language, audio_bytes
+                svc, lang, ab = self.asr_service, self.lang, audio_bytes
                 transcript = await loop.run_in_executor(
                     None, lambda: svc.transcribe(ab, language=lang)
                 )
@@ -454,9 +458,7 @@ class InterviewHandler:
 
         answer = Answer(
             question_order=question.order,
-            question_text=(
-                question.question_ar if self.session.language == "ar" else question.question_en
-            ),
+            question_text=question.get_text(self.lang),
             transcript=transcript,
             audio_file_path=str(audio_path),
             duration_seconds=duration,
@@ -476,13 +478,8 @@ class InterviewHandler:
     async def _complete_interview(self):
         self.session = InterviewSessionCRUD.update_status(self.session_id, "completed")
 
-        texts = {
-            "ar": "شكراً لك! انتهت المقابلة. سنتواصل معك قريباً.",
-            "en": "Thank you! The interview is complete. We will contact you soon."
-        }
-        text = texts.get(self.session.language, texts["ar"])
-
-        audio_bytes = await self._synthesize_bytes(text, self.session.language)
+        text = _get_text("completed", self.lang)
+        audio_bytes = await self._synthesize_bytes(text, self.lang)
 
         extra = {
             "total_questions": len(self.position.questions),
