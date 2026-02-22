@@ -1,15 +1,17 @@
 """
-Fenêtre Principale - MULTILINGUE AR/FR/EN
-Écran de sélection de langue élégant au démarrage.
+Main Window — Premium Redesign
+Dark glassmorphism with refined language selection and session ID screen.
 """
 
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QMessageBox, QLabel, QLineEdit, QPushButton, QFrame,
-    QGraphicsDropShadowEffect, QStackedWidget, QButtonGroup
+    QGraphicsDropShadowEffect, QStackedWidget, QSizePolicy
 )
-from PySide6.QtCore import Qt, QSize, QTimer, QPropertyAnimation, QEasingCurve, QRect
-from PySide6.QtGui import QFont, QColor
+from PySide6.QtCore import (
+    Qt, QSize, QTimer, QPropertyAnimation, QEasingCurve, QRect
+)
+from PySide6.QtGui import QFont, QColor, QLinearGradient, QPainter, QPainterPath
 import sys
 import os
 import base64
@@ -34,19 +36,18 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-# ============================================================
-# TEXTES UI LOCALISÉS
-# ============================================================
+# ── Localised UI strings ──────────────────────────────────────────────────────
 
 UI_TEXTS = {
     "ar": {
-        "app_subtitle":        "مقابلة صوتية ذكية - وضع صوتي خالص",
+        "app_title":           "STARK RECRUITMENT AI",
+        "app_subtitle":        "مقابلة صوتية ذكية",
         "choose_language":     "اختر لغة المقابلة",
-        "choose_subtitle":     "سيتم إجراء المقابلة بالكامل باللغة المختارة",
+        "choose_subtitle":     "ستُجرى المقابلة بالكامل باللغة التي تختارها",
         "enter_session":       "أدخل معرّف الجلسة",
         "session_placeholder": "session_xxxxxxxxxxxxx",
         "start_btn":           "بدء المقابلة",
-        "connecting":          "جارٍ الاتصال...",
+        "connecting":          "جارٍ الاتصال…",
         "status_disconnected": "غير متصل",
         "status_connected":    "متصل",
         "status_validating":   "جارٍ التحقق",
@@ -54,253 +55,564 @@ UI_TEXTS = {
         "vocal_mode_active":   "الوضع الصوتي نشط",
         "vocal_mode_label":    "الوضع الصوتي",
         "welcome_status":      "مرحباً — استمع لرسالة الترحيب",
-        "question_status":     "🔊 السؤال قيد التشغيل...",
-        "answer_status":       "✅ يمكنك الإجابة",
-        "answer_saved":        "✅ تم حفظ الإجابة",
-        "generating_audio":    "⏳ توليد الصوت...",
+        "question_status":     "السؤال قيد التشغيل",
+        "answer_status":       "يمكنك الإجابة",
+        "answer_saved":        "تم حفظ الإجابة",
+        "generating_audio":    "توليد الصوت…",
         "end_confirm":         "هل تريد إنهاء المقابلة؟",
         "interview_complete":  "انتهت المقابلة",
         "thanks_message":      "شكراً لك! انتهت المقابلة.",
         "format_error":        "الصيغة المطلوبة: session_xxxxxxxxxxxxx",
         "error_title":         "خطأ",
         "end_title":           "إنهاء المقابلة",
-        "back_btn":            "← رجوع",
-        "language_name":       "العربية",
-        "confirm_yes":         "نعم",
-        "confirm_no":          "لا",
+        "back_btn":            "رجوع",
+        "confirm_btn":         "تأكيد اللغة",
     },
     "fr": {
-        "app_subtitle":        "Entretien Vocal Intelligent - Mode Vocal Pur",
-        "choose_language":     "Choisissez la langue de l'entretien",
-        "choose_subtitle":     "L'entretien se déroulera entièrement dans la langue choisie",
-        "enter_session":       "Entrez votre identifiant de session",
+        "app_title":           "STARK RECRUITMENT AI",
+        "app_subtitle":        "Entretien vocal intelligent",
+        "choose_language":     "Choisissez votre langue",
+        "choose_subtitle":     "L'entretien se déroulera intégralement dans la langue sélectionnée",
+        "enter_session":       "Identifiant de session",
         "session_placeholder": "session_xxxxxxxxxxxxx",
-        "start_btn":           "DÉMARRER L'ENTRETIEN",
-        "connecting":          "CONNEXION EN COURS...",
-        "status_disconnected": "DÉCONNECTÉ",
-        "status_connected":    "CONNECTÉ",
-        "status_validating":   "VALIDATION",
+        "start_btn":           "Démarrer l'entretien",
+        "connecting":          "Connexion en cours…",
+        "status_disconnected": "Déconnecté",
+        "status_connected":    "Connecté",
+        "status_validating":   "Validation",
         "waiting_connection":  "En attente de connexion",
         "vocal_mode_active":   "Mode vocal actif",
-        "vocal_mode_label":    "MODE VOCAL",
-        "welcome_status":      "🎧 Bienvenue — écoutez le message d'accueil",
-        "question_status":     "🔊 Question en lecture...",
-        "answer_status":       "✅ Vous pouvez répondre",
-        "answer_saved":        "✅ Réponse enregistrée",
-        "generating_audio":    "⏳ Génération audio...",
-        "end_confirm":         "Confirmer la fin de l'entretien?",
-        "interview_complete":  "Entretien Terminé",
+        "vocal_mode_label":    "Mode Vocal",
+        "welcome_status":      "Bienvenue — écoutez le message d'accueil",
+        "question_status":     "Question en lecture",
+        "answer_status":       "Vous pouvez répondre",
+        "answer_saved":        "Réponse enregistrée",
+        "generating_audio":    "Génération audio…",
+        "end_confirm":         "Confirmer la fin de l'entretien ?",
+        "interview_complete":  "Entretien terminé",
         "thanks_message":      "Merci ! L'entretien est terminé.",
-        "format_error":        "Format attendu: session_xxxxxxxxxxxxx",
+        "format_error":        "Format attendu : session_xxxxxxxxxxxxx",
         "error_title":         "Erreur",
         "end_title":           "Terminer",
-        "back_btn":            "← Retour",
-        "language_name":       "Français",
-        "confirm_yes":         "Oui",
-        "confirm_no":          "Non",
+        "back_btn":            "Retour",
+        "confirm_btn":         "Confirmer",
     },
     "en": {
-        "app_subtitle":        "AI Voice Interview - Pure Vocal Mode",
-        "choose_language":     "Choose your interview language",
+        "app_title":           "STARK RECRUITMENT AI",
+        "app_subtitle":        "AI-powered voice interview",
+        "choose_language":     "Choose your language",
         "choose_subtitle":     "The entire interview will be conducted in the selected language",
-        "enter_session":       "Enter your session ID",
+        "enter_session":       "Session identifier",
         "session_placeholder": "session_xxxxxxxxxxxxx",
-        "start_btn":           "START INTERVIEW",
-        "connecting":          "CONNECTING...",
-        "status_disconnected": "DISCONNECTED",
-        "status_connected":    "CONNECTED",
-        "status_validating":   "VALIDATING",
+        "start_btn":           "Start interview",
+        "connecting":          "Connecting…",
+        "status_disconnected": "Disconnected",
+        "status_connected":    "Connected",
+        "status_validating":   "Validating",
         "waiting_connection":  "Waiting for connection",
         "vocal_mode_active":   "Vocal mode active",
-        "vocal_mode_label":    "VOCAL MODE",
-        "welcome_status":      "🎧 Welcome — listen to the welcome message",
-        "question_status":     "🔊 Question playing...",
-        "answer_status":       "✅ You may answer now",
-        "answer_saved":        "✅ Answer saved",
-        "generating_audio":    "⏳ Generating audio...",
+        "vocal_mode_label":    "Vocal Mode",
+        "welcome_status":      "Welcome — listen to the greeting",
+        "question_status":     "Question playing",
+        "answer_status":       "You may answer",
+        "answer_saved":        "Answer saved",
+        "generating_audio":    "Generating audio…",
         "end_confirm":         "Confirm end of interview?",
-        "interview_complete":  "Interview Complete",
+        "interview_complete":  "Interview complete",
         "thanks_message":      "Thank you! The interview is complete.",
         "format_error":        "Expected format: session_xxxxxxxxxxxxx",
         "error_title":         "Error",
         "end_title":           "End Interview",
-        "back_btn":            "← Back",
-        "language_name":       "English",
-        "confirm_yes":         "Yes",
-        "confirm_no":          "No",
+        "back_btn":            "Back",
+        "confirm_btn":         "Confirm",
     },
 }
 
 LANGUAGE_OPTIONS = [
-    {
-        "code":    "ar",
-        "flag":    "🇸🇦",
-        "name":    "العربية",
-        "sub":     "Arabic",
-        "rtl":     True,
-        "color":   "#1E7E34",
-    },
-    {
-        "code":    "fr",
-        "flag":    "🇫🇷",
-        "name":    "Français",
-        "sub":     "French",
-        "rtl":     False,
-        "color":   "#003189",
-    },
-    {
-        "code":    "en",
-        "flag":    "🇬🇧",
-        "name":    "English",
-        "sub":     "Anglais",
-        "rtl":     False,
-        "color":   "#C8102E",
-    },
+    {"code": "ar", "flag": "🇸🇦", "name": "العربية",  "sub": "Arabic",   "accent": "#059669"},
+    {"code": "fr", "flag": "🇫🇷", "name": "Français", "sub": "French",   "accent": "#2563EB"},
+    {"code": "en", "flag": "🇬🇧", "name": "English",  "sub": "Anglais",  "accent": "#DC2626"},
 ]
 
 
-class LanguageCard(QFrame):
-    """Carte cliquable de sélection de langue."""
+# ── Language card ─────────────────────────────────────────────────────────────
 
+class LanguageCard(QFrame):
     def __init__(self, lang_data: dict, on_select, parent=None):
         super().__init__(parent)
         self.lang_data = lang_data
         self.on_select = on_select
         self._selected = False
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setFixedSize(200, 220)
-        self._apply_style(False)
-        self._build_ui()
+        self.setFixedSize(190, 210)
+        self._build()
+        self._style(False)
 
-    def _build_ui(self):
-        layout = QVBoxLayout(self)
-        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.setSpacing(10)
-        layout.setContentsMargins(20, 25, 20, 25)
+    def _build(self):
+        lay = QVBoxLayout(self)
+        lay.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lay.setSpacing(10)
+        lay.setContentsMargins(16, 20, 16, 20)
 
-        # Flag emoji (large)
         flag = QLabel(self.lang_data["flag"])
-        flag.setFont(QFont("Segoe UI Emoji", 52))
+        flag.setFont(QFont("Segoe UI Emoji, Apple Color Emoji, Noto Color Emoji", 44))
         flag.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(flag)
+        flag.setStyleSheet("background: transparent;")
+        lay.addWidget(flag)
 
-        # Language name
         name = QLabel(self.lang_data["name"])
-        name.setFont(QFont(StarkTheme.FONT_FAMILY_PRIMARY, 16, QFont.Weight.Bold))
+        name.setFont(QFont(StarkTheme.FONT_BODY, 15, QFont.Weight.Bold))
         name.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        name.setStyleSheet("color: #1A1A2E; background: transparent;")
-        layout.addWidget(name)
+        name.setStyleSheet(f"color: {StarkTheme.TEXT_PRIMARY}; background: transparent;")
+        lay.addWidget(name)
 
-        # Subtitle
         sub = QLabel(self.lang_data["sub"])
-        sub.setFont(QFont(StarkTheme.FONT_FAMILY_PRIMARY, 10))
+        sub.setFont(QFont(StarkTheme.FONT_BODY, 10))
         sub.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        sub.setStyleSheet("color: #7F8C8D; background: transparent;")
-        layout.addWidget(sub)
+        sub.setStyleSheet(f"color: {StarkTheme.TEXT_MUTED}; background: transparent;")
+        lay.addWidget(sub)
 
-    def _apply_style(self, selected: bool):
-        color = self.lang_data["color"]
+    def _style(self, selected: bool):
+        acc = self.lang_data["accent"]
         if selected:
             self.setStyleSheet(f"""
                 LanguageCard {{
-                    background: white;
-                    border: 3px solid {color};
-                    border-radius: 20px;
+                    background: rgba(14,165,233,0.08);
+                    border: 2px solid {acc};
+                    border-radius: {StarkTheme.R_XL};
                 }}
             """)
+            sh = QGraphicsDropShadowEffect()
+            sh.setBlurRadius(30)
+            sh.setColor(QColor(acc))
+            sh.setOffset(0, 4)
+            self.setGraphicsEffect(sh)
         else:
             self.setStyleSheet(f"""
                 LanguageCard {{
-                    background: white;
-                    border: 2px solid #E0E0E0;
-                    border-radius: 20px;
+                    background: {StarkTheme.BG_SURFACE};
+                    border: 1px solid {StarkTheme.BG_BORDER};
+                    border-radius: {StarkTheme.R_XL};
                 }}
                 LanguageCard:hover {{
-                    border: 2px solid {color};
-                    background: #FAFAFA;
+                    background: {StarkTheme.BG_ELEVATED};
+                    border: 1px solid {StarkTheme.GLASS_BORDER};
                 }}
             """)
-
-    def set_selected(self, selected: bool):
-        self._selected = selected
-        self._apply_style(selected)
-        if selected:
-            shadow = QGraphicsDropShadowEffect()
-            shadow.setBlurRadius(25)
-            shadow.setColor(QColor(self.lang_data["color"]))
-            shadow.setOffset(0, 6)
-            self.setGraphicsEffect(shadow)
-        else:
             self.setGraphicsEffect(None)
 
-    def mousePressEvent(self, event):
-        self.on_select(self.lang_data["code"])
-        super().mousePressEvent(event)
+    def set_selected(self, s: bool):
+        self._selected = s
+        self._style(s)
 
+    def mousePressEvent(self, e):
+        self.on_select(self.lang_data["code"])
+        super().mousePressEvent(e)
+
+
+# ── Separator line ────────────────────────────────────────────────────────────
+
+class _HSep(QFrame):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedHeight(1)
+        self.setStyleSheet(f"background: {StarkTheme.BG_BORDER};")
+
+
+# ── Main window ───────────────────────────────────────────────────────────────
 
 class MainWindow(QMainWindow):
 
     def __init__(self):
         super().__init__()
-
         self.websocket_client = None
-        self.audio_recorder = None
-        self.session_id = None
-        self.is_connecting = False
-        self._session_token: int = 0
+        self.audio_recorder   = None
+        self.session_id       = None
+        self.is_connecting    = False
+        self._session_token   = 0
+        self._language        = "fr"
+        self._lang_cards      = {}
 
-        # Langue sélectionnée (défaut français)
-        self._language: str = "fr"
-        self._lang_cards: dict = {}
-
-        # ── Audio ──
-        self._tmp_audio_path: str | None = None
-        self._audio_play_start: float = 0.0
-        self._audio_min_duration: float = 0.0
+        # Audio state
+        self._tmp_audio_path   = None
+        self._audio_play_start = 0.0
+        self._audio_min_duration = 0.0
         self.audio_check_timer = None
-
-        self._audio_sample_rate: int = -1
-        self._audio_channels: int = -1
-        self._audio_bits: int = -1
-
-        self._pending_msg_type: str = ""
-        self._pending_msg_data: dict = {}
-        self._audio_chunks: list = []
-        self._audio_total_chunks: int = 0
+        self._audio_sample_rate = -1
+        self._audio_channels    = -1
+        self._audio_bits        = -1
+        self._pending_msg_type  = ""
+        self._pending_msg_data  = {}
+        self._audio_chunks      = []
+        self._audio_total_chunks = 0
 
         pygame.mixer.init(frequency=22050, size=-16, channels=1, buffer=4096)
         self._audio_sample_rate = 22050
-        self._audio_channels = 1
-        self._audio_bits = 16
-        logger.info(f"🎵 pygame.mixer initialisé: {self._audio_sample_rate}Hz")
+        self._audio_channels    = 1
+        self._audio_bits        = 16
 
         self._setup_ui()
 
     def t(self, key: str) -> str:
-        """Traduction dans la langue courante."""
         return UI_TEXTS.get(self._language, UI_TEXTS["fr"]).get(key, key)
 
-    # ================================================================
-    # GESTION AUDIO
-    # ================================================================
+    # ── UI build ──────────────────────────────────────────────────────────────
 
-    def _ensure_audio_format(self, sample_rate: int, channels: int, bits: int):
-        if (sample_rate == self._audio_sample_rate
-                and channels == self._audio_channels
+    def _setup_ui(self):
+        self.setWindowTitle("Stark Recruitment AI")
+        self.showMaximized()
+        self.setStyleSheet(StarkTheme.global_stylesheet())
+
+        central = QWidget()
+        self.setCentralWidget(central)
+        root = QVBoxLayout(central)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+
+        root.addWidget(self._build_header())
+
+        self.stacked = QStackedWidget()
+        self.stacked.setStyleSheet("QStackedWidget { background: transparent; }")
+        self.stacked.addWidget(self._build_language_screen())   # 0
+        self.stacked.addWidget(self._build_session_screen())    # 1
+        root.addWidget(self.stacked, stretch=1)
+
+        self.interview_container = self._build_interview_container()
+        self.interview_container.setVisible(False)
+        root.addWidget(self.interview_container)
+
+        self._setup_statusbar()
+
+    # ── Header ────────────────────────────────────────────────────────────────
+
+    def _build_header(self) -> QFrame:
+        frame = QFrame()
+        frame.setStyleSheet(f"""
+            QFrame {{
+                background: {StarkTheme.BG_VOID};
+                border-bottom: 1px solid {StarkTheme.BG_BORDER};
+            }}
+        """)
+        frame.setFixedHeight(70)
+
+        lay = QHBoxLayout(frame)
+        lay.setContentsMargins(28, 0, 28, 0)
+        lay.setSpacing(0)
+
+        # Left: logo + title
+        left = QHBoxLayout()
+        left.setSpacing(14)
+
+        logo = QLabel("◈")
+        logo.setFont(QFont(StarkTheme.FONT_BODY, 26, QFont.Weight.Black))
+        logo.setStyleSheet(f"color: {StarkTheme.BLUE_ELECTRIC};")
+        left.addWidget(logo)
+
+        title_col = QVBoxLayout()
+        title_col.setSpacing(1)
+
+        t1 = QLabel(self.t("app_title"))
+        t1.setFont(QFont(StarkTheme.FONT_BODY, 14, QFont.Weight.Black))
+        t1.setStyleSheet(f"color: {StarkTheme.TEXT_PRIMARY}; letter-spacing: 3px;")
+        title_col.addWidget(t1)
+
+        self.header_subtitle = QLabel(self.t("app_subtitle"))
+        self.header_subtitle.setFont(QFont(StarkTheme.FONT_BODY, 9))
+        self.header_subtitle.setStyleSheet(f"color: {StarkTheme.TEXT_MUTED}; letter-spacing: 1px;")
+        title_col.addWidget(self.header_subtitle)
+
+        left.addLayout(title_col)
+
+        lay.addLayout(left)
+        lay.addStretch()
+
+        # Right: status chip
+        self.status_chip = self._build_status_chip()
+        lay.addWidget(self.status_chip)
+
+        return frame
+
+    def _build_status_chip(self) -> QFrame:
+        chip = QFrame()
+        chip.setFixedHeight(36)
+        chip.setStyleSheet(f"""
+            QFrame {{
+                background: {StarkTheme.BG_SURFACE};
+                border: 1px solid {StarkTheme.BG_BORDER};
+                border-radius: {StarkTheme.R_FULL};
+            }}
+        """)
+        lay = QHBoxLayout(chip)
+        lay.setContentsMargins(14, 0, 14, 0)
+        lay.setSpacing(8)
+
+        self._status_dot_w = QLabel("●")
+        self._status_dot_w.setFont(QFont(StarkTheme.FONT_BODY, 8))
+        self._status_dot_w.setStyleSheet(f"color: {StarkTheme.TEXT_MUTED};")
+        lay.addWidget(self._status_dot_w)
+
+        col = QVBoxLayout()
+        col.setSpacing(0)
+
+        self.status_label = QLabel(self.t("status_disconnected"))
+        self.status_label.setFont(QFont(StarkTheme.FONT_BODY, 10, QFont.Weight.DemiBold))
+        self.status_label.setStyleSheet(f"color: {StarkTheme.TEXT_SECONDARY};")
+        col.addWidget(self.status_label)
+
+        self.status_detail = QLabel(self.t("waiting_connection"))
+        self.status_detail.setFont(QFont(StarkTheme.FONT_BODY, 8))
+        self.status_detail.setStyleSheet(f"color: {StarkTheme.TEXT_MUTED};")
+        col.addWidget(self.status_detail)
+
+        lay.addLayout(col)
+        return chip
+
+    def _set_chip_state(self, state: str):
+        """state: disconnected | validating | connected | error"""
+        cfg = {
+            "disconnected": (StarkTheme.TEXT_MUTED,    StarkTheme.TEXT_SECONDARY),
+            "validating":   (StarkTheme.AMBER,         StarkTheme.AMBER),
+            "connected":    (StarkTheme.SUCCESS,       StarkTheme.SUCCESS),
+            "error":        (StarkTheme.ERROR,         StarkTheme.ERROR),
+        }
+        dot_c, text_c = cfg.get(state, cfg["disconnected"])
+        self._status_dot_w.setStyleSheet(f"color: {dot_c};")
+        self.status_label.setStyleSheet(f"color: {text_c}; font-weight: 600;")
+
+    # ── Screen 0: Language ────────────────────────────────────────────────────
+
+    def _build_language_screen(self) -> QWidget:
+        scr = QWidget()
+        scr.setStyleSheet("QWidget { background: transparent; }")
+
+        lay = QVBoxLayout(scr)
+        lay.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lay.setSpacing(32)
+        lay.setContentsMargins(40, 40, 40, 40)
+
+        # Heading
+        heading = QLabel(self.t("choose_language"))
+        heading.setFont(QFont(StarkTheme.FONT_BODY, 26, QFont.Weight.Black))
+        heading.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        heading.setStyleSheet(f"color: {StarkTheme.TEXT_PRIMARY}; letter-spacing: -0.5px;")
+        lay.addWidget(heading)
+
+        sub = QLabel(self.t("choose_subtitle"))
+        sub.setFont(QFont(StarkTheme.FONT_BODY, 12))
+        sub.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        sub.setStyleSheet(f"color: {StarkTheme.TEXT_MUTED};")
+        lay.addWidget(sub)
+
+        # Cards row
+        cards_row = QWidget()
+        cards_row.setStyleSheet("QWidget { background: transparent; }")
+        cr = QHBoxLayout(cards_row)
+        cr.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        cr.setSpacing(20)
+
+        self._lang_cards = {}
+        for ld in LANGUAGE_OPTIONS:
+            card = LanguageCard(ld, self._on_language_selected)
+            self._lang_cards[ld["code"]] = card
+            cr.addWidget(card)
+
+        lay.addWidget(cards_row)
+
+        # Confirm button
+        self.lang_confirm_btn = QPushButton(self.t("confirm_btn"))
+        self.lang_confirm_btn.setFont(QFont(StarkTheme.FONT_BODY, 13, QFont.Weight.Bold))
+        self.lang_confirm_btn.setFixedSize(260, 52)
+        self.lang_confirm_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.lang_confirm_btn.setStyleSheet(StarkTheme.get_button_style("primary"))
+        sh = QGraphicsDropShadowEffect()
+        sh.setBlurRadius(24)
+        sh.setColor(QColor(StarkTheme.BLUE_ELECTRIC))
+        sh.setOffset(0, 6)
+        self.lang_confirm_btn.setGraphicsEffect(sh)
+        self.lang_confirm_btn.clicked.connect(self._on_language_confirmed)
+        lay.addWidget(self.lang_confirm_btn, alignment=Qt.AlignmentFlag.AlignCenter)
+
+        self._on_language_selected("fr")
+        return scr
+
+    def _on_language_selected(self, code: str):
+        self._language = code
+        for c, card in self._lang_cards.items():
+            card.set_selected(c == code)
+        ld = next(l for l in LANGUAGE_OPTIONS if l["code"] == code)
+        if hasattr(self, "lang_confirm_btn"):
+            self.lang_confirm_btn.setText(f"✓  {ld['name']}")
+
+    def _on_language_confirmed(self):
+        self._update_ui_language()
+        self.stacked.setCurrentIndex(1)
+
+    def _update_ui_language(self):
+        self.header_subtitle.setText(self.t("app_subtitle"))
+        self.status_label.setText(self.t("status_disconnected"))
+        self.status_detail.setText(self.t("waiting_connection"))
+        self.connect_btn.setText(self.t("start_btn"))
+        self.session_input.setPlaceholderText(self.t("session_placeholder"))
+        self.back_btn.setText(f"← {self.t('back_btn')}")
+        self.conn_title.setText(self.t("enter_session"))
+        if hasattr(self, "interview_widget"):
+            self.interview_widget.set_language(self._language)
+        self.statusBar().showMessage(self.t("vocal_mode_label"))
+        self._refresh_lang_pill()
+
+    # ── Screen 1: Session ID ──────────────────────────────────────────────────
+
+    def _build_session_screen(self) -> QWidget:
+        outer = QWidget()
+        outer.setStyleSheet("QWidget { background: transparent; }")
+        wrap = QVBoxLayout(outer)
+        wrap.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        card = QFrame()
+        card.setFixedWidth(520)
+        card.setStyleSheet(f"""
+            QFrame {{
+                background: {StarkTheme.BG_SURFACE};
+                border: 1px solid {StarkTheme.BG_BORDER};
+                border-radius: {StarkTheme.R_2XL};
+            }}
+        """)
+        sh = QGraphicsDropShadowEffect()
+        sh.setBlurRadius(50)
+        sh.setColor(QColor(StarkTheme.BLUE_ELECTRIC))
+        sh.setOffset(0, 12)
+        card.setGraphicsEffect(sh)
+
+        lay = QVBoxLayout(card)
+        lay.setContentsMargins(48, 40, 48, 40)
+        lay.setSpacing(20)
+
+        # Icon
+        icon_w = QLabel("🎙")
+        icon_w.setFont(QFont("Segoe UI Emoji, Apple Color Emoji", 44))
+        icon_w.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        icon_w.setStyleSheet("background: transparent;")
+        lay.addWidget(icon_w)
+
+        # Title
+        self.conn_title = QLabel(self.t("enter_session"))
+        self.conn_title.setFont(QFont(StarkTheme.FONT_BODY, 16, QFont.Weight.Bold))
+        self.conn_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.conn_title.setStyleSheet(f"color: {StarkTheme.TEXT_PRIMARY};")
+        lay.addWidget(self.conn_title)
+
+        # Language pill
+        self.lang_pill_container = QHBoxLayout()
+        self.lang_pill_container.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lang_pill_w = QFrame()
+        self.lang_pill_w.setFixedHeight(30)
+        pill_lay = QHBoxLayout(self.lang_pill_w)
+        pill_lay.setContentsMargins(14, 0, 14, 0)
+        pill_lay.setSpacing(6)
+        self.lang_pill_label = QLabel()
+        self.lang_pill_label.setFont(QFont(StarkTheme.FONT_BODY, 10))
+        self.lang_pill_label.setStyleSheet(
+            f"color: {StarkTheme.BLUE_SOFT}; background: transparent;"
+        )
+        pill_lay.addWidget(self.lang_pill_label)
+        self.lang_pill_w.setStyleSheet(f"""
+            QFrame {{
+                background: rgba(14,165,233,0.10);
+                border: 1px solid {StarkTheme.GLASS_BORDER};
+                border-radius: {StarkTheme.R_FULL};
+            }}
+        """)
+        self.lang_pill_container.addWidget(self.lang_pill_w)
+        lay.addLayout(self.lang_pill_container)
+        self._refresh_lang_pill()
+
+        lay.addWidget(_HSep())
+
+        # Input
+        self.session_input = QLineEdit()
+        self.session_input.setPlaceholderText(self.t("session_placeholder"))
+        self.session_input.setFont(QFont(StarkTheme.FONT_MONO, 12))
+        self.session_input.setMinimumHeight(50)
+        self.session_input.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.session_input.setStyleSheet(StarkTheme.input_style())
+        lay.addWidget(self.session_input)
+
+        # Connect button
+        self.connect_btn = QPushButton(self.t("start_btn"))
+        self.connect_btn.setFont(QFont(StarkTheme.FONT_BODY, 13, QFont.Weight.Bold))
+        self.connect_btn.setMinimumHeight(52)
+        self.connect_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.connect_btn.setStyleSheet(StarkTheme.get_button_style("accent"))
+        self.connect_btn.clicked.connect(self._connect_to_interview)
+        lay.addWidget(self.connect_btn)
+
+        # Back button
+        self.back_btn = QPushButton(f"← {self.t('back_btn')}")
+        self.back_btn.setFont(QFont(StarkTheme.FONT_BODY, 10))
+        self.back_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.back_btn.setStyleSheet(StarkTheme.get_button_style("ghost"))
+        self.back_btn.clicked.connect(lambda: self.stacked.setCurrentIndex(0))
+        lay.addWidget(self.back_btn, alignment=Qt.AlignmentFlag.AlignCenter)
+
+        wrap.addWidget(card)
+        return outer
+
+    def _refresh_lang_pill(self):
+        ld = next((l for l in LANGUAGE_OPTIONS if l["code"] == self._language), None)
+        if ld and hasattr(self, "lang_pill_label"):
+            self.lang_pill_label.setText(f"{ld['flag']}  {ld['name']}")
+
+    # ── Interview container ───────────────────────────────────────────────────
+
+    def _build_interview_container(self) -> QWidget:
+        w = QWidget()
+        w.setStyleSheet("QWidget { background: transparent; }")
+        lay = QHBoxLayout(w)
+        lay.setContentsMargins(16, 16, 16, 16)
+        lay.setSpacing(16)
+
+        self.video_player = VideoPlayerWidget()
+        lay.addWidget(self.video_player, stretch=2)
+
+        self.interview_widget = InterviewWidget(language=self._language)
+        self.interview_widget.setMaximumWidth(460)
+        self.interview_widget.start_recording.connect(self._on_start_recording)
+        self.interview_widget.stop_recording.connect(self._on_stop_recording)
+        self.interview_widget.end_interview.connect(self._on_end_interview)
+        lay.addWidget(self.interview_widget, stretch=1)
+
+        return w
+
+    def _setup_statusbar(self):
+        self.statusBar().setStyleSheet(f"""
+            QStatusBar {{
+                background: {StarkTheme.BG_VOID};
+                color: {StarkTheme.TEXT_MUTED};
+                font-size: {StarkTheme.FS_SM};
+                padding: 6px 16px;
+                border-top: 1px solid {StarkTheme.BG_BORDER};
+            }}
+        """)
+        self.statusBar().showMessage(self.t("vocal_mode_label"))
+
+    # ═══════════════════════════════════════════════════════════════════
+    # CONNECTION LOGIC (unchanged from original — only UI state updates)
+    # ═══════════════════════════════════════════════════════════════════
+
+    def _ensure_audio_format(self, sample_rate, channels, bits):
+        if (sample_rate == self._audio_sample_rate and channels == self._audio_channels
                 and bits == self._audio_bits):
             return
-        logger.info(f"Format audio: {self._audio_sample_rate}Hz → {sample_rate}Hz/{channels}ch/{bits}bit")
         try:
             pygame.mixer.music.stop()
             pygame.mixer.music.unload()
         except Exception:
             pass
         pygame.mixer.quit()
-        pygame.mixer.init(frequency=sample_rate, size=-(bits), channels=channels, buffer=4096)
+        pygame.mixer.init(frequency=sample_rate, size=-bits, channels=channels, buffer=4096)
         self._audio_sample_rate = sample_rate
-        self._audio_channels = channels
-        self._audio_bits = bits
-        logger.info(f"🎵 pygame.mixer reinitialisé: {sample_rate}Hz {channels}ch {bits}bit")
+        self._audio_channels    = channels
+        self._audio_bits        = bits
 
     def _reset_audio_state(self):
         if self.audio_check_timer:
@@ -312,16 +624,15 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
         self._cleanup_tmp_file()
-        self._audio_play_start = 0.0
+        self._audio_play_start   = 0.0
         self._audio_min_duration = 0.0
-        self._audio_sample_rate = -1
-        self._audio_channels = -1
-        self._audio_bits = -1
-        self._audio_chunks = []
+        self._audio_sample_rate  = -1
+        self._audio_channels     = -1
+        self._audio_bits         = -1
+        self._audio_chunks       = []
         self._audio_total_chunks = 0
-        self._pending_msg_type = ""
-        self._pending_msg_data = {}
-        logger.info("🔄 Etat audio reinitialise")
+        self._pending_msg_type   = ""
+        self._pending_msg_data   = {}
 
     def _cleanup_tmp_file(self):
         if self._tmp_audio_path:
@@ -332,7 +643,7 @@ class MainWindow(QMainWindow):
             self._tmp_audio_path = None
 
     def _reset_ui_for_new_session(self):
-        # Retour à l'écran de sélection de langue
+        self.stacked.setVisible(True)
         self.stacked.setCurrentIndex(0)
         self.interview_container.setVisible(False)
         self.connect_btn.setEnabled(True)
@@ -340,382 +651,15 @@ class MainWindow(QMainWindow):
         self.session_input.setEnabled(True)
         self.session_input.clear()
         self.status_label.setText(self.t("status_disconnected"))
-        self.status_label.setStyleSheet(f"color: {StarkTheme.WHITE}; letter-spacing: 1px;")
         self.status_detail.setText(self.t("waiting_connection"))
-        self.statusBar().showMessage("🎧 " + self.t("vocal_mode_label"))
+        self._set_chip_state("disconnected")
+        self.statusBar().showMessage(self.t("vocal_mode_label"))
         if self.audio_recorder:
             try:
                 self.audio_recorder.cleanup()
             except Exception:
                 pass
             self.audio_recorder = None
-        logger.info("🔄 UI reinitialisee")
-
-    # ================================================================
-    # UI PRINCIPALE
-    # ================================================================
-
-    def _setup_ui(self):
-        self.setWindowTitle("Stark Recruitment AI - Entretien Vocal")
-        self.showMaximized()
-        self.setStyleSheet(f"QMainWindow {{ background: #F0F4F8; }}")
-
-        central_widget = QWidget()
-        self.setCentralWidget(central_widget)
-        main_layout = QVBoxLayout(central_widget)
-        main_layout.setContentsMargins(0, 0, 0, 0)
-        main_layout.setSpacing(0)
-
-        main_layout.addWidget(self._create_header())
-
-        # Stacked: 0 = langue, 1 = session ID, 2 = interview
-        self.stacked = QStackedWidget()
-        self.stacked.addWidget(self._create_language_screen())   # index 0
-        self.stacked.addWidget(self._create_connection_widget())  # index 1
-        main_layout.addWidget(self.stacked, stretch=1)
-
-        self.interview_container = self._create_interview_container()
-        self.interview_container.setVisible(False)
-        main_layout.addWidget(self.interview_container)
-
-        self._setup_statusbar()
-
-    def _create_header(self) -> QWidget:
-        header = QFrame()
-        header.setStyleSheet(f"""
-            QFrame {{
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                    stop:0 #003E7E, stop:1 #0066CC);
-                border-bottom: 3px solid {StarkTheme.ORANGE_ACCENT};
-            }}
-        """)
-        header.setFixedHeight(80)
-        shadow = QGraphicsDropShadowEffect()
-        shadow.setBlurRadius(15)
-        shadow.setColor(QColor(StarkTheme.BLUE_DARK))
-        shadow.setOffset(0, 3)
-        header.setGraphicsEffect(shadow)
-
-        layout = QHBoxLayout(header)
-        layout.setContentsMargins(40, 15, 40, 15)
-
-        logo = QLabel()
-        logo.setPixmap(StarkIcons.logo_stark().pixmap(QSize(50, 50)))
-        layout.addWidget(logo)
-
-        tw = QWidget()
-        twl = QVBoxLayout(tw)
-        twl.setContentsMargins(10, 0, 0, 0)
-        twl.setSpacing(2)
-
-        main_title = QLabel("STARK RECRUITMENT AI")
-        main_title.setFont(QFont(StarkTheme.FONT_FAMILY_PRIMARY, 20, QFont.Weight.ExtraBold))
-        main_title.setStyleSheet(f"color: {StarkTheme.WHITE}; letter-spacing: 2px;")
-        twl.addWidget(main_title)
-
-        self.header_subtitle = QLabel(self.t("app_subtitle"))
-        self.header_subtitle.setFont(QFont(StarkTheme.FONT_FAMILY_PRIMARY, 10))
-        self.header_subtitle.setStyleSheet(f"color: {StarkTheme.BLUE_EXTRA_LIGHT};")
-        twl.addWidget(self.header_subtitle)
-
-        layout.addWidget(tw)
-        layout.addStretch()
-        self.status_container = self._create_status_indicator()
-        layout.addWidget(self.status_container)
-        return header
-
-    def _create_status_indicator(self) -> QWidget:
-        container = QFrame()
-        container.setStyleSheet(f"""
-            QFrame {{
-                background: rgba(255,255,255,0.1);
-                border: 1px solid rgba(255,255,255,0.2);
-                border-radius: {StarkTheme.RADIUS_MEDIUM};
-                padding: 8px 15px;
-            }}
-        """)
-        layout = QHBoxLayout(container)
-        layout.setContentsMargins(10, 5, 10, 5)
-        layout.setSpacing(10)
-
-        self.status_icon_label = QLabel()
-        self.status_icon_label.setPixmap(StarkIcons.activity().pixmap(QSize(24, 24)))
-        layout.addWidget(self.status_icon_label)
-
-        stc = QWidget()
-        stl = QVBoxLayout(stc)
-        stl.setContentsMargins(0, 0, 0, 0)
-        stl.setSpacing(0)
-
-        self.status_label = QLabel(self.t("status_disconnected"))
-        self.status_label.setFont(QFont(StarkTheme.FONT_FAMILY_PRIMARY, 11, QFont.Weight.Bold))
-        self.status_label.setStyleSheet(f"color: {StarkTheme.WHITE}; letter-spacing: 1px;")
-        stl.addWidget(self.status_label)
-
-        self.status_detail = QLabel(self.t("waiting_connection"))
-        self.status_detail.setFont(QFont(StarkTheme.FONT_FAMILY_PRIMARY, 8))
-        self.status_detail.setStyleSheet(f"color: {StarkTheme.BLUE_EXTRA_LIGHT};")
-        stl.addWidget(self.status_detail)
-
-        layout.addWidget(stc)
-        return container
-
-    # ================================================================
-    # ÉCRAN 1 : SÉLECTION DE LANGUE
-    # ================================================================
-
-    def _create_language_screen(self) -> QWidget:
-        screen = QWidget()
-        screen.setStyleSheet("QWidget { background: transparent; }")
-        layout = QVBoxLayout(screen)
-        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.setSpacing(40)
-        layout.setContentsMargins(40, 40, 40, 40)
-
-        # ─ Titre ─
-        title = QLabel(self.t("choose_language"))
-        title.setFont(QFont("Segoe UI", 28, QFont.Weight.ExtraBold))
-        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        title.setStyleSheet("""
-            color: #1A1A2E;
-            letter-spacing: 1px;
-        """)
-        layout.addWidget(title)
-
-        subtitle = QLabel(self.t("choose_subtitle"))
-        subtitle.setFont(QFont(StarkTheme.FONT_FAMILY_PRIMARY, 12))
-        subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        subtitle.setStyleSheet("color: #7F8C8D;")
-        layout.addWidget(subtitle)
-
-        # ─ Cartes de langue ─
-        cards_container = QWidget()
-        cards_layout = QHBoxLayout(cards_container)
-        cards_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        cards_layout.setSpacing(30)
-
-        self._lang_cards = {}
-        for lang_data in LANGUAGE_OPTIONS:
-            card = LanguageCard(lang_data, self._on_language_selected)
-            self._lang_cards[lang_data["code"]] = card
-            cards_layout.addWidget(card)
-
-        layout.addWidget(cards_container)
-
-        # ─ Bouton confirmer ─
-        self.lang_confirm_btn = QPushButton("✓  Confirmer")
-        self.lang_confirm_btn.setFont(QFont(StarkTheme.FONT_FAMILY_PRIMARY, 14, QFont.Weight.Bold))
-        self.lang_confirm_btn.setFixedSize(280, 55)
-        self.lang_confirm_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.lang_confirm_btn.setStyleSheet(f"""
-            QPushButton {{
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                    stop:0 {StarkTheme.ORANGE_ACCENT}, stop:1 {StarkTheme.ORANGE_LIGHT});
-                color: white;
-                border: none;
-                border-radius: 27px;
-                font-size: 15px;
-                font-weight: bold;
-                letter-spacing: 1px;
-            }}
-            QPushButton:hover {{ background: {StarkTheme.ORANGE_LIGHT}; }}
-            QPushButton:pressed {{ background: {StarkTheme.ORANGE_ACCENT}; }}
-        """)
-        shadow = QGraphicsDropShadowEffect()
-        shadow.setBlurRadius(20)
-        shadow.setColor(QColor(StarkTheme.ORANGE_ACCENT))
-        shadow.setOffset(0, 6)
-        self.lang_confirm_btn.setGraphicsEffect(shadow)
-        self.lang_confirm_btn.clicked.connect(self._on_language_confirmed)
-        layout.addWidget(self.lang_confirm_btn, alignment=Qt.AlignmentFlag.AlignCenter)
-
-        # Sélection par défaut
-        self._on_language_selected("fr")
-        return screen
-
-    def _on_language_selected(self, code: str):
-        self._language = code
-        for c, card in self._lang_cards.items():
-            card.set_selected(c == code)
-        # Met à jour le texte du bouton confirmer
-        lang_name = next(l["name"] for l in LANGUAGE_OPTIONS if l["code"] == code)
-        self.lang_confirm_btn.setText(f"✓  {lang_name}")
-
-    def _on_language_confirmed(self):
-        """Passe à l'écran de saisie de session ID."""
-        # Met à jour les textes de l'interface selon la langue
-        self._update_ui_language()
-        self.stacked.setCurrentIndex(1)
-
-    def _update_ui_language(self):
-        """Met à jour tous les textes de l'UI selon la langue choisie."""
-        self.header_subtitle.setText(self.t("app_subtitle"))
-        self.status_label.setText(self.t("status_disconnected"))
-        self.status_detail.setText(self.t("waiting_connection"))
-        # Boutons écran connexion
-        self.connect_btn.setText(self.t("start_btn"))
-        self.session_input.setPlaceholderText(self.t("session_placeholder"))
-        self.back_btn.setText(self.t("back_btn"))
-        # Titre écran connexion
-        self.conn_title.setText(self.t("enter_session"))
-        # Interview widget
-        if hasattr(self, 'interview_widget'):
-            self.interview_widget.set_language(self._language)
-        self.statusBar().showMessage("🎧 " + self.t("vocal_mode_label"))
-
-    # ================================================================
-    # ÉCRAN 2 : SESSION ID
-    # ================================================================
-
-    def _create_connection_widget(self) -> QWidget:
-        widget = QWidget()
-        widget.setStyleSheet("QWidget { background: transparent; }")
-        outer = QVBoxLayout(widget)
-        outer.setAlignment(Qt.AlignmentFlag.AlignCenter)
-
-        card = QFrame()
-        card.setStyleSheet(f"""
-            QFrame {{
-                background: white;
-                border: 2px solid {StarkTheme.BLUE_EXTRA_LIGHT};
-                border-radius: 24px;
-            }}
-        """)
-        card.setFixedSize(560, 430)
-        shadow = QGraphicsDropShadowEffect()
-        shadow.setBlurRadius(40)
-        shadow.setColor(QColor(StarkTheme.BLUE_PRIMARY))
-        shadow.setOffset(0, 10)
-        card.setGraphicsEffect(shadow)
-
-        card_layout = QVBoxLayout(card)
-        card_layout.setContentsMargins(55, 40, 55, 40)
-        card_layout.setSpacing(18)
-
-        # Icône
-        icon_container = QFrame()
-        icon_container.setStyleSheet(
-            f"QFrame {{ background: {StarkTheme.BLUE_EXTRA_LIGHT}; border-radius: 40px; }}"
-        )
-        icon_container.setFixedSize(80, 80)
-        il = QVBoxLayout(icon_container)
-        il.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        shield_icon = QLabel()
-        shield_icon.setPixmap(StarkIcons.headphones(StarkTheme.ORANGE_ACCENT).pixmap(QSize(50, 50)))
-        il.addWidget(shield_icon)
-        card_layout.addWidget(icon_container, alignment=Qt.AlignmentFlag.AlignCenter)
-
-        # Titre
-        self.conn_title = QLabel(self.t("enter_session"))
-        self.conn_title.setFont(QFont(StarkTheme.FONT_FAMILY_PRIMARY, 16, QFont.Weight.Bold))
-        self.conn_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.conn_title.setStyleSheet(f"color: {StarkTheme.BLUE_DARK};")
-        card_layout.addWidget(self.conn_title)
-
-        # Indicateur de langue choisie
-        self.chosen_lang_label = QLabel()
-        self.chosen_lang_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.chosen_lang_label.setFont(QFont(StarkTheme.FONT_FAMILY_PRIMARY, 11))
-        self.chosen_lang_label.setStyleSheet(f"""
-            color: {StarkTheme.GRAY_MEDIUM};
-            background: {StarkTheme.GRAY_EXTRA_LIGHT};
-            border-radius: 12px;
-            padding: 5px 12px;
-        """)
-        self._refresh_chosen_lang_label()
-        card_layout.addWidget(self.chosen_lang_label, alignment=Qt.AlignmentFlag.AlignCenter)
-
-        # Input session
-        self.session_input = QLineEdit()
-        self.session_input.setPlaceholderText(self.t("session_placeholder"))
-        self.session_input.setFont(QFont(StarkTheme.FONT_FAMILY_MONO, 12, QFont.Weight.Bold))
-        self.session_input.setMinimumHeight(52)
-        self.session_input.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.session_input.setStyleSheet(f"""
-            QLineEdit {{
-                background: {StarkTheme.GRAY_EXTRA_LIGHT};
-                border: 2px solid {StarkTheme.GRAY_LIGHT};
-                border-radius: {StarkTheme.RADIUS_MEDIUM};
-                padding: {StarkTheme.SPACING_MD};
-                color: {StarkTheme.GRAY_DARK};
-            }}
-            QLineEdit:focus {{
-                border: 2px solid {StarkTheme.ORANGE_ACCENT};
-                background: {StarkTheme.WHITE};
-            }}
-        """)
-        card_layout.addWidget(self.session_input)
-
-        # Bouton démarrer
-        self.connect_btn = QPushButton(self.t("start_btn"))
-        self.connect_btn.setFont(QFont(StarkTheme.FONT_FAMILY_PRIMARY, 13, QFont.Weight.Bold))
-        self.connect_btn.setMinimumHeight(55)
-        self.connect_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.connect_btn.setStyleSheet(StarkTheme.get_button_style("accent"))
-        self.connect_btn.clicked.connect(self._connect_to_interview)
-        card_layout.addWidget(self.connect_btn)
-
-        # Bouton retour
-        self.back_btn = QPushButton(self.t("back_btn"))
-        self.back_btn.setFont(QFont(StarkTheme.FONT_FAMILY_PRIMARY, 10))
-        self.back_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.back_btn.setStyleSheet(f"""
-            QPushButton {{
-                background: transparent;
-                color: {StarkTheme.GRAY_MEDIUM};
-                border: none;
-            }}
-            QPushButton:hover {{ color: {StarkTheme.BLUE_PRIMARY}; }}
-        """)
-        self.back_btn.clicked.connect(lambda: self.stacked.setCurrentIndex(0))
-        card_layout.addWidget(self.back_btn, alignment=Qt.AlignmentFlag.AlignCenter)
-
-        outer.addWidget(card)
-        return widget
-
-    def _refresh_chosen_lang_label(self):
-        lang_data = next((l for l in LANGUAGE_OPTIONS if l["code"] == self._language), None)
-        if lang_data and hasattr(self, 'chosen_lang_label'):
-            self.chosen_lang_label.setText(f"{lang_data['flag']}  {lang_data['name']}")
-
-    # ================================================================
-    # INTERVIEW CONTAINER
-    # ================================================================
-
-    def _create_interview_container(self) -> QWidget:
-        container = QWidget()
-        container.setStyleSheet("QWidget { background: transparent; }")
-        layout = QHBoxLayout(container)
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(20)
-
-        self.video_player = VideoPlayerWidget()
-        layout.addWidget(self.video_player, stretch=2)
-
-        self.interview_widget = InterviewWidget(language=self._language)
-        self.interview_widget.setMaximumWidth(450)
-        self.interview_widget.start_recording.connect(self._on_start_recording)
-        self.interview_widget.stop_recording.connect(self._on_stop_recording)
-        self.interview_widget.end_interview.connect(self._on_end_interview)
-        layout.addWidget(self.interview_widget, stretch=1)
-
-        return container
-
-    def _setup_statusbar(self):
-        self.statusBar().setStyleSheet(f"""
-            QStatusBar {{
-                background: {StarkTheme.WHITE};
-                color: {StarkTheme.GRAY_DARK};
-                font-size: 11px; font-weight: bold;
-                padding: 8px;
-                border-top: 1px solid {StarkTheme.GRAY_LIGHT};
-            }}
-        """)
-        self.statusBar().showMessage("🎧 " + self.t("vocal_mode_label"))
-
-    # ================================================================
-    # CONNEXION
-    # ================================================================
 
     def _connect_to_interview(self):
         if self.is_connecting:
@@ -741,76 +685,58 @@ class MainWindow(QMainWindow):
 
         self._session_token += 1
         current_token = self._session_token
-
         self._reset_audio_state()
-
-        # Met à jour la langue de l'interview widget
         self.interview_widget.set_language(self._language)
-        self._refresh_chosen_lang_label()
+        self._refresh_lang_pill()
 
-        self.session_id = session_id
+        self.session_id    = session_id
         self.is_connecting = True
         self.connect_btn.setEnabled(False)
         self.connect_btn.setText(self.t("connecting"))
         self.session_input.setEnabled(False)
+        self._set_chip_state("validating")
+        self.status_label.setText(self.t("status_validating"))
 
         ws_url = f"{settings.WEBSOCKET_URL}/ws/interview/{session_id}?lang={self._language}"
         self.websocket_client = WebSocketClient(ws_url)
 
         self.websocket_client.disconnected.connect(
-            lambda code, reason: self._on_ws_disconnected(code, reason, current_token)
-        )
+            lambda c, r: self._on_ws_disconnected(c, r, current_token))
         self.websocket_client.connected.connect(
-            lambda: self._on_ws_connected(current_token)
-        )
+            lambda: self._on_ws_connected(current_token))
         self.websocket_client.message_received.connect(
-            lambda data: self._on_ws_message(data, current_token)
-        )
+            lambda d: self._on_ws_message(d, current_token))
         self.websocket_client.error_occurred.connect(
-            lambda err: self._on_ws_error(err, current_token)
-        )
+            lambda e: self._on_ws_error(e, current_token))
 
         self.websocket_client.connect_to_server()
-        self.statusBar().showMessage("🔍 Connexion...")
+        self.statusBar().showMessage("Connexion…")
 
-    def _is_active(self, token: int) -> bool:
-        return token == self._session_token
+    def _is_active(self, token): return token == self._session_token
 
-    def _on_ws_connected(self, token: int):
-        if not self._is_active(token):
-            return
-        logger.info("✅ WebSocket connecté")
+    def _on_ws_connected(self, token):
+        if not self._is_active(token): return
+        self._set_chip_state("validating")
         self.status_label.setText(self.t("status_validating"))
-        self.status_label.setStyleSheet(
-            f"color: {StarkTheme.WARNING}; letter-spacing: 1px; font-weight: bold;"
-        )
 
-    def _on_ws_disconnected(self, code: int, reason: str, token: int):
-        if not self._is_active(token):
-            return
+    def _on_ws_disconnected(self, code, reason, token):
+        if not self._is_active(token): return
         if self.is_connecting:
             self._handle_connection_failure(reason or f"Code {code}")
             return
-        logger.info(f"Session terminée (code={code})")
         self._reset_audio_state()
         self._reset_ui_for_new_session()
 
-    def _on_ws_error(self, error: str, token: int):
-        if not self._is_active(token):
-            return
-        self.statusBar().showMessage(f"❌ {error}")
+    def _on_ws_error(self, error, token):
+        if not self._is_active(token): return
+        self.statusBar().showMessage(f"Erreur : {error}")
 
-    # ================================================================
-    # MESSAGES WEBSOCKET
-    # ================================================================
+    # ── WebSocket message handler ─────────────────────────────────────────────
 
     def _on_ws_message(self, data: dict, token: int):
-        if not self._is_active(token):
-            return
-
+        if not self._is_active(token): return
         msg_type = data.get("type")
         msg_data = data.get("data", {})
-        logger.info(f"📨 {msg_type}")
 
         if msg_type == "error":
             err = msg_data.get("message", "Erreur")
@@ -828,15 +754,14 @@ class MainWindow(QMainWindow):
 
         if msg_type in ("welcome", "question", "interview_completed"):
             if msg_data.get("audio_mode") == "chunked":
-                self._pending_msg_type = msg_type
-                self._pending_msg_data = msg_data
-                self._audio_chunks = []
+                self._pending_msg_type   = msg_type
+                self._pending_msg_data   = msg_data
+                self._audio_chunks       = []
                 self._audio_total_chunks = msg_data.get("total_chunks", 0)
                 sr   = msg_data.get("sample_rate", 22050)
                 ch   = msg_data.get("channels", 1)
                 bits = msg_data.get("bits_per_sample", 16)
                 self._ensure_audio_format(sr, ch, bits)
-                logger.info(f"Chunked: {self._audio_total_chunks} @ {sr}Hz pour '{msg_type}'")
                 return
             audio_b64 = msg_data.get("audio_data")
             if audio_b64:
@@ -846,44 +771,35 @@ class MainWindow(QMainWindow):
 
         if msg_type == "audio_chunk_data":
             self._audio_chunks.append(msg_data.get("data", ""))
-            idx, total = msg_data.get("chunk_index", 0), msg_data.get("total", 1)
-            self.statusBar().showMessage(f"📦 Audio {idx + 1}/{total}...")
             return
 
         if msg_type == "audio_chunk_end":
             if self._audio_chunks:
                 try:
-                    pcm_bytes = b"".join(base64.b64decode(c) for c in self._audio_chunks)
-                    logger.info(
-                        f"✅ PCM: {len(self._audio_chunks)} chunks → "
-                        f"{len(pcm_bytes):,} B @ {self._audio_sample_rate}Hz"
-                    )
-                    self._play_pcm(pcm_bytes)
+                    pcm = b"".join(base64.b64decode(c) for c in self._audio_chunks)
+                    self._play_pcm(pcm)
                 except Exception as e:
-                    logger.error(f"❌ Assemblage PCM: {e}")
+                    logger.error(f"PCM error: {e}")
                     self.interview_widget.enable_recording(True)
             else:
                 self.interview_widget.enable_recording(True)
-
             self._finalize_message(self._pending_msg_type, self._pending_msg_data)
-            self._audio_chunks = []
-            self._pending_msg_type = ""
-            self._pending_msg_data = {}
+            self._audio_chunks       = []
+            self._pending_msg_type   = ""
+            self._pending_msg_data   = {}
             return
 
         if msg_type == "answer_saved":
-            logger.info("✅ Réponse sauvegardée")
             self.statusBar().showMessage(self.t("answer_saved"))
             self.video_player.set_idle()
+            self._set_chip_state("connected")
 
-    def _finalize_message(self, msg_type: str, msg_data: dict):
+    def _finalize_message(self, msg_type, msg_data):
         if msg_type == "welcome":
             self.is_connecting = False
             self.status_label.setText(self.t("status_connected"))
-            self.status_label.setStyleSheet(
-                f"color: {StarkTheme.SUCCESS}; letter-spacing: 1px; font-weight: bold;"
-            )
             self.status_detail.setText(self.t("vocal_mode_active"))
+            self._set_chip_state("connected")
             self.stacked.setVisible(False)
             self.interview_container.setVisible(True)
             if not self.audio_recorder:
@@ -900,13 +816,11 @@ class MainWindow(QMainWindow):
 
         elif msg_type == "interview_completed":
             self._show_info_dialog(self.t("interview_complete"), self.t("thanks_message"))
-            self.statusBar().showMessage("🎉 Terminé!")
+            self.statusBar().showMessage("✓ Terminé")
             self._reset_audio_state()
             self._reset_ui_for_new_session()
 
-    # ================================================================
-    # LECTURE AUDIO
-    # ================================================================
+    # ── Audio playback ────────────────────────────────────────────────────────
 
     def _play_pcm(self, pcm_bytes: bytes):
         try:
@@ -930,42 +844,27 @@ class MainWindow(QMainWindow):
                 wf.setframerate(self._audio_sample_rate)
                 wf.writeframes(pcm_bytes)
 
-            bytes_per_sec = (
-                self._audio_sample_rate * self._audio_channels * (self._audio_bits // 8)
-            )
-            theoretical_ms = (
-                (len(pcm_bytes) / bytes_per_sec) * 1000 if bytes_per_sec > 0 else 3000
-            )
+            bps = self._audio_sample_rate * self._audio_channels * (self._audio_bits // 8)
+            theoretical_ms = (len(pcm_bytes) / bps * 1000) if bps > 0 else 3000
             self._audio_min_duration = max(theoretical_ms * 0.9, 800)
-            self._audio_play_start = time.monotonic() * 1000
+            self._audio_play_start   = time.monotonic() * 1000
 
             pygame.mixer.music.load(self._tmp_audio_path)
             pygame.mixer.music.play()
 
-            logger.info(
-                f"▶️ Lecture: {len(pcm_bytes):,} B "
-                f"@ {self._audio_sample_rate}Hz {self._audio_channels}ch {self._audio_bits}bit "
-                f"(~{theoretical_ms/1000:.1f}s)"
-            )
-
             self.audio_check_timer = QTimer()
             self.audio_check_timer.timeout.connect(self._check_audio_finished)
             self.audio_check_timer.start(200)
-
         except Exception as e:
-            logger.error(f"❌ _play_pcm: {e}")
+            logger.error(f"_play_pcm: {e}")
             self._cleanup_tmp_file()
             self.interview_widget.enable_recording(True)
 
     def _check_audio_finished(self):
-        now_ms = time.monotonic() * 1000
-        elapsed_ms = now_ms - self._audio_play_start
-
+        elapsed_ms = time.monotonic() * 1000 - self._audio_play_start
         if elapsed_ms < self._audio_min_duration:
             return
-
         if not pygame.mixer.music.get_busy():
-            logger.info(f"✅ Lecture terminée ({elapsed_ms/1000:.1f}s)")
             if self.audio_check_timer:
                 self.audio_check_timer.stop()
                 self.audio_check_timer = None
@@ -994,15 +893,13 @@ class MainWindow(QMainWindow):
                 return
         self._play_pcm(audio_bytes)
 
-    # ================================================================
-    # ENREGISTREMENT
-    # ================================================================
+    # ── Recording ─────────────────────────────────────────────────────────────
 
     def _on_start_recording(self):
         if self.audio_recorder:
             self.audio_recorder.start_recording()
             self.video_player.set_listening()
-            self.statusBar().showMessage("🎤 Enregistrement...")
+            self.statusBar().showMessage("● Enregistrement…")
 
     def _on_stop_recording(self):
         if self.audio_recorder:
@@ -1016,7 +913,7 @@ class MainWindow(QMainWindow):
         if self.websocket_client:
             self.websocket_client.send_message({
                 "type":       "audio_chunk",
-                "audio_data": base64.b64encode(audio_data).decode("utf-8"),
+                "audio_data": base64.b64encode(audio_data).decode(),
             })
 
     def _on_end_interview(self):
@@ -1027,9 +924,7 @@ class MainWindow(QMainWindow):
         if reply == QMessageBox.StandardButton.Yes and self.websocket_client:
             self.websocket_client.send_message({"type": "end_interview"})
 
-    # ================================================================
-    # UTILITAIRES
-    # ================================================================
+    # ── Error helpers ─────────────────────────────────────────────────────────
 
     def _handle_connection_failure(self, msg: str):
         self.is_connecting = False
@@ -1037,6 +932,8 @@ class MainWindow(QMainWindow):
         self.connect_btn.setEnabled(True)
         self.connect_btn.setText(self.t("start_btn"))
         self.session_input.setEnabled(True)
+        self._set_chip_state("error")
+        self.status_label.setText(self.t("status_disconnected"))
         if self.websocket_client:
             try:
                 self.websocket_client.disconnected.disconnect()
@@ -1052,14 +949,14 @@ class MainWindow(QMainWindow):
             self.websocket_client = None
         self._show_error_dialog(self.t("error_title"), msg)
 
-    def _show_error_dialog(self, title: str, msg: str):
+    def _show_error_dialog(self, title, msg):
         b = QMessageBox(self)
         b.setIcon(QMessageBox.Icon.Critical)
         b.setWindowTitle(title)
         b.setText(msg)
         b.exec()
 
-    def _show_info_dialog(self, title: str, msg: str):
+    def _show_info_dialog(self, title, msg):
         b = QMessageBox(self)
         b.setIcon(QMessageBox.Icon.Information)
         b.setWindowTitle(title)
