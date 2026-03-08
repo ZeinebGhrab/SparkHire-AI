@@ -167,6 +167,10 @@ stark-recruitment-chatbot/
 ├── backend/           # FastAPI API
 │   ├── auth/          # 🔐 Authentication
 │   ├── candidates/    # 👥 Candidate management
+│   ├── evaluation/         # LLM pipeline
+│   │   ├── models.py       # AnswerEvaluation, GlobalEvaluation
+│   │   ├── service.py      # Orchestrateur ASR→LLM
+│   │   └── routes.py       # /evaluations/*
 │   ├── jobs/          # 💼 Job postings
 │   ├── matches/       # 🎯 CV/Job matching
 │   ├── interviews/    # 🎤 Voice interviews
