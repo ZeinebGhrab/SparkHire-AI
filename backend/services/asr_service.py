@@ -3,12 +3,14 @@ Service ASR — Whisper (faster-whisper) + Vosk
 Whisper recommandé : meilleure précision multilingue AR/FR/EN.
 """
 
+import os
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"   # Fix conflit OpenMP Windows (PyTorch + ctranslate2)
+
 import io
 import wave
 import json
 import logging
 import tempfile
-import os
 from pathlib import Path
 from typing import Optional
 from abc import ABC, abstractmethod
