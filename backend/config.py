@@ -51,6 +51,17 @@ class Settings(BaseSettings):
     SAMPLE_RATE: int = 16000
     CHANNELS: int = 1
     CHUNK_SIZE: int = 1024
+    
+    # ================= WHISPER MODEL =================
+    WHISPER_MODEL_SIZE: str = "medium"
+    WHISPER_DEVICE: str = "cpu"          
+    WHISPER_COMPUTE_TYPE: str = "int8"   
+    WHISPER_LANGUAGE: str = "ar"
+
+    # ================= OLLAMA =================
+    OLLAMA_URL: str = "http://localhost:11434"
+    OLLAMA_MODEL: str = "llama3"
+    OLLAMA_TIMEOUT: float = 60.0
 
     class Config:
         env_file = ".env"
