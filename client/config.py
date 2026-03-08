@@ -14,6 +14,10 @@ class Settings(BaseSettings):
     API_PORT: int = 8000
     DEBUG: bool = True
 
+    # ================= URLs =================
+    API_BASE_URL: str = "http://localhost:8000"
+    WEBSOCKET_URL: str = "ws://localhost:8000"   
+
     # ================= Database =================
     MONGODB_URL: str = "mongodb://localhost:27017"
     MONGODB_DB_NAME: str = "stark_recruitment"
@@ -24,24 +28,24 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
 
     # ================= ASR (Speech-to-Text) =================
-    ASR_ENGINE: str = "faster-whisper"          # faster-whisper | vosk
+    ASR_ENGINE: str = "faster-whisper"           # faster-whisper | vosk
     VOSK_MODEL_PATH: Path = BASE_DIR / "models" / "vosk-model-ar"
-    WHISPER_MODEL_SIZE: str = "medium"           # tiny | base | small | medium | large-v3
+    WHISPER_MODEL_SIZE: str = "medium"
     WHISPER_LANGUAGE: str = "ar"
-    WHISPER_COMPUTE_TYPE: str = "int8"           # int8 | float16 | float32
-    WHISPER_DEVICE: str = "cpu"                  # cpu | cuda
+    WHISPER_COMPUTE_TYPE: str = "int8"
+    WHISPER_DEVICE: str = "cpu"
 
     # ================= TTS (Text-to-Speech) =================
-    TTS_ENGINE: str = "coqui"
+    TTS_ENGINE: str = "edge-tts"
     TTS_LANGUAGE: str = "ar"
     TTS_CACHE_DIR: Path = BASE_DIR / "uploads" / "tts_cache"
     COQUI_OPTIMIZED_ARABIC: bool = True
     COQUI_MODEL: str = "tts_models/multilingual/multi-dataset/xtts_v2"
 
     # ================= LLM / Ollama =================
-    OLLAMA_URL: str = "http://localhost:11434"   # URL Ollama local
-    OLLAMA_MODEL: str = "llama3"                 # llama3 | llama3:8b | mistral | etc.
-    OLLAMA_TIMEOUT: float = 60.0                 # secondes
+    OLLAMA_URL: str = "http://localhost:11434"
+    OLLAMA_MODEL: str = "llama3"
+    OLLAMA_TIMEOUT: float = 60.0
 
     # ================= Avatar =================
     AVATAR_PROVIDER: str = "simple"

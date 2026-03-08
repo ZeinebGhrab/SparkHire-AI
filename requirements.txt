@@ -1,46 +1,58 @@
-# ============ API & Core ============
+# ═══════════════════════════════════════════════════════════════
+# STARK RECRUITMENT AI — requirements.txt (Backend)
+# Python 3.10+ | pip install -r requirements.txt
+# ═══════════════════════════════════════════════════════════════
+
+# ── API Framework ────────────────────────────────────────────────
 fastapi==0.115.0
 uvicorn[standard]==0.32.0
 pydantic==2.9.0
 pydantic-settings==2.6.0
 python-multipart==0.0.9
+httpx==0.27.2
+aiofiles==24.1.0
 
-# ============ Auth ============
+# ── Auth ─────────────────────────────────────────────────────────
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
+bcrypt==4.2.0
 
-# ============ Database ============
+# ── Base de Donnees ──────────────────────────────────────────────
 pymongo==4.10.1
 motor==3.5.1
 python-dotenv==1.0.1
-redis==5.0.8
 
-# ============ WebSocket ============
+# ── WebSocket ────────────────────────────────────────────────────
 websockets==13.0.1
 
-# ============ ASR (Speech-to-Text) ============
+# ── ASR — Whisper ────────────────────────────────────────────────
 faster-whisper==1.0.3
+
+# ── ASR — Vosk (fallback hors-ligne) ─────────────────────────────
 vosk==0.3.45
+
+# ── TTS — Edge-TTS (Microsoft, par defaut) ───────────────────────
+edge-tts==6.1.12
+
+# ── TTS — Coqui XTTS-v2 (optionnel, lourd ~1.5 GB) ─────────────
+# TTS==0.22.0
+# torch>=2.0.0
+
+# ── Audio Processing ─────────────────────────────────────────────
 pyaudio==0.2.14
 soundfile==0.12.1
-
-# ============ TTS (Text-to-Speech) ============
-TTS==0.22.0
-pyttsx3==2.90
-
-# ============ Audio Processing ============
 scipy==1.14.1
 numpy==1.26.4
+pydub==0.25.1
 
-# ============ Video/Avatar ============
+# ── Video / Avatar ────────────────────────────────────────────────
 opencv-python==4.10.0.84
-moviepy==1.0.3
 pillow==10.4.0
 
-# ============ Utils ============
-aiofiles==24.1.0
-httpx==0.27.2
+# ── Utilitaires ──────────────────────────────────────────────────
+python-dateutil==2.9.0
+pytz==2024.2
 
-# ============ Tests ============
-pytest==8.3.0
-pytest-asyncio==0.24.0
+# ── Tests (optionnel) ────────────────────────────────────────────
+# pytest==8.3.0
+# pytest-asyncio==0.24.0

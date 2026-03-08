@@ -24,44 +24,39 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
 
     # ================= ASR (Speech-to-Text) =================
-    ASR_ENGINE: str = "vosk"  # vosk | faster-whisper
+    ASR_ENGINE: str = "faster-whisper"          # faster-whisper | vosk
     VOSK_MODEL_PATH: Path = BASE_DIR / "models" / "vosk-model-ar"
-    WHISPER_MODEL_SIZE: str = "base"
+    WHISPER_MODEL_SIZE: str = "medium"           # tiny | base | small | medium | large-v3
+    WHISPER_DEVICE: str = "cpu"                  # cpu | cuda
+    WHISPER_COMPUTE_TYPE: str = "int8"           # int8 | float16 | float32
     WHISPER_LANGUAGE: str = "ar"
 
     # ================= TTS (Text-to-Speech) =================
-    # TTS Configuration
-    TTS_ENGINE: str = "coqui"  # coqui | edge-tts | gtts
+    TTS_ENGINE: str = "edge-tts"                 # edge-tts | coqui | gtts
     TTS_LANGUAGE: str = "ar"
     TTS_CACHE_DIR: Path = BASE_DIR / "uploads" / "tts_cache"
-    
-    # Coqui TTS
-    COQUI_OPTIMIZED_ARABIC: bool = True  # True = CSS10, False = XTTS-v2
+
+    # Coqui TTS (optionnel)
+    COQUI_OPTIMIZED_ARABIC: bool = True
     COQUI_MODEL: str = "tts_models/multilingual/multi-dataset/xtts_v2"
 
+    # ================= LLM / Ollama =================
+    OLLAMA_URL: str = "http://localhost:11434"
+    OLLAMA_MODEL: str = "llama3"
+    OLLAMA_TIMEOUT: float = 60.0
+
     # ================= Avatar =================
-    AVATAR_PROVIDER: str = "simple"  # simple | wav2lip | did
+    AVATAR_PROVIDER: str = "simple"              # simple | wav2lip | did
 
     # ================= File Upload =================
     UPLOAD_DIR: Path = BASE_DIR / "uploads"
-    MAX_UPLOAD_SIZE: int = 50 * 1024 * 1024  # 50 MB
+    MAX_UPLOAD_SIZE: int = 50 * 1024 * 1024      # 50 MB
     ALLOWED_AUDIO_FORMATS: list[str] = [".wav", ".mp3", ".ogg", ".flac"]
 
     # ================= Audio Processing =================
     SAMPLE_RATE: int = 16000
     CHANNELS: int = 1
     CHUNK_SIZE: int = 1024
-    
-    # ================= WHISPER MODEL =================
-    WHISPER_MODEL_SIZE: str = "medium"
-    WHISPER_DEVICE: str = "cpu"          
-    WHISPER_COMPUTE_TYPE: str = "int8"   
-    WHISPER_LANGUAGE: str = "ar"
-
-    # ================= OLLAMA =================
-    OLLAMA_URL: str = "http://localhost:11434"
-    OLLAMA_MODEL: str = "llama3"
-    OLLAMA_TIMEOUT: float = 60.0
 
     class Config:
         env_file = ".env"

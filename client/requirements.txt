@@ -1,67 +1,28 @@
 # ═══════════════════════════════════════════════════════════════
-# STARK RECRUITMENT AI — requirements.txt
-# Pipeline : Whisper ASR → FastAPI → Ollama/Llama3 LLM
-# Python 3.10+ recommandé | Windows 10/11 x64
+# STARK RECRUITMENT AI — client/requirements.txt (Client PySide6)
+# pip install -r client/requirements.txt
 # ═══════════════════════════════════════════════════════════════
 
-# ── API Framework ────────────────────────────────────────────────
-fastapi==0.115.0
-uvicorn[standard]==0.30.6
-python-multipart==0.0.12
-httpx==0.27.2
+# ── Interface Graphique ──────────────────────────────────────────
+PySide6==6.7.2
+PySide6-Essentials==6.7.2
 
-# ── Pydantic & Settings ──────────────────────────────────────────
-pydantic==2.9.2
-pydantic-settings==2.5.2
-email-validator==2.2.0
-
-# ── Auth ─────────────────────────────────────────────────────────
-python-jose[cryptography]==3.3.0
-passlib[bcrypt]==1.7.4
-bcrypt==4.2.0
-
-# ── Base de Données ──────────────────────────────────────────────
-pymongo==4.9.1
-motor==3.6.0
-
-# ── ASR — Whisper (Speech-to-Text) ────────────────────────────
-faster-whisper==1.0.3
-# Dépendances automatiques :
-#   ctranslate2 >= 4.0.0
-#   tokenizers >= 0.13
-#   huggingface-hub >= 0.13
-#   av  (décodage audio)
-
-# ── ASR — Vosk (fallback hors-ligne arabe) ───────────────────────
-vosk==0.3.45
-
-# ── TTS — Edge-TTS (Microsoft, voix arabe en ligne) ─────────────
-edge-tts==6.1.12
-
-# ── TTS — Coqui XTTS-v2 (local, optionnel) ──────────────────────
-# TTS==0.22.0          # lourd (1.5 GB)
-# torch==2.4.1         
-
-# ── Audio Processing ─────────────────────────────────────────────
+# ── Audio Playback ───────────────────────────────────────────────
+pygame==2.6.1
 pyaudio==0.2.14
-soundfile==0.12.1
-scipy==1.14.1
+pydub==0.25.1
+
+# ── Video ────────────────────────────────────────────────────────
+opencv-python==4.10.0.84
 numpy==1.26.4
 
-# ── LLM — Ollama Client ★ ────────────────────────────────────────
-# Pas de lib spéciale : httpx appelle l'API REST Ollama directement
+# ── WebSocket ────────────────────────────────────────────────────
+websockets==13.0.1
 
-# ── WebSockets ───────────────────────────────────────────────────
-websockets==13.1
+# ── HTTP ─────────────────────────────────────────────────────────
+httpx==0.27.2
 
-# ── Export / Utilitaires ─────────────────────────────────────────
-python-dateutil==2.9.0
-pytz==2024.2
-aiofiles==24.1.0
-
-# ── Logging ──────────────────────────────────────────────────────
-loguru==0.7.2
-
-# ── Tests (optionnel) ────────────────────────────────────────────
-# pytest==8.3.2
-# pytest-asyncio==0.24.0
+# ── Config / Env ─────────────────────────────────────────────────
+pydantic==2.9.0
+pydantic-settings==2.6.0
+python-dotenv==1.0.1
