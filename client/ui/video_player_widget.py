@@ -1,310 +1,310 @@
+"""
+Video Player Widget — Professional Light UI
+Zone vidéo sobre · barre de statut card blanche propre · indicateurs colorés
+"""
+
 import cv2
 import pygame
 import numpy as np
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QFrame, QHBoxLayout, QGraphicsDropShadowEffect
+from PySide6.QtWidgets import (
+    QWidget, QVBoxLayout, QLabel, QFrame, QHBoxLayout,
+    QGraphicsDropShadowEffect,
+)
 from PySide6.QtCore import Qt, QTimer, Slot, QSize
-from PySide6.QtGui import QFont, QImage, QPixmap, QColor
+from PySide6.QtGui import QFont, QImage, QPixmap, QColor, QPainter, QBrush
 from pathlib import Path
+
+import sys
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+from client.ui.stark_theme import T
 from client.ui.icons import StarkIcons
 
 
-class VideoPlayerWidget(QWidget):
-    """
-    Moteur de rendu Avatar RH - Design Fluide et Créatif
-    Avec animations, effets de glow et transitions douces
-    CORRECTIF: Suppression de text-shadow (non supporté par Qt stylesheets)
-    """
+def _sh(blur=20, dy=5, alpha=25, r=100, g=116, b=139):
+    s = QGraphicsDropShadowEffect()
+    s.setBlurRadius(blur); s.setOffset(0, dy)
+    s.setColor(QColor(r, g, b, alpha)); return s
 
-    # Palette Stark
-    STARK_BLUE_PRIMARY = "#1565C0"
-    STARK_BLUE_DARK = "#0D47A1"
-    STARK_BLUE_LIGHT = "#42A5F5"
-    STARK_BLUE_GLOW = "#64B5F6"
-    STARK_ACCENT = "#FF6B35"
-    STARK_ACCENT_GLOW = "#FF8555"
-    STARK_BG_DARK = "#0A1929"
-    STARK_SUCCESS = "#00E676"
-    STARK_SUCCESS_GLOW = "#00FF88"
+
+class _Dot(QWidget):
+    """Petit point animé."""
+    def __init__(self, color: str, parent=None):
+        super().__init__(parent)
+        self._c = QColor(color); self._a = 255; self._d = -5
+        self.setFixedSize(10, 10)
+        t = QTimer(self); t.timeout.connect(self._tick); t.start(50)
+
+    def set_color(self, c: str): self._c = QColor(c); self.update()
+
+    def _tick(self):
+        self._a += self._d
+        if self._a <= 60: self._d = 5
+        elif self._a >= 255: self._d = -5
+        self.update()
+
+    def paintEvent(self, _):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        c = QColor(self._c); c.setAlpha(self._a)
+        p.setBrush(QBrush(c)); p.setPen(Qt.PenStyle.NoPen)
+        p.drawEllipse(0, 0, 10, 10)
+
+
+class VideoPlayerWidget(QWidget):
+    """Lecteur avatar + barre de statut card blanche propre."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
 
-        self.layout = QVBoxLayout(self)
-        self.layout.setContentsMargins(0, 0, 0, 0)
-        self.layout.setSpacing(0)
+        # ── Wrapper carte ─────────────────────────────────────────────────────
+        wrapper = QFrame()
+        wrapper.setObjectName("videoWrapper")
+        wrapper.setStyleSheet(f"""
+            #videoWrapper {{
+                background: {T.BG_CARD};
+                border: 1px solid {T.BORDER};
+                border-radius: {T.R_XL}px;
+            }}
+        """)
+        wrapper.setGraphicsEffect(_sh(32, 8, 35))
+        wrap_lay = QVBoxLayout(wrapper)
+        wrap_lay.setContentsMargins(0, 0, 0, 0)
+        wrap_lay.setSpacing(0)
 
-        # Container principal
-        avatar_container = QFrame()
-        avatar_container.setStyleSheet("QFrame { background: transparent; }")
-        container_layout = QVBoxLayout(avatar_container)
-        container_layout.setContentsMargins(0, 0, 0, 0)
-        container_layout.setSpacing(0)
-
-        # Zone d'affichage
+        # ── Zone vidéo ───────────────────────────────────────────────────────
         self.avatar_display = QLabel()
         self.avatar_display.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.avatar_display.setStyleSheet(f"""
             QLabel {{
-                background: qradialgradient(cx:0.5, cy:0.5, radius:1,
-                    fx:0.5, fy:0.5,
-                    stop:0 {self.STARK_BG_DARK},
-                    stop:0.7 {self.STARK_BLUE_DARK},
-                    stop:1 {self.STARK_BG_DARK});
+                background: qlineargradient(x1:0.5,y1:0,x2:0.5,y2:1,
+                    stop:0 {T.BLUE_50},stop:0.4 #FFFFFF,stop:1 {T.CYAN_50});
                 border: none;
-                border-radius: 20px;
+                border-top-left-radius:  {T.R_XL}px;
+                border-top-right-radius: {T.R_XL}px;
             }}
         """)
-        self.avatar_display.setMinimumSize(800, 600)
-        self.avatar_display.setScaledContents(False)
+        self.avatar_display.setMinimumSize(800, 540)
+        wrap_lay.addWidget(self.avatar_display, stretch=1)
 
-        # Effet de glow
-        self.avatar_shadow = QGraphicsDropShadowEffect()
-        self.avatar_shadow.setBlurRadius(35)
-        self.avatar_shadow.setColor(QColor(self.STARK_BLUE_GLOW))
-        self.avatar_shadow.setOffset(0, 0)
-        self.avatar_display.setGraphicsEffect(self.avatar_shadow)
-
-        container_layout.addWidget(self.avatar_display)
-
-        # Barre de statut
-        status_overlay = QFrame()
-        status_overlay.setObjectName("statusOverlay")
-        status_overlay.setStyleSheet(f"""
-            #statusOverlay {{
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                    stop:0 rgba(13, 71, 161, 0.85),
-                    stop:0.5 rgba(21, 101, 192, 0.75),
-                    stop:1 rgba(13, 71, 161, 0.85));
-                border: 2px solid rgba(100, 181, 246, 0.4);
-                border-radius: 18px;
-                padding: 12px 25px;
+        # ── Barre de statut ───────────────────────────────────────────────────
+        bar = QFrame()
+        bar.setObjectName("statusBar")
+        bar.setFixedHeight(62)
+        bar.setStyleSheet(f"""
+            #statusBar {{
+                background: {T.BG_CARD};
+                border-top: 1px solid {T.BORDER};
+                border-bottom-left-radius:  {T.R_XL}px;
+                border-bottom-right-radius: {T.R_XL}px;
             }}
         """)
 
-        status_shadow = QGraphicsDropShadowEffect()
-        status_shadow.setBlurRadius(20)
-        status_shadow.setColor(QColor(self.STARK_BLUE_PRIMARY))
-        status_shadow.setOffset(0, 5)
-        status_overlay.setGraphicsEffect(status_shadow)
+        bar_lay = QHBoxLayout(bar)
+        bar_lay.setContentsMargins(T.SP_5, 0, T.SP_5, 0)
+        bar_lay.setSpacing(T.SP_3)
 
-        status_layout = QHBoxLayout(status_overlay)
-        status_layout.setContentsMargins(15, 10, 15, 10)
-        status_layout.setSpacing(15)
-
-        # Icône d'état
-        self.status_icon = QLabel()
-        self.status_icon.setPixmap(StarkIcons.user_check(self.STARK_BLUE_LIGHT).pixmap(QSize(28, 28)))
-        status_layout.addWidget(self.status_icon)
-
-        # Texte de statut — SANS text-shadow (non supporté Qt)
-        self.status_label = QLabel("Agent RH : Initialisation...")
-        self.status_label.setAlignment(Qt.AlignmentFlag.AlignLeft)
-        self.status_label.setStyleSheet("""
-            color: #FFFFFF;
-            font-size: 14px;
-            font-weight: bold;
-            letter-spacing: 1px;
-            background: transparent;
+        # Icône badge
+        self._ic_cont = QFrame()
+        self._ic_cont.setFixedSize(40, 40)
+        self._ic_cont.setStyleSheet(f"""
+            QFrame {{
+                background: qlineargradient(x1:0,y1:0,x2:1,y2:1,
+                    stop:0 {T.CYAN_50},stop:1 {T.BLUE_50});
+                border: 1px solid {T.CYAN_200};
+                border-radius: 10px;
+            }}
         """)
-        status_layout.addWidget(self.status_label)
-        status_layout.addStretch()
+        ic_inner = QVBoxLayout(self._ic_cont)
+        ic_inner.setContentsMargins(0, 0, 0, 0)
+        ic_inner.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._ic_lbl = QLabel()
+        self._ic_lbl.setPixmap(
+            StarkIcons.user_check(T.GREEN_600).pixmap(QSize(22, 22))
+        )
+        ic_inner.addWidget(self._ic_lbl)
+        bar_lay.addWidget(self._ic_cont)
 
-        # Indicateur pulse
-        self.pulse_indicator = QLabel("●")
-        self.pulse_indicator.setFont(QFont("Arial", 18))
-        self.pulse_indicator.setStyleSheet(f"""
-            color: {self.STARK_SUCCESS};
-            background: transparent;
+        # Texte
+        text_col = QVBoxLayout()
+        text_col.setSpacing(1)
+        self._status_main = QLabel("Agent RH : Prêt à vous écouter")
+        self._status_main.setFont(QFont(T.FONT, T.FS_BASE, QFont.Weight.Bold))
+        self._status_main.setStyleSheet(f"color: {T.TEXT_800}; background: transparent;")
+
+        self._status_sub = QLabel("Intelligence Vocal Intelligence")
+        self._status_sub.setFont(QFont(T.FONT, T.FS_XS))
+        self._status_sub.setStyleSheet(f"color: {T.TEXT_400}; letter-spacing: 0.5px; background: transparent;")
+
+        text_col.addWidget(self._status_main)
+        text_col.addWidget(self._status_sub)
+        bar_lay.addLayout(text_col, stretch=1)
+
+        # Indicateur animé
+        self._dot = _Dot(T.GREEN_500)
+        bar_lay.addWidget(self._dot)
+
+        # Badge état
+        self._state_badge = QLabel("En attente")
+        self._state_badge.setFont(QFont(T.FONT, T.FS_XS, QFont.Weight.Bold))
+        self._state_badge.setStyleSheet(f"""
+            color: {T.GREEN_700};
+            background: {T.GREEN_50};
+            border: 1px solid {T.GREEN_100};
+            border-radius: {T.R_FULL}px;
+            padding: 3px 10px;
         """)
-        status_layout.addWidget(self.pulse_indicator)
+        bar_lay.addWidget(self._state_badge)
 
-        container_layout.addWidget(status_overlay)
+        wrap_lay.addWidget(bar)
+        root.addWidget(wrapper)
 
-        self.layout.addWidget(avatar_container)
-
-        # Initialisation Pygame
+        # ── Init ──────────────────────────────────────────────────────────────
         pygame.init()
-
-        # Chemins des vidéos
-        self.base_path = Path(__file__).resolve().parent.parent.parent
-        self.video_dir = self.base_path / "assets" / "videos"
-
+        self.base_path  = Path(__file__).resolve().parent.parent.parent
+        self.video_dir  = self.base_path / "assets" / "videos"
         self.video_paths = {
-            "idle": str(self.video_dir / "rh_idle.mp4"),
-            "speaking": str(self.video_dir / "rh_speaking.mp4"),
-            "listening": str(self.video_dir / "rh_listening.mp4")
+            "idle":      str(self.video_dir / "rh_idle.mp4"),
+            "speaking":  str(self.video_dir / "rh_speaking.mp4"),
+            "listening": str(self.video_dir / "rh_listening.mp4"),
         }
-
-        # Contrôle vidéo
-        self.cap = None
-        self.timer = QTimer()
+        self.cap           = None
+        self.timer         = QTimer()
         self.timer.timeout.connect(self._update_frame)
         self.current_state = "idle"
-
-        # Timer pulse
-        self.pulse_timer = QTimer()
-        self.pulse_timer.timeout.connect(self._animate_pulse)
-        self.pulse_state = False
-        self.pulse_timer.start(1000)
-
         self.set_idle()
 
-    def _load_video(self, state):
-        """Charger la vidéo"""
-        if self.cap:
-            self.cap.release()
+    # ── Video ─────────────────────────────────────────────────────────────────
 
-        path = self.video_paths.get(state)
-
-        if not Path(path).exists():
-            print(f"⚠️ Vidéo manquante : {path}")
-            self._show_placeholder(state)
-            return
-
-        self.cap = cv2.VideoCapture(path)
+    def _load_video(self, state: str):
+        if self.cap: self.cap.release()
+        p = self.video_paths.get(state, "")
+        if not Path(p).exists():
+            self._show_placeholder(state); return
+        self.cap = cv2.VideoCapture(p)
         self.current_state = state
+        if not self.timer.isActive(): self.timer.start(33)
 
-        if not self.timer.isActive():
-            self.timer.start(33)  # 30 FPS
+    def _show_placeholder(self, state: str):
+        w, h = 800, 540
+        img = np.full((h, w, 3), 248, dtype=np.uint8)  # #F8FAFC
+        # Dégradé vertical léger
+        for y in range(h):
+            t_ = y / h
+            img[y, :, 0] = int(239 + t_ * 16)   # R
+            img[y, :, 1] = int(246 + t_ * 9)    # G
+            img[y, :, 2] = 255                   # B
 
-    def _show_placeholder(self, state):
-        """Placeholder avec gradient"""
-        placeholder_size = (800, 600)
-        placeholder = np.zeros((placeholder_size[1], placeholder_size[0], 3), dtype=np.uint8)
+        txt = f"[{state.upper()}]"
+        cv2.putText(img, txt, (w // 2 - 60, h // 2), cv2.FONT_HERSHEY_SIMPLEX,
+                    1.2, (71, 85, 105), 2, cv2.LINE_AA)
 
-        center_x, center_y = placeholder_size[0] // 2, placeholder_size[1] // 2
-        max_distance = np.sqrt(center_x**2 + center_y**2)
-
-        for y in range(placeholder_size[1]):
-            for x in range(placeholder_size[0]):
-                distance = np.sqrt((x - center_x)**2 + (y - center_y)**2)
-                ratio = distance / max_distance
-                r = int(10 + ratio * 3)
-                g = int(25 + ratio * 96)
-                b = int(41 + ratio * 151)
-                placeholder[y, x] = (b, g, r)
-
-        cv2.putText(placeholder, f"Mode: {state}", (center_x - 100, center_y),
-                    cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-
-        h, w, ch = placeholder.shape
-        bytes_per_line = ch * w
-        qt_img = QImage(placeholder.data, w, h, bytes_per_line, QImage.Format_RGB888)
-        pixmap = QPixmap.fromImage(qt_img)
-
-        self.avatar_display.setPixmap(pixmap.scaled(
-            self.avatar_display.size(),
-            Qt.AspectRatioMode.KeepAspectRatio,
-            Qt.TransformationMode.SmoothTransformation
-        ))
+        qt = QImage(img.data, w, h, 3 * w, QImage.Format_RGB888)
+        self.avatar_display.setPixmap(
+            QPixmap.fromImage(qt).scaled(
+                self.avatar_display.size(),
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+        )
 
     @Slot()
     def _update_frame(self):
-        """Boucle de rendu"""
-        if self.cap is None or not self.cap.isOpened():
-            return
-
+        if not self.cap or not self.cap.isOpened(): return
         ret, frame = self.cap.read()
-
-        if not ret:
-            self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-            return
-
+        if not ret: self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0); return
         try:
             frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            pg_surface = pygame.surfarray.make_surface(frame.swapaxes(0, 1))
-            buffer = pygame.surfarray.array3d(pg_surface).swapaxes(0, 1)
-            buffer = np.ascontiguousarray(buffer)
-
-            h, w, ch = buffer.shape
-            bytes_per_line = ch * w
-
-            qt_img = QImage(buffer.data, w, h, bytes_per_line, QImage.Format_RGB888)
-            pixmap = QPixmap.fromImage(qt_img)
-
-            scaled_pixmap = pixmap.scaled(
-                self.avatar_display.size(),
-                Qt.AspectRatioMode.KeepAspectRatioByExpanding,
-                Qt.TransformationMode.SmoothTransformation
+            pg = pygame.surfarray.make_surface(frame.swapaxes(0, 1))
+            buf = np.ascontiguousarray(pygame.surfarray.array3d(pg).swapaxes(0, 1))
+            h, w, ch = buf.shape
+            qt = QImage(buf.data, w, h, ch * w, QImage.Format_RGB888)
+            self.avatar_display.setPixmap(
+                QPixmap.fromImage(qt).scaled(
+                    self.avatar_display.size(),
+                    Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                    Qt.TransformationMode.SmoothTransformation,
+                )
             )
+        except Exception as e: print(f"[video] {e}")
 
-            self.avatar_display.setPixmap(scaled_pixmap)
+    # ── Helpers d'état ────────────────────────────────────────────────────────
 
-        except Exception as e:
-            print(f"Erreur rendu: {e}")
+    def _apply_state(
+        self,
+        icon_pix,
+        main_text: str,
+        main_color: str,
+        badge_text: str,
+        badge_color: str,
+        badge_bg: str,
+        badge_border: str,
+        dot_color: str,
+        ic_bg0: str,
+        ic_bg1: str,
+        ic_border: str,
+    ):
+        self._ic_lbl.setPixmap(icon_pix)
+        self._ic_cont.setStyleSheet(f"""
+            QFrame {{
+                background: qlineargradient(x1:0,y1:0,x2:1,y2:1,
+                    stop:0 {ic_bg0},stop:1 {ic_bg1});
+                border: 1px solid {ic_border};
+                border-radius: 10px;
+            }}
+        """)
+        self._status_main.setText(main_text)
+        self._status_main.setStyleSheet(
+            f"color: {main_color}; font-weight: 700; background: transparent;"
+        )
+        self._state_badge.setText(badge_text)
+        self._state_badge.setStyleSheet(f"""
+            color: {badge_color};
+            background: {badge_bg};
+            border: 1px solid {badge_border};
+            border-radius: {T.R_FULL}px;
+            padding: 3px 10px;
+        """)
+        self._dot.set_color(dot_color)
 
-    def _animate_pulse(self):
-        """Animation du pulse indicator"""
-        if self.pulse_state:
-            self.pulse_indicator.setStyleSheet(f"""
-                color: {self.STARK_SUCCESS_GLOW};
-                background: transparent;
-            """)
-        else:
-            self.pulse_indicator.setStyleSheet(f"""
-                color: {self.STARK_SUCCESS};
-                background: transparent;
-            """)
-
-        self.pulse_state = not self.pulse_state
-
-    def _update_glow_color(self, color: str):
-        """Mettre à jour la couleur du glow"""
-        self.avatar_shadow.setColor(QColor(color))
-
-    # === MÉTHODES DE CONTRÔLE ===
+    # ── Public ────────────────────────────────────────────────────────────────
 
     def set_idle(self):
-        """Mode attente"""
-        self.status_icon.setPixmap(StarkIcons.user_check(self.STARK_SUCCESS).pixmap(QSize(28, 28)))
-        self.status_label.setText("Agent RH : Prêt à vous écouter")
-        self.status_label.setStyleSheet("""
-            color: #00E676;
-            font-size: 14px;
-            font-weight: bold;
-            letter-spacing: 1px;
-            background: transparent;
-        """)
-        self._update_glow_color(self.STARK_SUCCESS)
+        self._apply_state(
+            StarkIcons.user_check(T.GREEN_600).pixmap(QSize(22, 22)),
+            "Agent RH : Prêt à vous écouter", T.TEXT_800,
+            "Disponible", T.GREEN_700, T.GREEN_50, T.GREEN_100,
+            T.GREEN_500,
+            T.GREEN_50, "#DCFCE7", T.GREEN_100,
+        )
         self._load_video("idle")
 
     def set_speaking(self):
-        """Mode parole"""
-        self.status_icon.setPixmap(StarkIcons.message_circle(self.STARK_BLUE_LIGHT).pixmap(QSize(28, 28)))
-        self.status_label.setText("Agent RH : Analyse de votre profil...")
-        self.status_label.setStyleSheet("""
-            color: #42A5F5;
-            font-size: 14px;
-            font-weight: bold;
-            letter-spacing: 1px;
-            background: transparent;
-        """)
-        self._update_glow_color(self.STARK_BLUE_GLOW)
+        self._apply_state(
+            StarkIcons.message_circle(T.CYAN_600).pixmap(QSize(22, 22)),
+            "Agent RH : Analyse de votre profil…", T.CYAN_700,
+            "En cours", T.CYAN_700, T.CYAN_50, T.CYAN_200,
+            T.CYAN_500,
+            T.CYAN_50, T.BLUE_50, T.CYAN_200,
+        )
         self._load_video("speaking")
 
     def set_listening(self):
-        """Mode écoute"""
-        self.status_icon.setPixmap(StarkIcons.headphones(self.STARK_ACCENT_GLOW).pixmap(QSize(28, 28)))
-        self.status_label.setText("Agent RH : Écoute attentive en cours...")
-        self.status_label.setStyleSheet("""
-            color: #FF8555;
-            font-size: 14px;
-            font-weight: bold;
-            letter-spacing: 1px;
-            background: transparent;
-        """)
-        self._update_glow_color(self.STARK_ACCENT_GLOW)
+        self._apply_state(
+            StarkIcons.headphones(T.AMBER_500).pixmap(QSize(22, 22)),
+            "Agent RH : Écoute attentive en cours…", T.TEXT_800,
+            "Écoute…", T.AMBER_500, T.AMBER_50, T.AMBER_100,
+            T.AMBER_500,
+            T.AMBER_50, "#FEF3C7", T.AMBER_100,
+        )
         self._load_video("listening")
 
-    def resizeEvent(self, event):
-        """Ajustement responsive"""
-        super().resizeEvent(event)
+    def resizeEvent(self, e): super().resizeEvent(e)
 
-    def closeEvent(self, event):
-        """Nettoyage"""
+    def closeEvent(self, e):
         self.timer.stop()
-        self.pulse_timer.stop()
-        if self.cap:
-            self.cap.release()
+        if self.cap: self.cap.release()
         pygame.quit()
-        super().closeEvent(event)
+        super().closeEvent(e)
