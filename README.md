@@ -324,20 +324,20 @@ sparkhire-ai/
 
 ### 🗓️ Flow 1 — Access Validation
 
-<img src="docs/SparkHire%20AI%20—%20Access%20authorization.png" width="300" alt="Access Validation"/>
+<img src="docs/SparkHire%20AI%20—%20Access%20authorization.png" width="400" alt="Access Validation"/>
 
 ---
 
 ### 🎤 Flow 2 — Real-time Interview
 
-<img src="docs/SparkHire%20AI%20—%20Real-time%20interview.png" width="300" alt="Real-time Interview"/>
+<img src="docs/SparkHire%20AI%20—%20Real-time%20interview.png" width="400" alt="Real-time Interview"/>
 
 ---
 
 ### 📊 Flow 3 — Final Evaluation & Decision
-
-<img src="docs/SparkHire%20AI%20—%20Final%20Evaluation%20%26%20Decision.png" width="300" alt="Final Evaluation & Decision"/>
-
+<p align="center">
+  <img src="docs/SparkHire%20AI%20—%20Final%20Evaluation%20%26%20Decision.png" width="400" alt="Final Evaluation & Decision"/>
+</p>
 ---
 
 ## 🔌 WebSocket Protocol
