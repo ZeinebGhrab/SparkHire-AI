@@ -332,7 +332,7 @@ sparkhire-ai/
 <p align="center">
   <img src="docs/SparkHire%20AI%20—%20Real-time%20interview.png" width="400" alt="Real-time Interview"/>
 </p>
----
+
 
 ### 📊 Flow 3 — Final Evaluation & Decision
 <p align="center">
