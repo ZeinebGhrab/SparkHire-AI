@@ -23,8 +23,11 @@ async def get_candidate_statistics(
     recent_candidates = db.candidates.count_documents({"created_at": {"$gte": start_date}})
 
     all_skills = []
-    for candidate in db.candidates.find({}, {"skills": 1}):
-        all_skills.extend(candidate.get("skills", []))
+    for candidate in db.candidates.find({}, {"technical_skills": 1}):
+        for ts in candidate.get("technical_skills", []):
+            name = ts.get("name") if isinstance(ts, dict) else ts
+            if name:
+                all_skills.append(name)
 
     skill_counts = Counter(all_skills)
     top_skills   = [{"skill": s, "count": c} for s, c in skill_counts.most_common(10)]

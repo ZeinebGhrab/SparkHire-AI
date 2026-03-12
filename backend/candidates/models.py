@@ -2,18 +2,22 @@ from typing import List, Optional
 from pydantic import BaseModel, Field, EmailStr
 from datetime import datetime
 
-# Modèles pour l'éducation
+
+# ── Education ─────────────────────────────────────────────────────────────────
+
 class Education(BaseModel):
-    degree: str  # Ex: "Licence", "Master", "Ingénieur"
-    field: str  # Ex: "Informatique", "Data Science"
+    degree: str                          # Ex: "Licence", "Master", "Ingénieur"
+    field: str                           # Ex: "Informatique", "Data Science"
     institution: str
-    start_date: Optional[str] = None  # Format: "2018-09" ou "2018"
+    start_date: Optional[str] = None     # Format: "2018-09" ou "2018"
     end_date: Optional[str] = None
     currently_studying: bool = False
 
-# Modèles pour l'expérience
+
+# ── Experience ────────────────────────────────────────────────────────────────
+
 class Experience(BaseModel):
-    title: str  # Ex: "Développeur Full Stack"
+    title: str                           # Ex: "Développeur Full Stack"
     company: str
     location: Optional[str] = None
     start_date: Optional[str] = None
@@ -22,7 +26,30 @@ class Experience(BaseModel):
     description: Optional[str] = None
     technologies: List[str] = []
 
-# Modèles pour les contacts
+
+# ── Technical Skill ───────────────────────────────────────────────────────────
+
+class TechnicalSkill(BaseModel):
+    name: str                            # Ex: "Python", "FastAPI", "MongoDB"
+    level: Optional[str] = None          # "Beginner" | "Intermediate" | "Advanced" | "Expert"
+    years_experience: Optional[float] = None
+
+
+# ── Language ──────────────────────────────────────────────────────────────────
+
+class Language(BaseModel):
+    name: str                            # Ex: "Arabic", "French", "English"
+    level: str                           # "A1"|"A2"|"B1"|"B2"|"C1"|"C2"|"Native"
+
+
+# ── Soft Skill ────────────────────────────────────────────────────────────────
+
+class SoftSkill(BaseModel):
+    name: str                            # Ex: "Teamwork", "Leadership", "Communication"
+
+
+# ── Contact ───────────────────────────────────────────────────────────────────
+
 class Contact(BaseModel):
     email: EmailStr
     phone: Optional[str] = None
@@ -30,30 +57,72 @@ class Contact(BaseModel):
     github: Optional[str] = None
     portfolio: Optional[str] = None
 
-# Modèles pour les consentements
+
+# ── Consent ───────────────────────────────────────────────────────────────────
+
 class Consent(BaseModel):
-    type: str  # Ex: "data_processing", "voice_recording", "ai_analysis"
+    type: str                            # Ex: "data_processing", "voice_recording", "ai_analysis"
     granted: bool
     timestamp: datetime = Field(default_factory=datetime.utcnow)
     ip_address: Optional[str] = None
 
-# Modèle de base pour les candidats
+
+# ── Candidate Base ────────────────────────────────────────────────────────────
+
 class CandidateBase(BaseModel):
     first_name: str
     last_name: str
     contact: Contact
-    skills: List[str] = []
-    experiences: List[Experience] = []
-    education: List[Education] = []
-    cv_raw: Optional[str] = None  # Texte brut du CV
-    consents: List[Consent] = []
-    embeddings: Optional[List[float]] = None  # Vecteur d'embeddings pour la recherche sémantique
 
-# Modèle pour la création
+    # Compétences techniques — obligatoire, min 1
+    technical_skills: List[TechnicalSkill] = Field(
+        ...,
+        min_length=1,
+        description="Technical skills — at least one required"
+    )
+
+    # Expérience professionnelle — obligatoire, min 1
+    experiences: List[Experience] = Field(
+        ...,
+        min_length=1,
+        description="Work experience — at least one required"
+    )
+
+    # Formation — obligatoire, min 1
+    education: List[Education] = Field(
+        ...,
+        min_length=1,
+        description="Education background — at least one required"
+    )
+
+    # Langues — obligatoire, min 1
+    languages: List[Language] = Field(
+        ...,
+        min_length=1,
+        description="Spoken languages — at least one required"
+    )
+
+    # Soft skills — obligatoire, min 1
+    soft_skills: List[SoftSkill] = Field(
+        ...,
+        min_length=1,
+        description="Soft skills — at least one required"
+    )
+
+    # Optionnel
+    cv_raw: Optional[str] = None
+    consents: List[Consent] = []
+    embeddings: Optional[List[float]] = None
+
+
+# ── Create ────────────────────────────────────────────────────────────────────
+
 class CandidateCreate(CandidateBase):
     pass
 
-# Modèle pour la réponse
+
+# ── Response ──────────────────────────────────────────────────────────────────
+
 class Candidate(CandidateBase):
     id: str = Field(..., alias="_id")
     created_at: datetime = Field(default_factory=datetime.utcnow)
@@ -61,14 +130,18 @@ class Candidate(CandidateBase):
 
     model_config = {"populate_by_name": True}
 
-# Modèle pour la mise à jour partielle
+
+# ── Partial Update ────────────────────────────────────────────────────────────
+
 class CandidateUpdate(BaseModel):
     first_name: Optional[str] = None
     last_name: Optional[str] = None
     contact: Optional[Contact] = None
-    skills: Optional[List[str]] = None
+    technical_skills: Optional[List[TechnicalSkill]] = None
     experiences: Optional[List[Experience]] = None
     education: Optional[List[Education]] = None
+    languages: Optional[List[Language]] = None
+    soft_skills: Optional[List[SoftSkill]] = None
     cv_raw: Optional[str] = None
     consents: Optional[List[Consent]] = None
     embeddings: Optional[List[float]] = None
