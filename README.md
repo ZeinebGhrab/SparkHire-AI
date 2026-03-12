@@ -323,15 +323,15 @@ sparkhire-ai/
 ---
 
 ### 🗓️ Flow 1 — Access Validation
-
-<img src="docs/SparkHire%20AI%20—%20Access%20authorization.png" width="400" alt="Access Validation"/>
-
+<p align="center">
+  <img src="docs/SparkHire%20AI%20—%20Access%20authorization.png" width="400" alt="Access Validation"/>
+</p>
 ---
 
 ### 🎤 Flow 2 — Real-time Interview
-
-<img src="docs/SparkHire%20AI%20—%20Real-time%20interview.png" width="400" alt="Real-time Interview"/>
-
+<p align="center">
+  <img src="docs/SparkHire%20AI%20—%20Real-time%20interview.png" width="400" alt="Real-time Interview"/>
+</p>
 ---
 
 ### 📊 Flow 3 — Final Evaluation & Decision
