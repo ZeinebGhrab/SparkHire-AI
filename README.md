@@ -449,4 +449,4 @@ Proprietary — Stark Solutions © 2026
 
 ## 👥 Support
 
-For any questions: rh@stark.tn
+For any questions: zeineb.ghrab@enetcom.u-sfax.tn
