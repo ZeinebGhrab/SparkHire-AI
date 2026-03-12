@@ -314,6 +314,32 @@ sparkhire-ai/
 
 ---
 
+## 🗺️ Architecture Diagrams
+
+### 🗄️ Class Diagram (Database)
+
+![Class Diagram](docs/Class_Diagram.png)
+
+---
+
+### 🗓️ Flow 1 — Access Validation
+
+![Access Validation](docs/SparkHire%20AI%20—%20Access%20authorization.png)
+
+---
+
+### 🎤 Flow 2 — Real-time Interview
+
+![Real-time Interview](docs/SparkHire%20AI%20—%20Real-time%20interview.png)
+
+---
+
+### 📊 Flow 3 — Final Evaluation & Decision
+
+![Final Evaluation](docs/SparkHire%20AI%20—%20Final%20Evaluation%20%26%20Decision.png)
+
+---
+
 ## 🔌 WebSocket Protocol
 
 ```
@@ -528,7 +554,7 @@ This project was developed as a **Final Year Project** for the **2nd year of an 
 It integrates key competencies from the program:
 
 - **Data Engineering** — real-time audio pipeline, MongoDB data modeling, REST API design with FastAPI
-- **AI** — speech recognition (Whisper), large language model evaluation (Llama 3 via Ollama), text-to-speech synthesis (Edge-TTS)
+- **AI & Machine Learning** — speech recognition (Whisper), large language model evaluation (Llama 3 via Ollama), text-to-speech synthesis (Edge-TTS)
 - **Decisional Systems** — automated scoring engine with strict grading logic, follow-up question generation, global hiring decision (Accepted / On Hold / Rejected)
 - **Software Engineering** — WebSocket communication, cross-platform desktop client (PySide6), JWT authentication, CSV/JSON export
 
