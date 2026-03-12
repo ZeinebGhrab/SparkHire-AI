@@ -19,7 +19,7 @@ async def export_candidates_csv(_: str = Depends(get_current_recruiter)):
 
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(["ID", "Prénom", "Nom", "Email", "Téléphone", "Compétences techniques", "Langues", "Soft Skills", "Date de création"])
+    writer.writerow(["ID", "Prénom", "Nom", "Email", "Téléphone", "Compétences techniques", "Langues", "Soft Skills", "Certifications", "Date de création"])
 
     for c in candidates:
         tech_skills = ", ".join(
@@ -34,6 +34,10 @@ async def export_candidates_csv(_: str = Depends(get_current_recruiter)):
             ss.get("name", "") if isinstance(ss, dict) else ss
             for ss in c.get("soft_skills", [])
         )
+        certifications = ", ".join(
+            f"{cert.get('name','')} ({cert.get('issuer','')})" if isinstance(cert, dict) else cert
+            for cert in c.get("certifications", [])
+        )
         writer.writerow([
             str(c["_id"]),
             c.get("first_name", ""),
@@ -43,6 +47,7 @@ async def export_candidates_csv(_: str = Depends(get_current_recruiter)):
             tech_skills,
             languages,
             soft_skills,
+            certifications,
             c.get("created_at", "").strftime("%Y-%m-%d %H:%M:%S") if c.get("created_at") else "",
         ])
 

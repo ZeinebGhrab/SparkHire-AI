@@ -31,7 +31,7 @@ class Experience(BaseModel):
 
 class TechnicalSkill(BaseModel):
     name: str                            # Ex: "Python", "FastAPI", "MongoDB"
-    level: Optional[str] = None          # "Beginner" | "Intermediate" | "Advanced" | "Expert"
+    level: Optional[str] = None          # "Beginner"|"Intermediate"|"Advanced"|"Expert"
     years_experience: Optional[float] = None
 
 
@@ -46,6 +46,17 @@ class Language(BaseModel):
 
 class SoftSkill(BaseModel):
     name: str                            # Ex: "Teamwork", "Leadership", "Communication"
+
+
+# ── Certification ─────────────────────────────────────────────────────────────
+
+class Certification(BaseModel):
+    name: str                            # Ex: "AWS Certified Developer", "PMP"
+    issuer: str                          # Ex: "Amazon Web Services", "PMI"
+    issue_date: Optional[str] = None     # Format: "2023-06"
+    expiry_date: Optional[str] = None    # None = pas d'expiration
+    credential_id: Optional[str] = None  # ID ou numéro de certification
+    credential_url: Optional[str] = None # Lien de vérification
 
 
 # ── Contact ───────────────────────────────────────────────────────────────────
@@ -74,39 +85,46 @@ class CandidateBase(BaseModel):
     last_name: str
     contact: Contact
 
-    # Compétences techniques — obligatoire, min 1
+    # ✅ Compétences techniques — obligatoire, min 1
     technical_skills: List[TechnicalSkill] = Field(
         ...,
         min_length=1,
         description="Technical skills — at least one required"
     )
 
-    # Expérience professionnelle — obligatoire, min 1
+    # ✅ Expérience professionnelle — obligatoire, min 1
     experiences: List[Experience] = Field(
         ...,
         min_length=1,
         description="Work experience — at least one required"
     )
 
-    # Formation — obligatoire, min 1
+    # ✅ Formation — obligatoire, min 1
     education: List[Education] = Field(
         ...,
         min_length=1,
         description="Education background — at least one required"
     )
 
-    # Langues — obligatoire, min 1
+    # ✅ Langues — obligatoire, min 1
     languages: List[Language] = Field(
         ...,
         min_length=1,
         description="Spoken languages — at least one required"
     )
 
-    # Soft skills — obligatoire, min 1
+    # ✅ Soft skills — obligatoire, min 1
     soft_skills: List[SoftSkill] = Field(
         ...,
         min_length=1,
         description="Soft skills — at least one required"
+    )
+
+    # ✅ Certifications — obligatoire, min 1
+    certifications: List[Certification] = Field(
+        ...,
+        min_length=1,
+        description="Certifications — at least one required"
     )
 
     # Optionnel
@@ -142,6 +160,7 @@ class CandidateUpdate(BaseModel):
     education: Optional[List[Education]] = None
     languages: Optional[List[Language]] = None
     soft_skills: Optional[List[SoftSkill]] = None
+    certifications: Optional[List[Certification]] = None
     cv_raw: Optional[str] = None
     consents: Optional[List[Consent]] = None
     embeddings: Optional[List[float]] = None
