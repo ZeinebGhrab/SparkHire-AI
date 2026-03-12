@@ -31,12 +31,11 @@ faster-whisper==1.0.3
 # ── ASR — Vosk (fallback hors-ligne) ─────────────────────────────
 vosk==0.3.45
 
-# ── TTS — Edge-TTS (Microsoft, par defaut) ───────────────────────
+# ── TTS — Edge-TTS (Microsoft, moteur principal) ─────────────────
 edge-tts==6.1.12
 
-# ── TTS — Coqui XTTS-v2 (optionnel, lourd ~1.5 GB) ─────────────
-# TTS==0.22.0
-# torch>=2.0.0
+# ── TTS — gTTS (Google, fallback) ────────────────────────────────
+gTTS==2.5.3
 
 # ── Audio Processing ─────────────────────────────────────────────
 pyaudio==0.2.14
@@ -56,3 +55,4 @@ pytz==2024.2
 # ── Tests (optionnel) ────────────────────────────────────────────
 # pytest==8.3.0
 # pytest-asyncio==0.24.0
+

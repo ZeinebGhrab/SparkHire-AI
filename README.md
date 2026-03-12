@@ -9,16 +9,19 @@ Complete recruitment platform with automated voice interviews via AI avatar.
 ## ✨ Features
 
 - 🎙️ **Automated voice interviews** with animated HR avatar
-- 🌍 **Multilingual** support: Arabic / French / English
+- 🌍 **Trilingual** support: Arabic / French / English
 - 🧠 **AI transcription** via Whisper (faster-whisper) — high accuracy
-- 📝 **Automatic evaluation** via Ollama + Llama 3 (score 0-10, verdict, feedback)
+- 📝 **Strict AI evaluation** via Ollama + Llama 3 (score 0–10, rigorous grading scale)
+- 🔁 **Intelligent follow-up questions** if the answer is insufficient (score < 8)
 - 📊 **Global interview report** with hiring recommendation
-- 🔊 **Text-to-speech** via Edge-TTS (Microsoft) by default, Coqui XTTS-v2 optional
+- 🔊 **Text-to-speech** via Edge-TTS (Microsoft) — primary engine, instant
+- 🔁 **Automatic TTS fallback** via gTTS (Google) if Edge-TTS is unavailable
 - ⚡ **Real-time WebSocket** (chunked PCM audio)
 - 🔐 **JWT authentication** for recruiters
 - 🖥️ **PySide6 client interface** (glassmorphism design)
-- 🗃️ **MongoDB database** — candidates, positions, sessions, evaluations
+- 🗃️ **MongoDB** — candidates, positions, sessions, evaluations
 - 📤 **CSV / JSON export** + analytics dashboard
+- 🖥️ **Cross-platform** — Windows, Linux, macOS
 
 ---
 
@@ -29,9 +32,15 @@ Complete recruitment platform with automated voice interviews via AI avatar.
 | Python | 3.10 or 3.11 | [python.org](https://python.org) | Check **Add to PATH** |
 | Git | latest | [git-scm.com](https://git-scm.com) | To clone the repo |
 | MongoDB | 7.x Community | [mongodb.com](https://www.mongodb.com) | Install as a service |
-| FFmpeg | 6.0+ | [ffmpeg.org](https://ffmpeg.org) | Extract to `C:\ffmpeg\`, add `bin` to PATH |
 | Ollama | latest | [ollama.com](https://ollama.com/download) | Required for LLM evaluation |
-| VS C++ Build Tools | 2022 | [visualstudio.com](https://visualstudio.microsoft.com/visual-cpp-build-tools/) | To compile PyAudio on Windows |
+| FFmpeg | 6.0+ | [ffmpeg.org](https://ffmpeg.org) | Only needed if gTTS fallback is used |
+
+> **FFmpeg installation by OS:**
+> - **Windows** — Extract to `models/ffmpeg-8.0.1-essentials_build/` (auto-detected) or add to PATH
+> - **Linux** — `sudo apt install ffmpeg`
+> - **macOS** — `brew install ffmpeg`
+
+> **Windows only:** VS C++ Build Tools 2022 required to compile PyAudio → [visualstudio.com](https://visualstudio.microsoft.com/visual-cpp-build-tools/)
 
 ---
 
@@ -71,6 +80,12 @@ pip install -r requirements.txt
 > pipwin install pyaudio
 > ```
 
+> ⚠️ **Linux — PyAudio:** if PortAudio error:
+> ```bash
+> sudo apt install portaudio19-dev python3-dev
+> pip install pyaudio
+> ```
+
 ### 4. Client dependencies
 
 ```bash
@@ -83,7 +98,7 @@ pip install -r client/requirements.txt
 cp .env.example .env
 ```
 
-Edit `.env` with your settings (see [Configuration](#%EF%B8%8F-configuration) section below).
+Edit `.env` with your settings (see [Configuration](#%EF%B8%8F-configuration) below).
 
 ### 6. Download the Whisper model
 
@@ -116,7 +131,7 @@ ollama pull llama3:8b-instruct-q4_0   # 2.3 GB
 
 > If you use a different model, update `OLLAMA_MODEL` in `.env`.
 
-### 8. Database
+### 8. Database setup
 
 ```bash
 # Create the admin recruiter account
@@ -128,7 +143,7 @@ python scripts/seed_job_positions.py
 
 ---
 
-## ▶️ Running the app
+## ▶️ Running the App
 
 ### Backend
 
@@ -178,18 +193,21 @@ curl -X POST http://localhost:8000/interviews/sessions \
 3. Enter the `session_id` (format: `session_xxxxxxxxxxxxxxxx`)
 4. Click **Start Interview**
 5. Listen to the avatar ask questions
-6. Click **Start Recording** → speak → **Stop Recording**
+6. Click **Record** → speak → **Stop**
 7. Score and feedback appear in real time after each answer
 8. A global report is displayed at the end of the interview
 
 ### 3. View results
 
 ```bash
-# Full session
+# Full session details
 GET http://localhost:8000/interviews/sessions/<session_id>
 
 # LLM evaluation
 GET http://localhost:8000/evaluations/<session_id>
+
+# Export all evaluations as CSV
+GET http://localhost:8000/export/evaluations/csv
 
 # Automated full-flow test
 python scripts/test_interview.py
@@ -202,11 +220,10 @@ python scripts/test_interview.py
 ```
 stark-recruitment-chatbot/
 │
-├── backend/                        ← FastAPI API
+├── backend/                        ← FastAPI backend
 │   ├── main.py                     ← Entry point + lifespan + routes
 │   ├── config.py                   ← Pydantic Settings (all parameters)
 │   ├── database.py                 ← MongoDB connection
-│   ├── middlewares.py              ← Logging, errors, rate-limiting
 │   │
 │   ├── auth/                       ← JWT authentication
 │   │   ├── models.py               ← Recruiter, Token
@@ -223,29 +240,26 @@ stark-recruitment-chatbot/
 │   │   ├── models.py               ← Question, JobPosition, Answer, InterviewSession
 │   │   └── routes.py               ← /interviews/positions · /interviews/sessions
 │   │
-│   ├── evaluation/                 ← ★ LLM evaluation pipeline
+│   ├── evaluation/                 ← LLM evaluation pipeline
 │   │   ├── models.py               ← AnswerEvaluation, GlobalEvaluation
 │   │   ├── service.py              ← EvaluationService (ASR → LLM orchestration)
 │   │   └── routes.py               ← /evaluations CRUD + trigger + health
 │   │
-│   ├── services/                   ← Business services
+│   ├── services/                   ← Core services
 │   │   ├── asr_service.py          ← WhisperASR + VoskASR + factory
-│   │   ├── tts_service.py          ← Lazy TTSService (Edge-TTS → Coqui)
-│   │   ├── edge_tts_engine.py      ← Microsoft Edge-TTS (Arabic voices)
-│   │   ├── coqui_tts_engine.py     ← Coqui XTTS-v2 (local, optional)
-│   │   ├── llm_service.py          ← OllamaLLMService (Llama 3)
+│   │   ├── tts_service.py          ← TTSService (Edge-TTS → gTTS fallback, cross-platform)
+│   │   ├── edge_tts_engine.py      ← Microsoft Edge-TTS (Arabic / FR / EN voices)
+│   │   ├── llm_service.py          ← OllamaLLMService (Llama 3, strict grading)
 │   │   └── avatar_service.py       ← AvatarService (simple / wav2lip / did)
 │   │
 │   ├── websocket/                  ← Real-time communication
-│   │   ├── connection_manager.py   ← ConnectionManager (active sessions)
+│   │   ├── connection_manager.py   ← ConnectionManager + heartbeat keepalive
 │   │   └── interview_handler.py    ← Full pipeline per session
 │   │
-│   ├── jobs/                       ← Job listings
-│   ├── matches/                    ← CV / Position matching
 │   ├── media/                      ← File upload / download
-│   ├── analytics/                  ← Dashboard statistics
+│   ├── analytics/                  ← Dashboard stats (candidates, interviews, system)
 │   ├── notifications/              ← Notification system
-│   └── export/                     ← CSV / JSON export
+│   └── export/                     ← CSV (candidates, interviews, evaluations) + JSON
 │
 ├── client/                         ← PySide6 interface
 │   ├── config.py                   ← Client settings (WEBSOCKET_URL, API_BASE_URL…)
@@ -257,7 +271,7 @@ stark-recruitment-chatbot/
 │   └── ui/
 │       ├── stark_theme.py          ← Design system (colors, fonts, styles)
 │       ├── icons.py                ← Lucide SVG icons + Stark logos
-│       ├── main_window.py          ← Main window
+│       ├── main_window.py          ← Main window (pygame 24000 Hz)
 │       ├── interview_widget.py     ← Interview controls + progress
 │       └── video_player_widget.py  ← Avatar video (cv2 + pygame)
 │
@@ -265,16 +279,15 @@ stark-recruitment-chatbot/
 │   ├── create_admin.py             ← Create admin recruiter in DB
 │   ├── seed_job_positions.py       ← Insert positions + questions
 │   ├── download_whisper.py         ← Download Whisper model
-│   └── test_interview.py           ← Full flow test
+│   └── test_interview.py           ← Full flow automated test
 │
 ├── models/                         ← AI models (gitignored)
-│   ├── whisper/                    ← Whisper model
-│   ├── vosk-model-ar/              ← Arabic Vosk model (optional)
-│   └── xtts_v2/                    ← Coqui XTTS-v2 model (optional)
+│   ├── whisper/                    ← Whisper model files
+│   └── vosk-model-ar/              ← Arabic Vosk model (optional)
 │
 ├── uploads/                        ← Runtime files (gitignored)
 │   ├── interviews/                 ← WAV recordings of answers
-│   └── tts_cache/                  ← TTS audio cache (MD5)
+│   └── tts_cache/                  ← TTS audio cache (MD5, per engine)
 │
 ├── assets/videos/                  ← Avatar videos (idle / speaking / listening)
 │
@@ -286,7 +299,7 @@ stark-recruitment-chatbot/
 
 ---
 
-## 🔌 WebSocket
+## 🔌 WebSocket Protocol
 
 ```
 ws://localhost:8000/ws/interview/{session_id}?lang=ar|fr|en
@@ -296,7 +309,7 @@ ws://localhost:8000/ws/interview/{session_id}?lang=ar|fr|en
 
 | Message | Description |
 |---|---|
-| `audio_chunk` | Base64 PCM chunk (microphone) |
+| `audio_chunk` | Base64 PCM chunk from microphone |
 | `answer_complete` | End of recording signal |
 | `audio_finished` | End of audio playback on client side |
 | `end_interview` | Terminate the interview |
@@ -307,12 +320,14 @@ ws://localhost:8000/ws/interview/{session_id}?lang=ar|fr|en
 |---|---|
 | `welcome` | Welcome message + chunked PCM audio |
 | `question` | Question audio + progress metadata |
-| `audio_chunk_data` | Base64 PCM chunk |
+| `audio_chunk_data` | Base64 PCM audio chunk |
 | `audio_chunk_end` | End of audio stream |
+| `heartbeat` | Connection keepalive during long processing |
 | `answer_saved` | Save confirmation + transcript |
 | `answer_evaluated` | LLM score, verdict, feedback |
+| `followup_question` | Follow-up question if score < 8 |
 | `global_evaluation` | Final interview report |
-| `interview_completed` | Interview ended + audio |
+| `interview_completed` | Interview ended + closing audio |
 | `error` | Error message + `error_type` |
 
 ---
@@ -328,13 +343,13 @@ MONGODB_DB_NAME=stark_recruitment
 SECRET_KEY=<python -c "import secrets; print(secrets.token_hex(32))">
 
 # ── ASR ───────────────────────────────────
-ASR_ENGINE=faster-whisper          # or vosk
+ASR_ENGINE=faster-whisper          # or: vosk
 WHISPER_MODEL_SIZE=medium          # tiny | base | small | medium | large-v3
 WHISPER_DEVICE=cpu                 # cpu | cuda
 WHISPER_COMPUTE_TYPE=int8          # int8 (CPU) | float16 (GPU)
 
 # ── TTS ───────────────────────────────────
-TTS_ENGINE=edge-tts                # or coqui
+TTS_ENGINE=edge-tts                # edge-tts (default) | gtts
 TTS_LANGUAGE=ar                    # ar | fr | en
 
 # ── LLM ───────────────────────────────────
@@ -343,13 +358,13 @@ OLLAMA_MODEL=llama3
 OLLAMA_TIMEOUT=60.0
 
 # ── Avatar ────────────────────────────────
-AVATAR_PROVIDER=simple             # or wav2lip, did
+AVATAR_PROVIDER=simple             # or: wav2lip, did
 
 # ── Client ────────────────────────────────
 WEBSOCKET_URL=ws://localhost:8000
 API_BASE_URL=http://localhost:8000
 
-# ── Windows OpenMP fix ────────────────────
+# ── Windows only ──────────────────────────
 KMP_DUPLICATE_LIB_OK=TRUE
 ```
 
@@ -360,16 +375,43 @@ KMP_DUPLICATE_LIB_OK=TRUE
 | Layer | Technology | Role |
 |---|---|---|
 | Backend | FastAPI 0.115 + Uvicorn | REST API + WebSocket ASGI |
-| Database | MongoDB 7 / PyMongo 4.10 | Data storage |
-| ASR | faster-whisper 1.0.3 | Main speech transcription |
-| ASR | Vosk 0.3.45 | Offline transcription (fallback) |
-| TTS | Edge-TTS 6.1 | Microsoft TTS (default) |
-| TTS | Coqui XTTS-v2 | Local TTS (optional) |
-| LLM | Ollama + Llama 3 | AI evaluation of answers |
+| Database | MongoDB 7 / PyMongo 4.10 | Data persistence |
+| ASR | faster-whisper 1.0.3 | Primary speech transcription |
+| ASR | Vosk 0.3.45 | Offline transcription fallback |
+| TTS | Edge-TTS 6.1 | Microsoft TTS — primary engine |
+| TTS | gTTS 2.5.3 | Google TTS — automatic fallback |
+| LLM | Ollama + Llama 3 | AI answer evaluation (strict grading) |
 | Auth | python-jose + bcrypt 4.2 | JWT + password hashing |
 | Client | PySide6 6.7 | Qt GUI framework |
-| Client | pygame 2.6 + OpenCV 4.10 | Audio playback + avatar video |
-| Audio | PyAudio 0.2 + pydub 0.25 | Microphone capture + MP3→WAV |
+| Client | pygame 2.6 + OpenCV 4.10 | Audio playback (24kHz) + avatar video |
+| Audio | PyAudio 0.2 + pydub 0.25 | Microphone capture + MP3→WAV conversion |
+
+---
+
+## 📊 Evaluation Grading Scale
+
+The LLM evaluator applies a strict grading scale across all three languages:
+
+| Score | Verdict | Meaning |
+|---|---|---|
+| 9–10 | Excellent | Exceptional answer, precise, with concrete examples and rare technical mastery |
+| 7–8 | Very Good | Good answer but lacking depth or specific examples |
+| 5–6 | Acceptable | Superficial or vague, notable inaccuracies |
+| 3–4 | Poor | Weak answer, errors or partial understanding |
+| 0–2 | Insufficient | Incorrect, off-topic, or empty |
+
+> A generic or vague answer scores no more than **5/10**. A follow-up question is automatically triggered when the score is below **8**.
+
+---
+
+## 📤 Available Exports
+
+| Endpoint | Format | Content |
+|---|---|---|
+| `GET /export/candidates/csv` | CSV | All candidates |
+| `GET /export/interviews/csv` | CSV | All sessions with average score |
+| `GET /export/interviews/{id}/json` | JSON | Full details of one interview |
+| `GET /export/evaluations/csv` | CSV | All LLM evaluations per question |
 
 ---
 
@@ -377,14 +419,14 @@ KMP_DUPLICATE_LIB_OK=TRUE
 
 | Error | Cause | Fix |
 |---|---|---|
-| `OMP: Error #15 (libiomp5md)` | OpenMP conflict between PyTorch and ctranslate2 | Add `KMP_DUPLICATE_LIB_OK=TRUE` to `.env` |
+| `OMP: Error #15 (libiomp5md)` | OpenMP conflict between PyTorch and ctranslate2 (Windows) | Add `KMP_DUPLICATE_LIB_OK=TRUE` to `.env` |
 | `AttributeError: WEBSOCKET_URL` | Field missing from `client/config.py` | Check `WEBSOCKET_URL=ws://localhost:8000` in `.env` |
-| `ValidationError: field WHISPER_DEVICE` | Duplicate field in `backend/config.py` | Remove the duplicate declaration |
-| `PyAudio: No module found` | PortAudio not installed | `pip install pipwin` then `pipwin install pyaudio` |
-| `ffmpeg not found` | FFmpeg not in PATH | Add `C:\ffmpeg\bin` to system PATH |
+| `PyAudio: No module found` | PortAudio not installed | Windows: `pipwin install pyaudio` / Linux: `sudo apt install portaudio19-dev` |
+| `ffmpeg not found` | FFmpeg not in PATH | Windows: extract to `models/ffmpeg-*/` / Linux: `sudo apt install ffmpeg` |
 | `Connection refused :11434` | Ollama not running | Run `ollama serve` in a separate terminal |
-| `MongoDB timeout` | MongoDB service stopped | `net start MongoDB` (admin PowerShell) |
+| `MongoDB timeout` | MongoDB service stopped | Windows: `net start MongoDB` / Linux: `sudo systemctl start mongod` |
 | `Empty transcription` | Audio too short or silent | VAD filter active — speak clearly for at least 1 second |
+| `WebSocket disconnected` | Long TTS processing | Heartbeat maintains the connection automatically |
 
 ---
 
