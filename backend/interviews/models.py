@@ -26,10 +26,19 @@ class Question(BaseModel):
 class JobPositionBase(BaseModel):
     title: str
     department: str
+    location: Optional[str] = None       # Ex: "Tunis", "Sfax", "Remote"
+    is_active: bool = True               # Offre active ou archivée
     questions: List[Question] = []
 
 class JobPositionCreate(JobPositionBase):
     pass
+
+class JobPositionUpdate(BaseModel):
+    title: Optional[str] = None
+    department: Optional[str] = None
+    location: Optional[str] = None
+    is_active: Optional[bool] = None
+    questions: Optional[List[Question]] = None
 
 class JobPosition(JobPositionBase):
     id: str = Field(..., alias="_id")
@@ -42,17 +51,23 @@ class JobPosition(JobPositionBase):
 class AnswerEvaluationData(BaseModel):
     """
     Évaluation LLM d'une réponse — document embarqué dans Answer.
-    Alimentée de manière asynchrone par EvaluationService après chaque réponse vocale.
+    Contient les scores initiaux ET finaux (après question de suivi si applicable).
 
     Structure MongoDB : interview_sessions.answers[n].evaluation
     """
-    score: float = Field(0.0, ge=0, le=10)   # Score LLM 0-10
-    verdict: str = ""                          # Ex: "Très bien", "Acceptable"
-    feedback: str = ""                         # Commentaire détaillé
-    strengths: List[str] = []                  # Points forts identifiés
-    improvements: List[str] = []              # Axes d'amélioration
-    llm_model: str = ""                        # Modèle utilisé (ex: "llama3")
-    evaluated_at: Optional[datetime] = None   # Timestamp d'évaluation
+    score: float = Field(0.0, ge=0, le=10)        # Score final LLM 0-10
+    verdict: str = ""                               # Ex: "Très bien", "Acceptable"
+    feedback: str = ""                              # Commentaire détaillé final
+    strengths: List[str] = []                       # Points forts identifiés
+    improvements: List[str] = []                    # Axes d'amélioration
+    llm_model: str = ""                             # Modèle utilisé (ex: "llama3")
+    evaluated_at: Optional[datetime] = None         # Timestamp d'évaluation
+    # ── Suivi (rempli uniquement si une question de suivi a été posée) ─────────
+    had_followup: bool = False                      # True si une question de suivi a été posée
+    initial_score: Optional[float] = None           # Score avant clarification
+    initial_verdict: Optional[str] = None           # Verdict avant clarification
+    followup_question: Optional[str] = None         # Question de clarification posée par le LLM
+    followup_transcript: Optional[str] = None       # Réponse vocale du candidat au suivi
 
 # ============ Answer Models ============
 
@@ -63,14 +78,17 @@ class Answer(BaseModel):
     Pipeline de remplissage :
       1. WebSocket reçoit l'audio PCM → Whisper → `transcript` sauvegardé en base
       2. LLM évalue le transcript → `evaluation` sauvegardé dans answers[n].evaluation
+      3. Si score < 8 → question de suivi posée → réponse transcrite et réévaluation finale
+         Les champs followup_* dans evaluation stockent tout le contexte du suivi.
     """
     question_order: int
     question_text: str
-    transcript: str = ""                       # Transcription Whisper (ASR)
-    audio_file_path: Optional[str] = None      # Chemin WAV sur disque
+    transcript: str = ""                        # Transcription Whisper de la réponse principale
+    audio_file_path: Optional[str] = None       # Chemin WAV réponse principale
+    audio_followup_path: Optional[str] = None   # Chemin WAV réponse de suivi
     duration_seconds: float = 0.0
     timestamp: datetime = Field(default_factory=datetime.utcnow)
-    evaluation: Optional[AnswerEvaluationData] = None  # Score LLM (rempli en async)
+    evaluation: Optional[AnswerEvaluationData] = None  # ← Score LLM (rempli en async)
 
 # ============ Interview Session Models ============
 
@@ -120,6 +138,12 @@ class AnswerWithEvalResponse(BaseModel):
     improvements: List[str] = []
     llm_model: Optional[str] = None
     evaluated_at: Optional[datetime] = None
+    # ── Suivi LLM ──────────────────────────────────────────────────────────────
+    had_followup: bool = False
+    initial_score: Optional[float] = None
+    initial_verdict: Optional[str] = None
+    followup_question: Optional[str] = None      # Question de clarification du LLM
+    followup_transcript: Optional[str] = None    # Réponse vocale du candidat au suivi
 
     @classmethod
     def from_answer(cls, answer: Answer) -> "AnswerWithEvalResponse":
@@ -138,6 +162,11 @@ class AnswerWithEvalResponse(BaseModel):
             improvements=ev.improvements if ev else [],
             llm_model=ev.llm_model if ev else None,
             evaluated_at=ev.evaluated_at if ev else None,
+            had_followup=ev.had_followup if ev else False,
+            initial_score=ev.initial_score if ev else None,
+            initial_verdict=ev.initial_verdict if ev else None,
+            followup_question=ev.followup_question if ev else None,
+            followup_transcript=ev.followup_transcript if ev else None,
         )
 
 class AnswersSummaryResponse(BaseModel):

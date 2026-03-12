@@ -26,11 +26,52 @@ class JobPositionCRUD:
         return JobPosition(**position_dict)
 
     @staticmethod
-    def get_all(skip: int = 0, limit: int = 100) -> List[JobPosition]:
-        positions = list(db.job_positions.find().skip(skip).limit(limit).sort("created_at", -1))
+    def get_all(
+        skip: int = 0,
+        limit: int = 100,
+        department: Optional[str] = None,
+        location: Optional[str] = None,
+        is_active: Optional[bool] = None,
+        period_days: Optional[int] = None,
+        sort_by: str = "created_at",
+        order: str = "desc",
+    ) -> List[JobPosition]:
+        from datetime import timedelta
+
+        query: dict = {}
+
+        if department:
+            query["department"] = {"$regex": department, "$options": "i"}
+        if location:
+            query["location"] = {"$regex": location, "$options": "i"}
+        if is_active is not None:
+            query["is_active"] = is_active
+        if period_days:
+            since = datetime.utcnow() - timedelta(days=period_days)
+            query["created_at"] = {"$gte": since}
+
+        # Allowed sort fields — guard against injection
+        allowed_sort = {"created_at", "title", "department", "location"}
+        sort_field = sort_by if sort_by in allowed_sort else "created_at"
+        sort_dir   = -1 if order.lower() == "desc" else 1
+
+        positions = list(
+            db.job_positions.find(query)
+            .skip(skip)
+            .limit(limit)
+            .sort(sort_field, sort_dir)
+        )
         for p in positions:
             p["_id"] = str(p["_id"])
         return [JobPosition(**p) for p in positions]
+
+    @staticmethod
+    def get_distinct_departments() -> List[str]:
+        return sorted(db.job_positions.distinct("department"))
+
+    @staticmethod
+    def get_distinct_locations() -> List[str]:
+        return sorted([l for l in db.job_positions.distinct("location") if l])
 
     @staticmethod
     def get_by_id(position_id: str) -> JobPosition:
@@ -119,19 +160,19 @@ class InterviewSessionCRUD:
         try:
             session = InterviewSessionCRUD.get_by_session_id(session_id)
         except HTTPException:
-            return None, False, "ERREUR: Session ID invalide ou introuvable."
+            return None, False, "❌ ERREUR: Session ID invalide ou introuvable."
 
         now = datetime.utcnow()
         if now > session.expires_at:
             delay = int((now - session.expires_at).total_seconds() / 60)
             return session, False, (
-                f"ERREUR: Session expirée depuis {delay} minutes.\n"
+                f"⏰ ERREUR: Session expirée depuis {delay} minutes.\n"
                 f"Les sessions expirent après {SESSION_EXPIRATION_MINUTES} minutes."
             )
         if session.status == "completed":
-            return session, False, "ERREUR: Cet entretien est déjà terminé."
+            return session, False, "✅ ERREUR: Cet entretien est déjà terminé."
         if session.status == "cancelled":
-            return session, False, "ERREUR: Cette session a été annulée."
+            return session, False, "🚫 ERREUR: Cette session a été annulée."
 
         return session, True, ""
 
@@ -219,29 +260,42 @@ class InterviewSessionCRUD:
         audio_followup_path: str | None = None,
         initial_score: float | None = None,
         initial_verdict: str | None = None,
+        followup_question: str | None = None,
+        followup_transcript: str | None = None,
     ) -> bool:
         """
         Met à jour une réponse existante identifiée par question_order.
         Seuls les champs fournis (non-None) sont modifiés.
 
-        Utilisé après une interaction de suivi pour persister :
-          - le transcript combiné (réponse initiale + suivi)
-          - l'évaluation finale
-          - le chemin audio du suivi
-          - les scores initiaux (pour traçabilité)
+        Champs persistés après un suivi :
+          - transcript           : réponse principale (inchangée, lisible seule)
+          - audio_followup_path  : chemin WAV de la réponse de suivi
+          - evaluation           : évaluation finale (score, verdict, feedback)
+            ↳ evaluation.had_followup       = True
+            ↳ evaluation.followup_question  = question posée par le LLM
+            ↳ evaluation.followup_transcript = réponse vocale du candidat
+            ↳ evaluation.initial_score      = score avant clarification
+            ↳ evaluation.initial_verdict    = verdict avant clarification
         """
         fields: dict = {"updated_at": datetime.utcnow()}
 
         if transcript is not None:
             fields["answers.$.transcript"] = transcript
         if evaluation is not None:
-            fields["answers.$.evaluation"] = evaluation.model_dump()
+            eval_dict = evaluation.model_dump()
+            # Injecter les champs de suivi directement dans l'évaluation
+            if followup_question is not None:
+                eval_dict["followup_question"]  = followup_question
+                eval_dict["had_followup"]        = True
+            if followup_transcript is not None:
+                eval_dict["followup_transcript"] = followup_transcript
+            if initial_score is not None:
+                eval_dict["initial_score"]   = initial_score
+            if initial_verdict is not None:
+                eval_dict["initial_verdict"] = initial_verdict
+            fields["answers.$.evaluation"] = eval_dict
         if audio_followup_path is not None:
             fields["answers.$.audio_followup_path"] = audio_followup_path
-        if initial_score is not None:
-            fields["answers.$.initial_score"] = initial_score
-        if initial_verdict is not None:
-            fields["answers.$.initial_verdict"] = initial_verdict
 
         result = db.interview_sessions.update_one(
             {
