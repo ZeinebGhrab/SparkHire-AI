@@ -1,7 +1,8 @@
 """
 Handler WebSocket — AUDIO PCM PUR EN CHUNKS — MULTILINGUE AR/FR/EN
 Pipeline : Voix → Whisper (ASR) → Llama 3 (LLM) → Score / Feedback
-          → Sauvegarde transcript + évaluation dans interview_sessions.answers[n]
+          → Question de suivi si réponse floue (interaction candidat-avatar)
+          → Bienvenue personnalisée avec le prénom du candidat
 """
 
 import logging, base64, io, wave, struct, asyncio
@@ -21,38 +22,60 @@ _asr_service    = None
 _tts_service    = None
 _avatar_service = None
 
-_tts_executor = ThreadPoolExecutor(max_workers=1,  thread_name_prefix="tts-worker")
-_llm_executor = ThreadPoolExecutor(max_workers=2,  thread_name_prefix="llm-worker")
-_asr_executor = ThreadPoolExecutor(max_workers=2,  thread_name_prefix="asr-worker")
+_tts_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="tts-worker")
+_llm_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="llm-worker")
+_asr_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="asr-worker")
 
 _WS_CLOSE_REASON_MAX_BYTES = 123
 AUDIO_CHUNK_SIZE = 64 * 1024
 SUPPORTED_LANGUAGES = {"ar", "fr", "en"}
 
+# ── Textes localisés ──────────────────────────────────────────────────────────
+
 LOCALIZED_TEXTS = {
     "welcome": {
-        "ar": "مرحبا بك في المقابلة الصوتية. سأطرح عليك مجموعة من الأسئلة الصوتية فقط. استمع جيداً وأجب بوضوح.",
-        "fr": "Bienvenue dans votre entretien vocal. Je vais vous poser des questions uniquement en audio. Écoutez attentivement et répondez clairement.",
-        "en": "Welcome to the voice interview. I will ask you questions in audio only. Listen carefully and answer clearly.",
+        "ar": "مرحباً {name}! أهلاً بك في مقابلتك الصوتية لمنصب {position}. سأطرح عليك {total} أسئلة صوتية. استمع جيداً وأجب بوضوح وثقة.",
+        "fr": "Bonjour {name} ! Bienvenue dans votre entretien vocal pour le poste de {position}. Je vais vous poser {total} questions en audio. Écoutez attentivement et répondez avec clarté et confiance.",
+        "en": "Hello {name}! Welcome to your voice interview for the {position} position. I will ask you {total} questions in audio. Listen carefully and answer with clarity and confidence.",
     },
     "completed": {
-        "ar": "شكراً لك! انتهت المقابلة. سنتواصل معك قريباً.",
-        "fr": "Merci beaucoup ! L'entretien est terminé. Nous vous contacterons prochainement.",
-        "en": "Thank you! The interview is complete. We will contact you soon.",
+        "ar": "شكراً لك {name}! لقد أجبت على جميع الأسئلة بنجاح. انتهت مقابلتك. سنتواصل معك قريباً.",
+        "fr": "Merci beaucoup {name} ! Vous avez répondu à toutes les questions avec succès. Votre entretien est terminé. Nous vous contacterons prochainement.",
+        "en": "Thank you {name}! You have answered all questions successfully. Your interview is complete. We will contact you soon.",
+    },
+    "followup_intro": {
+        "ar": "شكراً على إجابتك. لدي سؤال إضافي:",
+        "fr": "Merci pour votre réponse. J'ai une question complémentaire :",
+        "en": "Thank you for your answer. I have a follow-up question:",
+    },
+    "followup_thanks": {
+        "ar": "شكراً على التوضيح. ننتقل إلى السؤال التالي.",
+        "fr": "Merci pour votre précision. Passons à la question suivante.",
+        "en": "Thank you for the clarification. Let's move to the next question.",
     },
 }
 
 
-def _get_text(key, language):
-    return LOCALIZED_TEXTS.get(key, {}).get(language) or LOCALIZED_TEXTS.get(key, {}).get("en", "")
+def _get_text(key: str, language: str, **kwargs) -> str:
+    """Récupère un texte localisé et applique les variables."""
+    template = LOCALIZED_TEXTS.get(key, {}).get(language) \
+               or LOCALIZED_TEXTS.get(key, {}).get("en", "")
+    if kwargs:
+        try:
+            return template.format(**kwargs)
+        except KeyError:
+            return template
+    return template
 
 
-def _truncate_close_reason(reason):
+def _truncate_close_reason(reason: str) -> str:
     enc = reason.encode("utf-8")
     if len(enc) <= _WS_CLOSE_REASON_MAX_BYTES:
         return reason
     return enc[:_WS_CLOSE_REASON_MAX_BYTES - 1].decode("utf-8", errors="ignore") + "…"
 
+
+# ── Handler principal ─────────────────────────────────────────────────────────
 
 class InterviewHandler:
 
@@ -61,6 +84,7 @@ class InterviewHandler:
         self.websocket      = websocket
         self.session        = None
         self.position       = None
+        self.candidate      = None          # ← candidat chargé au départ
         self.audio_buffer   = bytearray()
         self.is_recording   = False
         self.asr_service    = _asr_service
@@ -81,6 +105,23 @@ class InterviewHandler:
         if self.session:
             return self.session.language or "ar"
         return "ar"
+
+    @property
+    def candidate_first_name(self) -> str:
+        """Retourne le prénom du candidat ou une valeur par défaut."""
+        if self.candidate:
+            return self.candidate.get("first_name", "").strip() or "Candidat"
+        return "Candidat"
+
+    @property
+    def candidate_full_name(self) -> str:
+        """Retourne le nom complet du candidat."""
+        if self.candidate:
+            first = self.candidate.get("first_name", "").strip()
+            last  = self.candidate.get("last_name", "").strip()
+            name  = f"{first} {last}".strip()
+            return name or "Candidat"
+        return "Candidat"
 
     def _check_connected(self):
         if not manager.is_connected(self.session_id):
@@ -113,9 +154,13 @@ class InterviewHandler:
         n_chunks = (len(pcm) + AUDIO_CHUNK_SIZE - 1) // AUDIO_CHUNK_SIZE
         meta = {
             **extra_data,
-            "audio_mode": "chunked", "audio_format": "pcm_s16le",
-            "sample_rate": sr, "channels": ch, "bits_per_sample": bits,
-            "total_chunks": n_chunks, "audio_size_bytes": len(pcm),
+            "audio_mode":     "chunked",
+            "audio_format":   "pcm_s16le",
+            "sample_rate":    sr,
+            "channels":       ch,
+            "bits_per_sample": bits,
+            "total_chunks":   n_chunks,
+            "audio_size_bytes": len(pcm),
         }
         await manager.send_json(self.session_id, {"type": msg_type, "data": meta})
         for i in range(n_chunks):
@@ -123,8 +168,11 @@ class InterviewHandler:
             chunk = pcm[i * AUDIO_CHUNK_SIZE:(i + 1) * AUDIO_CHUNK_SIZE]
             await manager.send_json(self.session_id, {
                 "type": "audio_chunk_data",
-                "data": {"chunk_index": i, "total": n_chunks,
-                         "data": base64.b64encode(chunk).decode()},
+                "data": {
+                    "chunk_index": i,
+                    "total": n_chunks,
+                    "data":  base64.b64encode(chunk).decode(),
+                },
             })
             await asyncio.sleep(0)
         await manager.send_json(self.session_id, {
@@ -139,19 +187,21 @@ class InterviewHandler:
         if not self.tts_service:
             return None
         language = self.lang
-        loop = asyncio.get_event_loop()
+        loop     = asyncio.get_event_loop()
+
         def _do():
             try:
                 return self.tts_service.synthesize(text, language=language, use_cache=True) or None
             except Exception as e:
                 logger.error(f"TTS [{language}]: {e}")
                 return None
+
         return await loop.run_in_executor(_tts_executor, _do)
 
     # ── Attente fin lecture ───────────────────────────────────────────────────
 
     async def _wait_for_audio_finished(self, timeout=120.0):
-        loop = asyncio.get_event_loop()
+        loop     = asyncio.get_event_loop()
         deadline = loop.time() + timeout
         while True:
             remaining = deadline - loop.time()
@@ -178,7 +228,7 @@ class InterviewHandler:
         try:
             if not await self._load_session():
                 return
-            logger.info(f"🌍 Langue active: {self.lang!r}")
+            logger.info(f"🌍 Langue active: {self.lang!r} | Candidat: {self.candidate_full_name}")
             await asyncio.sleep(0.2)
             self._check_connected()
             await self._send_welcome()
@@ -217,6 +267,9 @@ class InterviewHandler:
 
     async def _load_session(self) -> bool:
         try:
+            from backend.database import db
+            from bson import ObjectId
+
             session, is_valid, err = InterviewSessionCRUD.validate_session_access(self.session_id)
             if not is_valid:
                 await self._send_error(err, "SESSION_INVALID")
@@ -225,13 +278,28 @@ class InterviewHandler:
                 except Exception:
                     pass
                 return False
+
             self.session  = session
             self.position = JobPositionCRUD.get_by_id(self.session.job_position_id)
+
+            # ── Chargement du candidat pour personnalisation ──────────────
+            try:
+                self.candidate = db.candidates.find_one(
+                    {"_id": ObjectId(self.session.candidate_id)}
+                )
+                if not self.candidate:
+                    logger.warning(f"Candidat introuvable: {self.session.candidate_id}")
+            except Exception as e:
+                logger.warning(f"Erreur chargement candidat: {e}")
+                self.candidate = None
+
             logger.info(
                 f"Session OK: {self.position.title} | "
-                f"{len(self.position.questions)} questions | langue={self.lang!r}"
+                f"{len(self.position.questions)} questions | "
+                f"langue={self.lang!r} | candidat={self.candidate_full_name!r}"
             )
             return True
+
         except WebSocketDisconnect:
             raise
         except Exception as e:
@@ -241,14 +309,21 @@ class InterviewHandler:
             return False
 
     async def _send_welcome(self):
-        text  = _get_text("welcome", self.lang)
+        """Message de bienvenue personnalisé avec le prénom et le poste."""
+        name     = self.candidate_first_name
+        position = self.position.title
+        total    = len(self.position.questions)
+
+        text  = _get_text("welcome", self.lang, name=name, position=position, total=total)
         audio = await self._synthesize_bytes(text)
+
         extra = {
-            "total_questions": len(self.position.questions),
-            "position_title": self.position.title,
-            "expires_at": self.session.expires_at.isoformat(),
-            "vocal_only": True,
-            "language": self.lang,
+            "total_questions": total,
+            "position_title":  position,
+            "candidate_name":  self.candidate_full_name,
+            "expires_at":      self.session.expires_at.isoformat(),
+            "vocal_only":      True,
+            "language":        self.lang,
         }
         if audio:
             await self._send_audio_chunked(audio, "welcome", extra)
@@ -257,7 +332,7 @@ class InterviewHandler:
 
     async def _start_interview(self):
         self.session = InterviewSessionCRUD.update_status(self.session_id, "in_progress")
-        logger.info(f"Entretien démarré [{self.lang}]")
+        logger.info(f"Entretien démarré [{self.lang}] pour {self.candidate_full_name}")
 
     async def _send_current_question(self):
         idx = self.session.current_question_index
@@ -288,21 +363,21 @@ class InterviewHandler:
         }
         await self._send_audio_chunked(audio, "question", extra)
 
-    # ── Réponse + pipeline ASR → LLM ─────────────────────────────────────────
+    # ── Réponse + pipeline ASR → LLM → Suivi ─────────────────────────────────
 
     async def _wait_for_answer(self):
         self.audio_buffer.clear()
-        self.is_recording = False
-        answer_start_time = None
+        self.is_recording   = False
+        answer_start_time   = None
         self._check_connected()
         try:
             while True:
                 data = await self.websocket.receive_json()
-                t = data.get("type")
+                t    = data.get("type")
                 if t == "audio_chunk":
                     if not self.is_recording:
-                        self.is_recording = True
-                        answer_start_time = datetime.utcnow()
+                        self.is_recording   = True
+                        answer_start_time   = datetime.utcnow()
                     self.audio_buffer.extend(base64.b64decode(data.get("audio_data", "")))
                 elif t == "answer_complete":
                     break
@@ -313,22 +388,28 @@ class InterviewHandler:
             raise
         except Exception as e:
             raise WebSocketDisconnect(code=1006, reason=str(e)[:100]) from e
+
         if self.audio_buffer:
             await self._process_answer(answer_start_time)
 
     async def _process_answer(self, start_time):
         """
         Pipeline complet :
-        1. Sauvegarde audio WAV sur disque
-        2. Transcription Whisper (ASR) → transcript
-        3. Sauvegarde Answer (transcript) en BD — evaluation = None pour l'instant
-        4. Notification immédiate client (answer_saved)
-        5. Évaluation LLM en arrière-plan → score sauvegardé via save_answer_evaluation()
-        6. Notification client (answer_evaluated) dès que le LLM répond
+        1.  Sauvegarde audio WAV
+        2.  Transcription Whisper (ASR)
+        3.  Évaluation LLM initiale (avec détection de suivi)
+        4.  ✅ Sauvegarde immédiate en BD (réponse + score initial)
+        5.  Notification client : answer_evaluated (score initial)
+        6.  Si suivi nécessaire → avatar pose question → candidat répond
+        7.  Sauvegarde audio suivi + transcription
+        8.  Réévaluation LLM finale (prend en compte les deux réponses)
+        9.  ✅ Mise à jour BD : score final + toutes les traces (Q suivi, réponse suivi)
+        10. Notification client : answer_followup_completed (score final)
         """
-        idx      = self.session.current_question_index
-        question = self.position.questions[idx]
-        duration = (datetime.utcnow() - start_time).total_seconds() if start_time else 0.0
+        idx           = self.session.current_question_index
+        question      = self.position.questions[idx]
+        question_text = question.get_text(self.lang)
+        duration      = (datetime.utcnow() - start_time).total_seconds() if start_time else 0.0
 
         # ── 1. Sauvegarde audio WAV ───────────────────────────────────────────
         audio_path = (
@@ -343,20 +424,7 @@ class InterviewHandler:
         transcript = await self._transcribe_audio(wav)
         logger.info(f"📝 Transcription [{self.lang}] Q{question.order}: '{transcript[:80]}'")
 
-        # ── 3. Sauvegarde Answer en BD (evaluation = None) ────────────────────
-        InterviewSessionCRUD.add_answer(
-            self.session_id,
-            Answer(
-                question_order=question.order,
-                question_text=question.get_text(self.lang),
-                transcript=transcript,
-                audio_file_path=str(audio_path),
-                duration_seconds=duration,
-                evaluation=None,           # sera mis à jour par le LLM ensuite
-            ),
-        )
-
-        # ── 4. Notification immédiate au client ───────────────────────────────
+        # ── 3. Notification immédiate de réception ────────────────────────────
         if manager.is_connected(self.session_id):
             await manager.send_json(self.session_id, {
                 "type": "answer_saved",
@@ -369,15 +437,410 @@ class InterviewHandler:
                 },
             })
 
-        # ── 5. Évaluation LLM en arrière-plan ────────────────────────────────
-        asyncio.create_task(
-            self._run_llm_evaluation(
+        # ── 4. Évaluation LLM initiale ────────────────────────────────────────
+        try:
+            from backend.services.llm_service import get_llm_service
+            llm = get_llm_service()
+
+            if not await llm.is_available():
+                raise RuntimeError("LLM non disponible")
+
+            initial_eval = await llm.evaluate_with_followup(
+                question=question_text,
+                answer=transcript,
+                language=self.lang,
+                position_title=self.position.title,
+            )
+            initial_eval["llm_model"] = llm.model
+            initial_eval["evaluated"] = True
+
+            needs_followup    = initial_eval.get("needs_followup", False)
+            followup_question = initial_eval.get("followup_question", "").strip()
+
+            # ── 5. ✅ Sauvegarde immédiate en BD avec le score initial ─────────
+            await self._save_answer_to_db(
+                question=question,
+                transcript=transcript,
+                audio_path=str(audio_path),
+                duration=duration,
+                eval_result=initial_eval,
+            )
+
+            # Notification client : score initial obtenu
+            if manager.is_connected(self.session_id):
+                await manager.send_json(self.session_id, {
+                    "type": "answer_evaluated",
+                    "data": {
+                        "question_order": question.order,
+                        "score":          initial_eval.get("score"),
+                        "verdict":        initial_eval.get("verdict", ""),
+                        "feedback":       initial_eval.get("feedback", ""),
+                        "strengths":      initial_eval.get("strengths", []),
+                        "improvements":   initial_eval.get("improvements", []),
+                        "had_followup":   False,
+                        "followup_question": "",
+                        "is_initial":     True,
+                    },
+                })
+
+            logger.info(
+                f"✅ Score initial Q{question.order} sauvegardé | "
+                f"score={initial_eval.get('score')}/10 | "
+                f"needs_followup={needs_followup}"
+            )
+
+            # ── 6–9. Interaction de suivi si nécessaire ───────────────────────
+            if needs_followup and followup_question and manager.is_connected(self.session_id):
+                await self._conduct_followup(
+                    question=question,
+                    question_text=question_text,
+                    initial_transcript=transcript,
+                    initial_eval=initial_eval,
+                    followup_question=followup_question,
+                    audio_path=str(audio_path),
+                    duration=duration,
+                    llm=llm,
+                )
+
+            return
+
+        except Exception as e:
+            logger.error(f"Évaluation LLM Q{question.order} échouée : {e}", exc_info=True)
+
+        # ── Fallback : sauvegarder sans évaluation ────────────────────────────
+        InterviewSessionCRUD.add_answer(
+            self.session_id,
+            Answer(
+                question_order=question.order,
+                question_text=question_text,
+                transcript=transcript,
+                audio_file_path=str(audio_path),
+                duration_seconds=duration,
+                evaluation=None,
+            ),
+        )
+
+    async def _conduct_followup(
+        self,
+        question,
+        question_text: str,
+        initial_transcript: str,
+        initial_eval: dict,
+        followup_question: str,
+        audio_path: str,
+        duration: float,
+        llm,
+    ):
+        """
+        Conduit l'interaction de suivi :
+        - Pose la question de suivi (audio)
+        - Enregistre et transcrit la réponse du candidat
+        - Réévalue avec les deux réponses
+        - Met à jour la BD avec le score final et toutes les traces
+        """
+        logger.info(
+            f"🔄 Suivi Q{question.order} | "
+            f"score_initial={initial_eval.get('score')}/10 | "
+            f"question='{followup_question[:60]}'"
+        )
+
+        # Notifier le client
+        if manager.is_connected(self.session_id):
+            await manager.send_json(self.session_id, {
+                "type": "followup_incoming",
+                "data": {
+                    "question_order": question.order,
+                    "initial_score":  initial_eval.get("score"),
+                    "followup_text":  followup_question,
+                },
+            })
+
+        # Synthèse et envoi audio de la question de suivi
+        intro_text     = _get_text("followup_intro", self.lang)
+        full_followup  = f"{intro_text} {followup_question}"
+        followup_audio = await self._synthesize_bytes(full_followup)
+
+        if not followup_audio:
+            logger.warning(f"TTS indisponible pour le suivi Q{question.order}")
+            return
+
+        await self._send_audio_chunked(
+            followup_audio,
+            "followup_question",
+            {
+                "question_order": question.order,
+                "followup_text":  followup_question,
+                "vocal_only":     True,
+            },
+        )
+        await self._wait_for_audio_finished(60)
+
+        # Enregistrement de la réponse de suivi
+        followup_wav, followup_duration = await self._wait_for_followup_answer(
+            question_order=question.order
+        )
+
+        if not followup_wav:
+            logger.warning(f"Aucune réponse de suivi reçue pour Q{question.order}")
+            return
+
+        # Sauvegarde audio suivi
+        followup_audio_path = (
+            settings.UPLOAD_DIR / "interviews"
+            / f"followup_{self.session_id}_{question.order}.wav"
+        )
+        followup_audio_path.write_bytes(followup_wav)
+
+        # Transcription réponse de suivi
+        followup_transcript = await self._transcribe_audio(followup_wav)
+        logger.info(
+            f"📝 Transcription suivi [{self.lang}] Q{question.order}: "
+            f"'{followup_transcript[:80]}'"
+        )
+
+        # Message de transition (merci + on passe à la suite)
+        thanks_text  = _get_text("followup_thanks", self.lang)
+        thanks_audio = await self._synthesize_bytes(thanks_text)
+        if thanks_audio and manager.is_connected(self.session_id):
+            await self._send_audio_chunked(
+                thanks_audio,
+                "followup_thanks",
+                {"question_order": question.order},
+            )
+            await self._wait_for_audio_finished(30)
+
+        # ── Réévaluation finale avec les deux réponses ────────────────────────
+        final_eval = await llm.evaluate_final_with_followup(
+            question=question_text,
+            first_answer=initial_transcript,
+            followup_question=followup_question,
+            followup_answer=followup_transcript,
+            language=self.lang,
+            position_title=self.position.title,
+        )
+        final_eval["llm_model"] = llm.model
+        final_eval["evaluated"] = True
+
+        initial_score   = initial_eval.get("score", 0.0)
+        initial_verdict = initial_eval.get("verdict", "")
+        final_score     = final_eval.get("score", 0.0)
+        final_verdict   = final_eval.get("verdict", "")
+
+        logger.info(
+            f"🏁 Score Q{question.order} | "
+            f"initial={initial_score}/10 ({initial_verdict}) → "
+            f"final={final_score}/10 ({final_verdict})"
+        )
+
+        # ── ✅ Mise à jour BD — transcript complet + les deux scores ──────────
+        full_transcript = (
+            f"{initial_transcript}"
+            f"\n\n[Question de suivi] {followup_question}"
+            f"\n[Réponse de suivi]  {followup_transcript}"
+        )
+
+        # Le feedback final embarque explicitement les deux scores pour la BD
+        combined_feedback = (
+            f"[Score initial : {initial_score}/10 — {initial_verdict}]\n"
+            f"[Score après clarification : {final_score}/10 — {final_verdict}]\n\n"
+            f"{final_eval.get('feedback', '')}"
+        )
+
+        final_evaluation_data = AnswerEvaluationData(
+            score=final_score,
+            verdict=final_verdict,
+            feedback=combined_feedback,
+            strengths=final_eval.get("strengths", []),
+            improvements=final_eval.get("improvements", []),
+            llm_model=final_eval.get("llm_model", ""),
+            evaluated_at=datetime.utcnow(),
+            # Champs optionnels pour les modèles qui les supportent
+            initial_score=initial_score,
+            initial_verdict=initial_verdict,
+        ) if self._model_supports_initial_score() else AnswerEvaluationData(
+            score=final_score,
+            verdict=final_verdict,
+            feedback=combined_feedback,
+            strengths=final_eval.get("strengths", []),
+            improvements=final_eval.get("improvements", []),
+            llm_model=final_eval.get("llm_model", ""),
+            evaluated_at=datetime.utcnow(),
+        )
+
+        # Mise à jour de la réponse existante (transcript + évaluation finale)
+        try:
+            InterviewSessionCRUD.update_answer(
+                session_id=self.session_id,
+                question_order=question.order,
+                transcript=full_transcript,
+                audio_followup_path=str(followup_audio_path),
+                evaluation=final_evaluation_data,
+                initial_score=initial_score,
+                initial_verdict=initial_verdict,
+            )
+        except TypeError:
+            # Fallback si update_answer ne supporte pas tous les paramètres
+            InterviewSessionCRUD.update_answer(
+                session_id=self.session_id,
+                question_order=question.order,
+                transcript=full_transcript,
+                evaluation=final_evaluation_data,
+            )
+
+        # Sauvegarde directe de l'évaluation finale
+        InterviewSessionCRUD.save_answer_evaluation(
+            session_id=self.session_id,
+            question_order=question.order,
+            evaluation=final_evaluation_data,
+        )
+
+        logger.info(
+            f"✅ BD mise à jour Q{question.order} | "
+            f"score_initial={initial_score}/10 | score_final={final_score}/10 | "
+            f"transcript={len(full_transcript)} chars"
+        )
+
+        # Notification client : les deux scores + toutes les traces
+        if manager.is_connected(self.session_id):
+            await manager.send_json(self.session_id, {
+                "type": "answer_followup_completed",
+                "data": {
+                    "question_order":      question.order,
+                    # ─ Score initial (avant suivi) ─
+                    "initial_score":       initial_score,
+                    "initial_verdict":     initial_verdict,
+                    "initial_feedback":    initial_eval.get("feedback", ""),
+                    "initial_strengths":   initial_eval.get("strengths", []),
+                    "initial_improvements": initial_eval.get("improvements", []),
+                    # ─ Score final (après clarification) ─
+                    "final_score":         final_score,
+                    "final_verdict":       final_verdict,
+                    "final_feedback":      final_eval.get("feedback", ""),
+                    "final_strengths":     final_eval.get("strengths", []),
+                    "final_improvements":  final_eval.get("improvements", []),
+                    # ─ Détails du suivi ─
+                    "followup_question":   followup_question,
+                    "followup_transcript": followup_transcript,
+                    "followup_audio_path": str(followup_audio_path),
+                    "full_transcript":     full_transcript,
+                    "had_followup":        True,
+                    # ─ Delta d'amélioration ─
+                    "score_delta":         round(final_score - initial_score, 1),
+                },
+            })
+
+    @staticmethod
+    def _model_supports_initial_score() -> bool:
+        """Vérifie si AnswerEvaluationData supporte les champs initial_score/initial_verdict."""
+        import inspect
+        try:
+            sig = inspect.signature(AnswerEvaluationData.__init__)
+            return "initial_score" in sig.parameters
+        except Exception:
+            return False
+
+    async def _wait_for_followup_answer(
+        self,
+        question_order: int,
+        timeout: float = 120.0,
+    ) -> tuple[Optional[bytes], float]:
+        """
+        Attend et enregistre la réponse de suivi du candidat.
+        Retourne (wav_bytes, duration_seconds) ou (None, 0).
+        """
+        self.audio_buffer.clear()
+        self.is_recording = False
+        start_time        = None
+        deadline          = asyncio.get_event_loop().time() + timeout
+
+        try:
+            while True:
+                remaining = deadline - asyncio.get_event_loop().time()
+                if remaining <= 0:
+                    logger.warning(f"Timeout réponse de suivi Q{question_order}")
+                    break
+
+                try:
+                    data = await asyncio.wait_for(
+                        self.websocket.receive_json(),
+                        timeout=min(remaining, 5.0),
+                    )
+                except asyncio.TimeoutError:
+                    self._check_connected()
+                    continue
+
+                t = data.get("type")
+                if t == "audio_chunk":
+                    if not self.is_recording:
+                        self.is_recording = True
+                        start_time        = datetime.utcnow()
+                    self.audio_buffer.extend(base64.b64decode(data.get("audio_data", "")))
+                elif t == "answer_complete":
+                    break
+                elif t == "end_interview":
+                    await self._cancel_interview()
+                    raise WebSocketDisconnect(code=1000, reason="Terminé")
+
+        except WebSocketDisconnect:
+            raise
+        except Exception as e:
+            logger.error(f"Erreur attente réponse suivi: {e}")
+            return None, 0.0
+
+        if not self.audio_buffer:
+            return None, 0.0
+
+        duration = (datetime.utcnow() - start_time).total_seconds() if start_time else 0.0
+        wav      = self._buffer_to_wav(bytes(self.audio_buffer))
+        self.audio_buffer.clear()
+        return wav, duration
+
+    async def _save_answer_to_db(
+        self,
+        question,
+        transcript: str,
+        audio_path: str,
+        duration: float,
+        eval_result: dict,
+    ):
+        """
+        Sauvegarde immédiate de la réponse initiale + score initial en BD.
+        Appelée dès que l'évaluation initiale est disponible,
+        AVANT toute interaction de suivi.
+        """
+        evaluation_data = AnswerEvaluationData(
+            score=eval_result.get("score", 0.0),
+            verdict=eval_result.get("verdict", ""),
+            feedback=eval_result.get("feedback", ""),
+            strengths=eval_result.get("strengths", []),
+            improvements=eval_result.get("improvements", []),
+            llm_model=eval_result.get("llm_model", ""),
+            evaluated_at=datetime.utcnow(),
+        )
+
+        InterviewSessionCRUD.add_answer(
+            self.session_id,
+            Answer(
+                question_order=question.order,
                 question_text=question.get_text(self.lang),
                 transcript=transcript,
-                question_order=question.order,
-                audio_path=str(audio_path),
-            )
+                audio_file_path=audio_path,
+                duration_seconds=duration,
+                evaluation=evaluation_data,
+            ),
         )
+
+        InterviewSessionCRUD.save_answer_evaluation(
+            session_id=self.session_id,
+            question_order=question.order,
+            evaluation=evaluation_data,
+        )
+        logger.info(
+            f"💾 Score initial sauvegardé | Q{question.order} | "
+            f"score={eval_result.get('score')}/10"
+        )
+
+    # ── Transcription ─────────────────────────────────────────────────────────
 
     async def _transcribe_audio(self, wav_bytes: bytes) -> str:
         if not self.asr_service:
@@ -395,95 +858,18 @@ class InterviewHandler:
             logger.error(f"Erreur ASR : {e}")
             return ""
 
-    async def _run_llm_evaluation(
-        self,
-        question_text: str,
-        transcript: str,
-        question_order: int,
-        audio_path: str,
-    ):
-        """
-        Évaluation LLM asynchrone.
-
-        Flux :
-        1. Appel Ollama/Llama3 pour évaluer la réponse
-        2. Construit un AnswerEvaluationData
-        3. Sauvegarde en BD via InterviewSessionCRUD.save_answer_evaluation()
-           → écrit dans interview_sessions.answers[n].evaluation
-        4. Notifie le client WebSocket avec score + feedback
-        """
-        try:
-            from backend.services.llm_service import get_llm_service
-            from backend.evaluation.service import EvaluationService
-
-            llm = get_llm_service()
-            if not await llm.is_available():
-                logger.warning("Ollama non disponible — évaluation ignorée")
-                return
-
-            eval_svc = EvaluationService(llm_service=llm, asr_service=self.asr_service)
-
-            answer_eval = await eval_svc.evaluate_single_answer(
-                question_text=question_text,
-                answer_transcript=transcript,
-                question_order=question_order,
-                language=self.lang,
-                position_title=self.position.title,
-                audio_path=audio_path,
-            )
-
-            logger.info(
-                f"🤖 LLM Q{question_order} [{self.lang}] | "
-                f"score={answer_eval.score}/10 | verdict={answer_eval.verdict}"
-            )
-
-            # ── Sauvegarde dans la BD (interview_sessions.answers[n].evaluation) ──
-            evaluation_data = AnswerEvaluationData(
-                score=answer_eval.score,
-                verdict=answer_eval.verdict,
-                feedback=answer_eval.feedback,
-                strengths=answer_eval.strengths,
-                improvements=answer_eval.improvements,
-                llm_model=answer_eval.llm_model,
-                evaluated_at=answer_eval.evaluated_at,
-            )
-            saved = InterviewSessionCRUD.save_answer_evaluation(
-                session_id=self.session_id,
-                question_order=question_order,
-                evaluation=evaluation_data,
-            )
-            if saved:
-                logger.info(f"✅ Évaluation Q{question_order} sauvegardée en BD")
-            else:
-                logger.warning(f"⚠️  Évaluation Q{question_order} : document non trouvé pour mise à jour")
-
-            # ── Notification WebSocket client ──────────────────────────────────
-            if manager.is_connected(self.session_id):
-                await manager.send_json(self.session_id, {
-                    "type": "answer_evaluated",
-                    "data": {
-                        "question_order": question_order,
-                        "score":         answer_eval.score,
-                        "verdict":       answer_eval.verdict,
-                        "feedback":      answer_eval.feedback,
-                        "strengths":     answer_eval.strengths,
-                        "improvements":  answer_eval.improvements,
-                    },
-                })
-
-        except Exception as e:
-            logger.error(f"Évaluation LLM Q{question_order} échouée : {e}", exc_info=True)
-
     # ── Fin d'entretien ───────────────────────────────────────────────────────
 
     async def _complete_interview(self):
         self.session = InterviewSessionCRUD.update_status(self.session_id, "completed")
-        text  = _get_text("completed", self.lang)
+        name  = self.candidate_first_name
+        text  = _get_text("completed", self.lang, name=name)
         audio = await self._synthesize_bytes(text)
         extra = {
             "total_questions": len(self.position.questions),
             "total_answers":   len(self.session.answers),
             "position_title":  self.position.title,
+            "candidate_name":  self.candidate_full_name,
         }
         if audio:
             await self._send_audio_chunked(audio, "interview_completed", extra)
@@ -504,7 +890,7 @@ class InterviewHandler:
             if not await llm.is_available():
                 return
 
-            svc = EvaluationService(llm_service=llm, asr_service=self.asr_service)
+            svc    = EvaluationService(llm_service=llm, asr_service=self.asr_service)
             result = await svc.evaluate_full_session(self.session_id, language=self.lang)
 
             if result and manager.is_connected(self.session_id):
@@ -517,6 +903,7 @@ class InterviewHandler:
                         "key_strengths":    result.key_strengths,
                         "key_improvements": result.key_improvements,
                         "summary":          result.summary,
+                        "candidate_name":   self.candidate_full_name,
                     },
                 })
                 logger.info(

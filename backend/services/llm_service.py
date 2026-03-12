@@ -1,6 +1,7 @@
 """
 Service LLM - Évaluation des réponses via Ollama + Llama 3
 Pipeline: Transcription → LLM → Score / Feedback multilingue
++ Génération de questions de suivi si la réponse est floue
 """
 
 import json
@@ -11,7 +12,7 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-# ── Prompts multilingues ───────────────────────────────────────────────────
+# ── Prompts multilingues — Évaluation standard ────────────────────────────────
 
 _SYSTEM_PROMPT = {
     "ar": """أنت خبير تقييم مقابلات توظيف. مهمتك تقييم إجابة مرشح على سؤال مقابلة.
@@ -45,10 +46,111 @@ Return ONLY a JSON object with no extra text:
 }""",
 }
 
+# ── Prompts — Évaluation AVEC question de suivi ───────────────────────────────
+
+_SYSTEM_PROMPT_FOLLOWUP = {
+    "ar": """أنت خبير تقييم مقابلات توظيف. مهمتك تقييم إجابة مرشح وتحديد ما إذا كانت تحتاج إلى توضيح.
+
+قواعد الاستفسار:
+- اطرح سؤال متابعة إذا كانت الإجابة غامضة أو غير كافية أو تحتاج مثالاً ملموساً (score < 7)
+- لا تطرح سؤال متابعة إذا كانت الإجابة واضحة وكاملة (score >= 7) أو إذا كانت الإجابة فارغة
+- السؤال يجب أن يكون قصيراً (جملة واحدة) ومباشراً ومرتبطاً بالإجابة المقدمة
+
+أعد JSON فقط بهذا الشكل بدون أي نص إضافي:
+{
+  "score": <رقم من 0 إلى 10>,
+  "verdict": "<ممتاز|جيد جداً|جيد|مقبول|ضعيف>",
+  "strengths": ["<نقطة قوة>"],
+  "improvements": ["<نقطة تحسين>"],
+  "feedback": "<ملاحظة مفصلة>",
+  "needs_followup": <true|false>,
+  "followup_question": "<سؤال متابعة واحد أو سلسلة فارغة إذا لم يلزم>"
+}""",
+
+    "fr": """Tu es un expert en évaluation d'entretiens de recrutement. Évalue la réponse ET détermine si une question de suivi est nécessaire.
+
+Règles pour le suivi :
+- Pose une question de suivi si la réponse est vague, incomplète ou manque d'exemples concrets (score < 7)
+- Ne pose PAS de question de suivi si la réponse est claire et complète (score >= 7) ou si la réponse est vide
+- La question doit être courte (une phrase), directe, et liée spécifiquement à la réponse fournie
+
+Retourne UNIQUEMENT ce JSON sans texte supplémentaire :
+{
+  "score": <nombre de 0 à 10>,
+  "verdict": "<Excellent|Très bien|Bien|Acceptable|Insuffisant>",
+  "strengths": ["<point fort>"],
+  "improvements": ["<axe d'amélioration>"],
+  "feedback": "<commentaire détaillé>",
+  "needs_followup": <true|false>,
+  "followup_question": "<une question de suivi ou chaîne vide si non nécessaire>"
+}""",
+
+    "en": """You are a recruitment interview evaluation expert. Evaluate the answer AND determine if a follow-up question is needed.
+
+Follow-up rules:
+- Ask a follow-up if the answer is vague, incomplete, or lacks concrete examples (score < 7)
+- Do NOT ask a follow-up if the answer is clear and complete (score >= 7) or if the answer is empty
+- The question must be short (one sentence), direct, and specifically tied to the given answer
+
+Return ONLY this JSON with no extra text:
+{
+  "score": <number from 0 to 10>,
+  "verdict": "<Excellent|Very Good|Good|Acceptable|Poor>",
+  "strengths": ["<strength>"],
+  "improvements": ["<improvement area>"],
+  "feedback": "<detailed comment>",
+  "needs_followup": <true|false>,
+  "followup_question": "<one follow-up question or empty string if not needed>"
+}""",
+}
+
+# ── Prompts — Évaluation FINALE (avec réponse de suivi) ──────────────────────
+
+_SYSTEM_PROMPT_FINAL = {
+    "ar": """أنت خبير تقييم مقابلات توظيف. لديك السؤال الأصلي، الإجابة الأولى، وإجابة التوضيح.
+قيّم الإجابة الكاملة مع الأخذ بعين الاعتبار كلتا الإجابتين.
+أعد JSON فقط:
+{
+  "score": <رقم من 0 إلى 10>,
+  "verdict": "<ممتاز|جيد جداً|جيد|مقبول|ضعيف>",
+  "strengths": ["<نقطة قوة>"],
+  "improvements": ["<نقطة تحسين>"],
+  "feedback": "<تقييم شامل يأخذ بعين الاعتبار كلتا الإجابتين>"
+}""",
+
+    "fr": """Tu es un expert en évaluation d'entretiens. Tu as la question originale, la première réponse et la réponse de clarification.
+Évalue l'ensemble en prenant en compte les deux réponses.
+Retourne UNIQUEMENT ce JSON :
+{
+  "score": <nombre de 0 à 10>,
+  "verdict": "<Excellent|Très bien|Bien|Acceptable|Insuffisant>",
+  "strengths": ["<point fort>"],
+  "improvements": ["<axe d'amélioration>"],
+  "feedback": "<évaluation globale tenant compte des deux réponses>"
+}""",
+
+    "en": """You are a recruitment interview expert. You have the original question, first answer, and clarification answer.
+Evaluate the complete response taking both answers into account.
+Return ONLY this JSON:
+{
+  "score": <number from 0 to 10>,
+  "verdict": "<Excellent|Very Good|Good|Acceptable|Poor>",
+  "strengths": ["<strength>"],
+  "improvements": ["<improvement area>"],
+  "feedback": "<comprehensive evaluation considering both answers>"
+}""",
+}
+
 _USER_PROMPT = {
     "ar": "السؤال: {question}\n\nإجابة المرشح: {answer}\n\nقيّم هذه الإجابة:",
     "fr": "Question : {question}\n\nRéponse du candidat : {answer}\n\nÉvalue cette réponse :",
     "en": "Question: {question}\n\nCandidate's answer: {answer}\n\nEvaluate this answer:",
+}
+
+_USER_PROMPT_FINAL = {
+    "ar": "السؤال: {question}\n\nالإجابة الأولى: {answer}\n\nسؤال التوضيح: {followup_q}\n\nإجابة التوضيح: {followup_a}\n\nقيّم الإجابة الكاملة:",
+    "fr": "Question : {question}\n\nPremière réponse : {answer}\n\nQuestion de suivi : {followup_q}\n\nRéponse de suivi : {followup_a}\n\nÉvalue la réponse complète :",
+    "en": "Question: {question}\n\nFirst answer: {answer}\n\nFollow-up question: {followup_q}\n\nFollow-up answer: {followup_a}\n\nEvaluate the complete answer:",
 }
 
 _EMPTY_ANSWER_RESULT = {
@@ -115,22 +217,12 @@ class OllamaLLMService:
         position_title: str = "",
     ) -> dict:
         """
-        Évalue la réponse d'un candidat et retourne un dict structuré.
-
+        Évalue la réponse d'un candidat (sans question de suivi).
         Returns:
-            {
-                score: float (0–10),
-                verdict: str,
-                strengths: list[str],
-                improvements: list[str],
-                feedback: str,
-                llm_model: str,
-                evaluated: bool,
-            }
+            { score, verdict, strengths, improvements, feedback, llm_model, evaluated }
         """
         lang = language if language in ("ar", "fr", "en") else "fr"
 
-        # Réponse vide → score 0 immédiat
         if not answer or len(answer.strip()) < 5:
             result = dict(_EMPTY_ANSWER_RESULT[lang])
             result["llm_model"] = self.model
@@ -148,13 +240,119 @@ class OllamaLLMService:
             }
             user += suffix[lang]
 
-        raw = await self._call_ollama(system, user)
+        raw    = await self._call_ollama(system, user)
         parsed = self._parse_json(raw, lang)
         parsed["llm_model"] = self.model
         parsed["evaluated"] = True
 
         logger.info(
             f"Évaluation LLM [{lang}] | score={parsed['score']}/10 "
+            f"| verdict={parsed['verdict']}"
+        )
+        return parsed
+
+    # ── Évaluation avec détection de suivi ────────────────────────────────────
+
+    async def evaluate_with_followup(
+        self,
+        question: str,
+        answer: str,
+        language: str = "fr",
+        position_title: str = "",
+    ) -> dict:
+        """
+        Évalue la réponse ET détermine si une question de suivi est nécessaire.
+
+        Returns:
+            {
+                score, verdict, strengths, improvements, feedback,
+                llm_model, evaluated,
+                needs_followup: bool,
+                followup_question: str  (vide si pas de suivi nécessaire)
+            }
+        """
+        lang = language if language in ("ar", "fr", "en") else "fr"
+
+        # Réponse vide → pas de suivi
+        if not answer or len(answer.strip()) < 5:
+            result = dict(_EMPTY_ANSWER_RESULT[lang])
+            result.update({
+                "llm_model":       self.model,
+                "evaluated":       True,
+                "needs_followup":  False,
+                "followup_question": "",
+            })
+            return result
+
+        system = _SYSTEM_PROMPT_FOLLOWUP[lang]
+        user   = _USER_PROMPT[lang].format(question=question, answer=answer)
+
+        if position_title:
+            suffix = {
+                "ar": f"\n\nالمنصب: {position_title}",
+                "fr": f"\n\nPoste : {position_title}",
+                "en": f"\n\nPosition: {position_title}",
+            }
+            user += suffix[lang]
+
+        raw    = await self._call_ollama(system, user)
+        parsed = self._parse_followup_json(raw, lang)
+        parsed["llm_model"] = self.model
+        parsed["evaluated"] = True
+
+        logger.info(
+            f"Évaluation+Suivi LLM [{lang}] | score={parsed['score']}/10 "
+            f"| needs_followup={parsed['needs_followup']} "
+            f"| followup_q='{parsed.get('followup_question', '')[:60]}'"
+        )
+        return parsed
+
+    # ── Évaluation finale (après réponse de suivi) ────────────────────────────
+
+    async def evaluate_final_with_followup(
+        self,
+        question: str,
+        first_answer: str,
+        followup_question: str,
+        followup_answer: str,
+        language: str = "fr",
+        position_title: str = "",
+    ) -> dict:
+        """
+        Évalue la réponse complète (première réponse + réponse de suivi).
+
+        Returns:
+            { score, verdict, strengths, improvements, feedback, llm_model, evaluated }
+        """
+        lang = language if language in ("ar", "fr", "en") else "fr"
+
+        # Si la réponse de suivi est vide, évaluation standard
+        if not followup_answer or len(followup_answer.strip()) < 5:
+            return await self.evaluate_answer(question, first_answer, language, position_title)
+
+        system = _SYSTEM_PROMPT_FINAL[lang]
+        user   = _USER_PROMPT_FINAL[lang].format(
+            question=question,
+            answer=first_answer,
+            followup_q=followup_question,
+            followup_a=followup_answer,
+        )
+
+        if position_title:
+            suffix = {
+                "ar": f"\n\nالمنصب: {position_title}",
+                "fr": f"\n\nPoste : {position_title}",
+                "en": f"\n\nPosition: {position_title}",
+            }
+            user += suffix[lang]
+
+        raw    = await self._call_ollama(system, user)
+        parsed = self._parse_json(raw, lang)
+        parsed["llm_model"] = self.model
+        parsed["evaluated"] = True
+
+        logger.info(
+            f"Évaluation Finale LLM [{lang}] | score={parsed['score']}/10 "
             f"| verdict={parsed['verdict']}"
         )
         return parsed
@@ -170,24 +368,14 @@ class OllamaLLMService:
     ) -> dict:
         """
         Génère un résumé global de l'entretien depuis les évaluations individuelles.
-
-        Returns:
-            {
-                global_score: float,
-                global_verdict: str,
-                recommendation: str,
-                key_strengths: list,
-                key_improvements: list,
-                summary: str,
-            }
         """
         lang = language if language in ("ar", "fr", "en") else "fr"
 
         if not answers_eval:
             return self._empty_summary(lang)
 
-        scores = [a.get("score", 0) for a in answers_eval]
-        avg = round(sum(scores) / len(scores), 2)
+        scores  = [a.get("score", 0) for a in answers_eval]
+        avg     = round(sum(scores) / len(scores), 2)
 
         summaries_prompt = "\n".join(
             f"Q{i+1}: score={a.get('score', 0)}/10 | {a.get('feedback', '')}"
@@ -221,14 +409,14 @@ class OllamaLLMService:
             ),
         }
 
-        raw = await self._call_ollama("", prompts[lang])
+        raw    = await self._call_ollama("", prompts[lang])
         result = self._parse_json(raw, lang)
-        result.setdefault("global_score", avg)
-        result.setdefault("global_verdict", self._score_to_verdict(avg, lang))
-        result.setdefault("recommendation", "")
-        result.setdefault("key_strengths", [])
-        result.setdefault("key_improvements", [])
-        result.setdefault("summary", "")
+        result.setdefault("global_score",      avg)
+        result.setdefault("global_verdict",    self._score_to_verdict(avg, lang))
+        result.setdefault("recommendation",    "")
+        result.setdefault("key_strengths",     [])
+        result.setdefault("key_improvements",  [])
+        result.setdefault("summary",           "")
         return result
 
     # ── HTTP Ollama ───────────────────────────────────────────────────────────
@@ -240,12 +428,12 @@ class OllamaLLMService:
         messages.append({"role": "user", "content": user})
 
         payload = {
-            "model": self.model,
+            "model":   self.model,
             "messages": messages,
-            "stream": False,
+            "stream":  False,
             "options": {
                 "temperature": 0.3,
-                "top_p": 0.9,
+                "top_p":       0.9,
                 "num_predict": 512,
             },
         }
@@ -257,7 +445,7 @@ class OllamaLLMService:
                     json=payload,
                 )
                 resp.raise_for_status()
-                data = resp.json()
+                data    = resp.json()
                 content = data.get("message", {}).get("content", "")
                 logger.debug(f"Ollama raw: {content[:200]}")
                 return content
@@ -273,7 +461,6 @@ class OllamaLLMService:
 
     def _parse_json(self, raw: str, lang: str) -> dict:
         """Extrait et valide le JSON retourné par le LLM."""
-        # Extraire le bloc JSON (résistant aux balises markdown)
         for pattern in (
             r"```json\s*([\s\S]+?)\s*```",
             r"```\s*([\s\S]+?)\s*```",
@@ -290,6 +477,34 @@ class OllamaLLMService:
         logger.warning(f"Impossible de parser la réponse LLM : {raw[:300]}")
         return self._fallback_result(lang)
 
+    def _parse_followup_json(self, raw: str, lang: str) -> dict:
+        """Extrait et valide le JSON avec champs de suivi."""
+        for pattern in (
+            r"```json\s*([\s\S]+?)\s*```",
+            r"```\s*([\s\S]+?)\s*```",
+            r"(\{[\s\S]+\})",
+        ):
+            m = re.search(pattern, raw)
+            if m:
+                try:
+                    obj = json.loads(m.group(1))
+                    base = self._normalize(obj, lang)
+                    base["needs_followup"]   = bool(obj.get("needs_followup", False))
+                    base["followup_question"] = str(obj.get("followup_question", "")).strip()
+                    # Sécurité : si score >= 7, forcer needs_followup = False
+                    if base["score"] >= 7:
+                        base["needs_followup"]    = False
+                        base["followup_question"] = ""
+                    return base
+                except json.JSONDecodeError:
+                    continue
+
+        logger.warning(f"Impossible de parser la réponse LLM (followup) : {raw[:300]}")
+        result = self._fallback_result(lang)
+        result["needs_followup"]    = False
+        result["followup_question"] = ""
+        return result
+
     def _normalize(self, obj: dict, lang: str) -> dict:
         """Normalise et valide les champs de l'évaluation."""
         try:
@@ -299,11 +514,11 @@ class OllamaLLMService:
             score = 5.0
 
         return {
-            "score": round(score, 1),
-            "verdict": str(obj.get("verdict", self._score_to_verdict(score, lang))),
-            "strengths": list(obj.get("strengths", [])),
+            "score":        round(score, 1),
+            "verdict":      str(obj.get("verdict", self._score_to_verdict(score, lang))),
+            "strengths":    list(obj.get("strengths", [])),
             "improvements": list(obj.get("improvements", [])),
-            "feedback": str(obj.get("feedback", "")),
+            "feedback":     str(obj.get("feedback", "")),
         }
 
     def _fallback_result(self, lang: str) -> dict:
@@ -314,11 +529,11 @@ class OllamaLLMService:
             "ar": "التقييم غير متاح (خطأ في النموذج).",
         }
         return {
-            "score": 5.0,
-            "verdict": self._score_to_verdict(5.0, lang),
-            "strengths": [],
+            "score":        5.0,
+            "verdict":      self._score_to_verdict(5.0, lang),
+            "strengths":    [],
             "improvements": [],
-            "feedback": msgs.get(lang, msgs["fr"]),
+            "feedback":     msgs.get(lang, msgs["fr"]),
         }
 
     def _empty_summary(self, lang: str) -> dict:
@@ -328,12 +543,12 @@ class OllamaLLMService:
             "ar": "لا توجد إجابات للتقييم.",
         }
         return {
-            "global_score": 0.0,
-            "global_verdict": self._score_to_verdict(0.0, lang),
-            "recommendation": "",
-            "key_strengths": [],
+            "global_score":     0.0,
+            "global_verdict":   self._score_to_verdict(0.0, lang),
+            "recommendation":   "",
+            "key_strengths":    [],
             "key_improvements": [],
-            "summary": msgs.get(lang, msgs["fr"]),
+            "summary":          msgs.get(lang, msgs["fr"]),
         }
 
     @staticmethod
@@ -361,8 +576,8 @@ def get_llm_service() -> OllamaLLMService:
     if _llm_instance is None:
         from backend.config import settings
         _llm_instance = OllamaLLMService(
-            base_url=getattr(settings, "OLLAMA_URL", "http://localhost:11434"),
-            model=getattr(settings, "OLLAMA_MODEL", "llama3"),
+            base_url=getattr(settings, "OLLAMA_URL",    "http://localhost:11434"),
+            model=getattr(settings, "OLLAMA_MODEL",     "llama3"),
             timeout=getattr(settings, "OLLAMA_TIMEOUT", 60.0),
         )
     return _llm_instance
