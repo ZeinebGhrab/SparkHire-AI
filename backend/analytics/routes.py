@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Query
 from backend.analytics.models import (
     CandidateStats, InterviewStats,
-    SystemStats, DashboardStats
+    SystemStats, DashboardStats, SchedulingStats
 )
 from backend.auth.security import get_current_recruiter
 from backend.database import db
@@ -155,4 +155,107 @@ async def get_dashboard_statistics(
         system=system_stats,
         period_start=start_date,
         period_end=end_date,
+    )
+
+
+@router.get("/scheduling", response_model=SchedulingStats)
+async def get_scheduling_statistics(
+    _: str = Depends(get_current_recruiter)
+):
+    """
+    Statistiques de planification des entretiens.
+    Retourne les compteurs affichés dans le widget calendrier :
+      - Total planifiés, Cette semaine, Confirmés, En attente, Annulés
+      - Répartition par jour de la semaine courante
+      - Répartition par poste et par langue
+      - Entretiens dont expires_at tombe dans les 7 prochains jours
+    """
+    now   = datetime.utcnow()
+
+    # Semaine courante : lundi 00:00 → dimanche 23:59
+    week_start = now - timedelta(days=now.weekday())
+    week_start = week_start.replace(hour=0, minute=0, second=0, microsecond=0)
+    week_end   = week_start + timedelta(days=7)
+
+    # ── Compteurs principaux ──────────────────────────────────────────────────
+    total_scheduled = db.interview_sessions.count_documents(
+        {"status": {"$ne": "cancelled"}}
+    )
+
+    this_week = db.interview_sessions.count_documents({
+        "created_at": {"$gte": week_start, "$lt": week_end},
+        "status": {"$ne": "cancelled"},
+    })
+
+    confirmed = db.interview_sessions.count_documents({
+        "status": {"$in": ["completed", "in_progress"]}
+    })
+
+    pending = db.interview_sessions.count_documents({"status": "pending"})
+
+    cancelled = db.interview_sessions.count_documents({"status": "cancelled"})
+
+    # ── Répartition par jour de la semaine courante ───────────────────────────
+    day_names = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"]
+    by_day: dict = {d: 0 for d in day_names}
+
+    sessions_this_week = db.interview_sessions.find(
+        {
+            "created_at": {"$gte": week_start, "$lt": week_end},
+            "status": {"$ne": "cancelled"},
+        },
+        {"created_at": 1},
+    )
+    for s in sessions_this_week:
+        dow = s["created_at"].weekday()   # 0=lundi … 6=dimanche
+        by_day[day_names[dow]] += 1
+
+    # ── Répartition par poste (top 10) ────────────────────────────────────────
+    pos_pipeline = [
+        {"$match": {"status": {"$ne": "cancelled"}}},
+        {"$group": {"_id": "$job_position_id", "count": {"$sum": 1}}},
+        {"$sort": {"count": -1}},
+        {"$limit": 10},
+    ]
+    pos_results = list(db.interview_sessions.aggregate(pos_pipeline))
+
+    # Résoudre les IDs → titres de poste
+    from bson import ObjectId
+    by_position: dict = {}
+    for r in pos_results:
+        pid = r["_id"]
+        try:
+            pos = db.job_positions.find_one({"_id": ObjectId(pid)}, {"title": 1})
+            label = pos["title"] if pos else pid
+        except Exception:
+            label = pid
+        by_position[label] = r["count"]
+
+    # ── Répartition par langue ────────────────────────────────────────────────
+    lang_pipeline = [
+        {"$match": {"status": {"$ne": "cancelled"}}},
+        {"$group": {"_id": "$language", "count": {"$sum": 1}}},
+    ]
+    lang_results  = list(db.interview_sessions.aggregate(lang_pipeline))
+    by_language   = {"ar": 0, "fr": 0, "en": 0}
+    for r in lang_results:
+        lang = r["_id"] or "ar"
+        by_language[lang] = r["count"]
+
+    # ── Entretiens expirant dans les 7 prochains jours ────────────────────────
+    upcoming_7_days = db.interview_sessions.count_documents({
+        "status": "pending",
+        "expires_at": {"$gte": now, "$lt": now + timedelta(days=7)},
+    })
+
+    return SchedulingStats(
+        total_scheduled=total_scheduled,
+        this_week=this_week,
+        confirmed=confirmed,
+        pending=pending,
+        cancelled=cancelled,
+        by_day_this_week=by_day,
+        by_position=by_position,
+        by_language=by_language,
+        upcoming_7_days=upcoming_7_days,
     )

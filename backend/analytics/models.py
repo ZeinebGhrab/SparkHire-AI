@@ -42,3 +42,15 @@ class DashboardStats(BaseModel):
     system: SystemStats
     period_start: datetime
     period_end: datetime
+
+
+class SchedulingStats(BaseModel):
+    total_scheduled: int          # Tous les entretiens planifiés (status != cancelled)
+    this_week: int                # Créés ou planifiés cette semaine (lun–dim)
+    confirmed: int                # status = "completed" ou "in_progress"
+    pending: int                  # status = "pending"
+    cancelled: int                # status = "cancelled"
+    by_day_this_week: Dict[str, int]   # {"Lun": 1, "Mar": 0, ...}
+    by_position: Dict[str, int]        # {"Data Scientist": 3, ...}
+    by_language: Dict[str, int]        # {"ar": 2, "fr": 1, "en": 0}
+    upcoming_7_days: int          # Sessions créées dans les 7 prochains jours (expires_at)
