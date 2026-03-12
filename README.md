@@ -435,6 +435,11 @@ The LLM evaluator applies a strict grading scale across all three languages:
 ```bash
 python scripts/test_interview.py
 ```
+---
+
+## 🎓 Academic Context
+
+This project was developed as a **Final Year Project** for the **2nd year of an Engineering Degree in Data Engineering & Decisional Systems**.
 
 ---
 
