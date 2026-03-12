@@ -1,6 +1,6 @@
 """
 Stark Solutions — Design System v4  ·  Professional Light Theme
-Inspiré du design web shadcn/ui · Palette claire moderne · QSS complet
+Design · Palette claire moderne · QSS complet
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Règles de design :
   • Fonds solides (pas de semi-transparence sans blur, ça rend mal sous Qt)

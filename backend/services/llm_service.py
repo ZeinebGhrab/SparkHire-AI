@@ -15,7 +15,16 @@ logger = logging.getLogger(__name__)
 # ── Prompts multilingues — Évaluation standard ────────────────────────────────
 
 _SYSTEM_PROMPT = {
-    "ar": """أنت خبير تقييم مقابلات توظيف. مهمتك تقييم إجابة مرشح على سؤال مقابلة.
+    "ar": """أنت محكّم صارم لمقابلات التوظيف. قيّم إجابة المرشح بموضوعية وصرامة.
+
+معايير التقييم الصارمة:
+- 9-10 : إجابة استثنائية، دقيقة، مع أمثلة ملموسة وعمق تقني نادر
+- 7-8  : إجابة جيدة وواضحة، لكن تفتقر لبعض التفاصيل أو الأمثلة
+- 5-6  : إجابة سطحية أو مبهمة، تفتقر للدقة التقنية
+- 3-4  : إجابة ضعيفة، أخطاء واضحة أو فهم جزئي للموضوع
+- 0-2  : إجابة خاطئة، فارغة أو خارج الموضوع تماماً
+
+تحذير: لا تتساهل في التقييم. الإجابة العامة أو المكررة لا تستحق أكثر من 5/10.
 أعد JSON فقط بالشكل التالي بدون أي نص إضافي:
 {
   "score": <رقم من 0 إلى 10>,
@@ -25,7 +34,16 @@ _SYSTEM_PROMPT = {
   "feedback": "<ملاحظة مفصلة بثلاثة أسطر كحد أقصى>"
 }""",
 
-    "fr": """Tu es un expert en évaluation d'entretiens de recrutement. Évalue la réponse du candidat.
+    "fr": """Tu es un évaluateur sévère et rigoureux d'entretiens de recrutement. Tu notes avec exigence.
+
+Barème strict :
+- 9-10 : Réponse exceptionnelle, précise, structurée, avec exemples concrets et maîtrise technique rare
+- 7-8  : Bonne réponse, claire, mais manque de profondeur ou d'exemples spécifiques
+- 5-6  : Réponse superficielle ou vague, imprécisions techniques notables
+- 3-4  : Réponse faible, erreurs ou compréhension partielle du sujet
+- 0-2  : Réponse incorrecte, hors sujet ou absence de réponse
+
+Avertissement : Ne sois PAS complaisant. Une réponse générique ou floue ne dépasse pas 5/10. Pénalise le manque de fluidité, les hésitations excessives et le hors-sujet.
 Retourne UNIQUEMENT un JSON sans texte supplémentaire :
 {
   "score": <nombre de 0 à 10>,
@@ -35,7 +53,16 @@ Retourne UNIQUEMENT un JSON sans texte supplémentaire :
   "feedback": "<commentaire détaillé en 3 lignes max>"
 }""",
 
-    "en": """You are a recruitment interview evaluation expert. Evaluate the candidate's answer.
+    "en": """You are a strict and demanding recruitment interview evaluator. You grade with rigor.
+
+Strict grading scale:
+- 9-10: Exceptional answer, precise, structured, with concrete examples and rare technical mastery
+- 7-8 : Good answer, clear, but lacking depth or specific examples
+- 5-6 : Superficial or vague answer, notable technical inaccuracies
+- 3-4 : Weak answer, errors or partial understanding of the topic
+- 0-2 : Incorrect, off-topic, or empty answer
+
+Warning: Do NOT be lenient. A generic or vague answer scores no more than 5/10. Penalize lack of fluency, excessive hesitation, and off-topic content.
 Return ONLY a JSON object with no extra text:
 {
   "score": <number from 0 to 10>,
@@ -49,12 +76,19 @@ Return ONLY a JSON object with no extra text:
 # ── Prompts — Évaluation AVEC question de suivi ───────────────────────────────
 
 _SYSTEM_PROMPT_FOLLOWUP = {
-    "ar": """أنت خبير تقييم مقابلات توظيف. مهمتك تقييم إجابة مرشح وتحديد ما إذا كانت تحتاج إلى توضيح.
+    "ar": """أنت محكّم صارم لمقابلات التوظيف. قيّم الإجابة بصرامة وحدد إن كانت تحتاج توضيحاً.
+
+معايير التقييم الصارمة:
+- 9-10 : إجابة استثنائية، دقيقة، مع أمثلة ملموسة وعمق تقني نادر
+- 7-8  : إجابة جيدة وواضحة، لكن تفتقر لبعض التفاصيل أو الأمثلة
+- 5-6  : إجابة سطحية أو مبهمة، تفتقر للدقة التقنية
+- 3-4  : إجابة ضعيفة، أخطاء واضحة أو فهم جزئي
+- 0-2  : إجابة خاطئة أو فارغة
 
 قواعد الاستفسار:
-- اطرح سؤال متابعة إذا كانت الإجابة غامضة أو غير كافية أو تحتاج مثالاً ملموساً (score < 7)
-- لا تطرح سؤال متابعة إذا كانت الإجابة واضحة وكاملة (score >= 7) أو إذا كانت الإجابة فارغة
-- السؤال يجب أن يكون قصيراً (جملة واحدة) ومباشراً ومرتبطاً بالإجابة المقدمة
+- اطرح سؤال متابعة إذا كانت الإجابة غامضة أو غير كافية (score < 8)
+- لا تطرح سؤال متابعة إذا كانت الإجابة ممتازة (score >= 8) أو إذا كانت فارغة
+- السؤال يجب أن يكون قصيراً (جملة واحدة) ومباشراً ومرتبطاً بالإجابة
 
 أعد JSON فقط بهذا الشكل بدون أي نص إضافي:
 {
@@ -67,12 +101,19 @@ _SYSTEM_PROMPT_FOLLOWUP = {
   "followup_question": "<سؤال متابعة واحد أو سلسلة فارغة إذا لم يلزم>"
 }""",
 
-    "fr": """Tu es un expert en évaluation d'entretiens de recrutement. Évalue la réponse ET détermine si une question de suivi est nécessaire.
+    "fr": """Tu es un évaluateur sévère d'entretiens de recrutement. Tu notes avec exigence ET tu détermines si une question de suivi est nécessaire.
+
+Barème strict :
+- 9-10 : Réponse exceptionnelle, précise, avec exemples concrets et maîtrise technique rare
+- 7-8  : Bonne réponse mais manque de profondeur ou d'exemples spécifiques
+- 5-6  : Réponse superficielle ou vague, imprécisions notables
+- 3-4  : Réponse faible, erreurs ou compréhension partielle
+- 0-2  : Réponse incorrecte, hors sujet ou absente
 
 Règles pour le suivi :
-- Pose une question de suivi si la réponse est vague, incomplète ou manque d'exemples concrets (score < 7)
-- Ne pose PAS de question de suivi si la réponse est claire et complète (score >= 7) ou si la réponse est vide
-- La question doit être courte (une phrase), directe, et liée spécifiquement à la réponse fournie
+- Pose une question de suivi si la réponse est vague, incomplète ou manque d'exemples (score < 8)
+- Ne pose PAS de question de suivi si la réponse est excellente (score >= 8) ou si elle est vide
+- La question doit être courte (une phrase), directe, et liée spécifiquement à la réponse
 
 Retourne UNIQUEMENT ce JSON sans texte supplémentaire :
 {
@@ -85,12 +126,19 @@ Retourne UNIQUEMENT ce JSON sans texte supplémentaire :
   "followup_question": "<une question de suivi ou chaîne vide si non nécessaire>"
 }""",
 
-    "en": """You are a recruitment interview evaluation expert. Evaluate the answer AND determine if a follow-up question is needed.
+    "en": """You are a strict recruitment interview evaluator. You grade with rigor AND determine if a follow-up is needed.
+
+Strict grading scale:
+- 9-10: Exceptional, precise, with concrete examples and rare technical mastery
+- 7-8 : Good answer but lacking depth or specific examples
+- 5-6 : Superficial or vague, notable inaccuracies
+- 3-4 : Weak, errors or partial understanding
+- 0-2 : Incorrect, off-topic, or empty
 
 Follow-up rules:
-- Ask a follow-up if the answer is vague, incomplete, or lacks concrete examples (score < 7)
-- Do NOT ask a follow-up if the answer is clear and complete (score >= 7) or if the answer is empty
-- The question must be short (one sentence), direct, and specifically tied to the given answer
+- Ask a follow-up if the answer is vague, incomplete, or lacks examples (score < 8)
+- Do NOT ask a follow-up if the answer is excellent (score >= 8) or empty
+- The question must be short (one sentence), direct, and tied to the given answer
 
 Return ONLY this JSON with no extra text:
 {
@@ -107,8 +155,9 @@ Return ONLY this JSON with no extra text:
 # ── Prompts — Évaluation FINALE (avec réponse de suivi) ──────────────────────
 
 _SYSTEM_PROMPT_FINAL = {
-    "ar": """أنت خبير تقييم مقابلات توظيف. لديك السؤال الأصلي، الإجابة الأولى، وإجابة التوضيح.
-قيّم الإجابة الكاملة مع الأخذ بعين الاعتبار كلتا الإجابتين.
+    "ar": """أنت محكّم صارم لمقابلات التوظيف. لديك السؤال الأصلي، الإجابة الأولى، وإجابة التوضيح.
+قيّم الإجابة الكاملة بصرامة. إذا كانت إجابة التوضيح أفضل، يمكن رفع الدرجة قليلاً، لكن لا تكن متساهلاً.
+المعيار: الدقة التقنية، الأمثلة الملموسة، والطلاقة.
 أعد JSON فقط:
 {
   "score": <رقم من 0 إلى 10>,
@@ -118,8 +167,9 @@ _SYSTEM_PROMPT_FINAL = {
   "feedback": "<تقييم شامل يأخذ بعين الاعتبار كلتا الإجابتين>"
 }""",
 
-    "fr": """Tu es un expert en évaluation d'entretiens. Tu as la question originale, la première réponse et la réponse de clarification.
-Évalue l'ensemble en prenant en compte les deux réponses.
+    "fr": """Tu es un évaluateur sévère d'entretiens de recrutement. Tu as la question originale, la première réponse et la réponse de clarification.
+Évalue l'ensemble avec rigueur. Si la clarification améliore la réponse, tu peux légèrement rehausser le score, mais reste exigeant.
+Critères : précision technique, exemples concrets, fluidité et structure.
 Retourne UNIQUEMENT ce JSON :
 {
   "score": <nombre de 0 à 10>,
@@ -129,8 +179,9 @@ Retourne UNIQUEMENT ce JSON :
   "feedback": "<évaluation globale tenant compte des deux réponses>"
 }""",
 
-    "en": """You are a recruitment interview expert. You have the original question, first answer, and clarification answer.
-Evaluate the complete response taking both answers into account.
+    "en": """You are a strict recruitment interview evaluator. You have the original question, first answer, and clarification answer.
+Evaluate the complete response with rigor. If the clarification improves the answer, you may slightly raise the score, but remain demanding.
+Criteria: technical accuracy, concrete examples, fluency and structure.
 Return ONLY this JSON:
 {
   "score": <number from 0 to 10>,
@@ -432,8 +483,8 @@ class OllamaLLMService:
             "messages": messages,
             "stream":  False,
             "options": {
-                "temperature": 0.3,
-                "top_p":       0.9,
+                "temperature": 0.1,
+                "top_p":       0.85,
                 "num_predict": 512,
             },
         }
@@ -491,8 +542,8 @@ class OllamaLLMService:
                     base = self._normalize(obj, lang)
                     base["needs_followup"]   = bool(obj.get("needs_followup", False))
                     base["followup_question"] = str(obj.get("followup_question", "")).strip()
-                    # Sécurité : si score >= 7, forcer needs_followup = False
-                    if base["score"] >= 7:
+                    # Sécurité : si score >= 8, forcer needs_followup = False
+                    if base["score"] >= 8:
                         base["needs_followup"]    = False
                         base["followup_question"] = ""
                     return base

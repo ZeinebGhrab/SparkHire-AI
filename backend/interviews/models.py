@@ -70,7 +70,7 @@ class Answer(BaseModel):
     audio_file_path: Optional[str] = None      # Chemin WAV sur disque
     duration_seconds: float = 0.0
     timestamp: datetime = Field(default_factory=datetime.utcnow)
-    evaluation: Optional[AnswerEvaluationData] = None  # ← Score LLM (rempli en async)
+    evaluation: Optional[AnswerEvaluationData] = None  # Score LLM (rempli en async)
 
 # ============ Interview Session Models ============
 

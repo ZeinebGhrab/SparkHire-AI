@@ -20,7 +20,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         start_time = time.time()
         
         # Log de la requête
-        logger.info(f"➡️  {request.method} {request.url.path}")
+        logger.info(f"{request.method} {request.url.path}")
         
         # Traitement
         response = await call_next(request)
@@ -30,7 +30,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         
         # Log de la réponse
         logger.info(
-            f"⬅️  {request.method} {request.url.path} "
+            f"{request.method} {request.url.path} "
             f"[{response.status_code}] - {process_time:.3f}s"
         )
         

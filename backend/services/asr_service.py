@@ -4,7 +4,7 @@ Whisper recommandé : meilleure précision multilingue AR/FR/EN.
 """
 
 import os
-os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"   # Fix conflit OpenMP Windows (PyTorch + ctranslate2)
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"   
 
 import io
 import wave
@@ -44,7 +44,7 @@ class WhisperASR(ASREngine):
             from faster_whisper import WhisperModel
 
             logger.info(
-                f"⏳ Chargement Whisper '{model_size}' | device={device} | compute={compute_type}"
+                f"Chargement Whisper '{model_size}' | device={device} | compute={compute_type}"
             )
             self.model = WhisperModel(
                 model_size,
@@ -53,7 +53,7 @@ class WhisperASR(ASREngine):
                 download_root=str(Path(__file__).parent.parent.parent / "models" / "whisper"),
             )
             self.model_size = model_size
-            logger.info(f"✅ Whisper '{model_size}' prêt")
+            logger.info(f"Whisper '{model_size}' prêt")
 
         except ImportError:
             raise ImportError("faster-whisper non installé : pip install faster-whisper")
@@ -104,7 +104,7 @@ class WhisperASR(ASREngine):
             return transcript
 
         except Exception as e:
-            logger.error(f"❌ Whisper transcription : {e}")
+            logger.error(f"Whisper transcription : {e}")
             return ""
         finally:
             try:
@@ -125,10 +125,10 @@ class VoskASR(ASREngine):
             if not model_path.exists():
                 raise FileNotFoundError(f"Modèle Vosk introuvable : {model_path}")
 
-            logger.info(f"⏳ Chargement Vosk : {model_path}")
+            logger.info(f"Chargement Vosk : {model_path}")
             self.model = Model(str(model_path))
             self.KaldiRecognizer = KaldiRecognizer
-            logger.info("✅ Vosk prêt")
+            logger.info("Vosk prêt")
 
         except ImportError:
             raise ImportError("Vosk non installé : pip install vosk")
@@ -148,11 +148,11 @@ class VoskASR(ASREngine):
 
             result = json.loads(recognizer.FinalResult())
             transcript = result.get("text", "")
-            logger.info(f"📝 Vosk : '{transcript}'")
+            logger.info(f"Vosk : '{transcript}'")
             return transcript
 
         except Exception as e:
-            logger.error(f"❌ Vosk : {e}")
+            logger.error(f"Vosk : {e}")
             return ""
 
 

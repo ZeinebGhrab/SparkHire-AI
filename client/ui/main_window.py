@@ -1,16 +1,15 @@
 """
 Main Window — Professional Light UI
-Design inspiré du web (shadcn/ui) · QSS complet · Palette slate/cyan/amber
+Design · QSS complet · Palette slate/cyan/amber
 """
 
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QMessageBox, QLabel, QLineEdit, QPushButton, QFrame,
-    QGraphicsDropShadowEffect, QStackedWidget, QSizePolicy,
-    QSpacerItem,
+    QGraphicsDropShadowEffect, QStackedWidget,
 )
-from PySide6.QtCore import Qt, QSize, QTimer
-from PySide6.QtGui import QFont, QColor, QPainter, QLinearGradient, QPen
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QFont, QColor
 import sys, os, base64, time, wave, tempfile, logging
 from pathlib import Path
 import pygame
@@ -615,7 +614,7 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(self.t("vocal_mode_label"))
 
     # ═══════════════════════════════════════════════════════════════════════
-    #  CONNECTION LOGIC  (identique — seule la UI change)
+    #  CONNECTION LOGIC  
     # ═══════════════════════════════════════════════════════════════════════
 
     def _ensure_audio_format(self, sr, ch, bits):

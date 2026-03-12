@@ -44,27 +44,27 @@ async def lifespan(app: FastAPI):
         ih._asr_service = get_asr_service()
         engine = settings.ASR_ENGINE
         model  = settings.WHISPER_MODEL_SIZE if engine == "faster-whisper" else settings.VOSK_MODEL_PATH
-        logger.info(f"✅ ASR chargé | moteur={engine} | modèle={model}")
+        logger.info(f"ASR chargé | moteur={engine} | modèle={model}")
     except Exception as e:
-        logger.error(f"❌ ASR : {e}")
+        logger.error(f"ASR : {e}")
         ih._asr_service = None
 
     # ── TTS ───────────────────────────────────────────────────────
     try:
         from backend.services import get_tts_service
         ih._tts_service = get_tts_service()
-        logger.info("✅ TTS actif")
+        logger.info("TTS actif")
     except Exception as e:
-        logger.error(f"❌ TTS : {e}")
+        logger.error(f"TTS : {e}")
         ih._tts_service = None
 
     # ── Avatar ────────────────────────────────────────────────────
     try:
         from backend.services import get_avatar_service
         ih._avatar_service = get_avatar_service()
-        logger.info("✅ Avatar chargé")
+        logger.info("Avatar chargé")
     except Exception as e:
-        logger.error(f"❌ Avatar : {e}")
+        logger.error(f"Avatar : {e}")
         ih._avatar_service = None
 
     # ── LLM / Ollama ──────────────────────────────────────────────
@@ -74,21 +74,21 @@ async def lifespan(app: FastAPI):
         available = await llm.is_available()
         if available:
             logger.info(
-                f"✅ LLM Ollama disponible | modèle={settings.OLLAMA_MODEL} "
+                f"LLM Ollama disponible | modèle={settings.OLLAMA_MODEL} "
                 f"| url={settings.OLLAMA_URL}"
             )
         else:
             logger.warning(
-                f"⚠️  Ollama non disponible ({settings.OLLAMA_URL}). "
+                f"Ollama non disponible ({settings.OLLAMA_URL}). "
                 "L'évaluation IA sera désactivée. "
                 "Démarrez Ollama: `ollama serve` puis `ollama pull llama3`"
             )
     except Exception as e:
-        logger.error(f"❌ LLM : {e}")
+        logger.error(f"LLM : {e}")
 
     logger.info("=" * 60)
     logger.info(
-        f"✅ Serveur prêt | AR/FR/EN | Whisper={settings.WHISPER_MODEL_SIZE} "
+        f"Serveur prêt | AR/FR/EN | Whisper={settings.WHISPER_MODEL_SIZE} "
         f"| LLM={settings.OLLAMA_MODEL}"
     )
     logger.info("=" * 60)
@@ -133,7 +133,7 @@ app.include_router(media_router)
 app.include_router(analytics_router)
 app.include_router(notifications_router)
 app.include_router(export_router)
-app.include_router(evaluation_router)   # ← NOUVEAU
+app.include_router(evaluation_router)   
 
 
 @app.websocket("/ws/interview/{session_id}")

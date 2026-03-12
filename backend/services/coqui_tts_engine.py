@@ -93,7 +93,7 @@ except Exception as _tv_err:
             return name
 
     sys.modules["torchvision.transforms"].InterpolationMode = _DynamicInterpolationMode()
-    logger.info("✅ Stub torchvision injecté (avec __spec__ valide)")
+    logger.info("Stub torchvision injecté (avec __spec__ valide)")
 
 
 # ==================================================================

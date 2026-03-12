@@ -13,7 +13,7 @@ MODEL_SIZE = sys.argv[1] if len(sys.argv) > 1 else "medium"
 
 VALID_SIZES = ["tiny", "base", "small", "medium", "large-v2", "large-v3"]
 if MODEL_SIZE not in VALID_SIZES:
-    print(f"❌ Taille invalide : {MODEL_SIZE}")
+    print(f"Taille invalide : {MODEL_SIZE}")
     print(f"   Valeurs valides : {', '.join(VALID_SIZES)}")
     sys.exit(1)
 
@@ -44,7 +44,7 @@ print()
 try:
     from faster_whisper import WhisperModel
 
-    print(f"⏳ Téléchargement en cours...")
+    print(f"Téléchargement en cours...")
     print(f"   (stocké dans : {MODELS_DIR / MODEL_SIZE})")
     print()
 
@@ -57,12 +57,12 @@ try:
     )
 
     print()
-    print(f"✅ Whisper '{MODEL_SIZE}' téléchargé avec succès !")
+    print(f"Whisper '{MODEL_SIZE}' téléchargé avec succès !")
     print(f"   Dossier : {MODELS_DIR}")
     print()
 
     # ── Test rapide ───────────────────────────────────────────────
-    print("🧪 Test de transcription...")
+    print("Test de transcription...")
     import numpy as np
     dummy_audio = np.zeros(16000, dtype=np.float32)  # 1 seconde de silence
 
@@ -80,7 +80,7 @@ try:
     _ = list(segments)  # consommer le générateur
     os.unlink(tmp_path)
 
-    print(f"✅ Test OK — modèle fonctionnel")
+    print(f"Test OK — modèle fonctionnel")
     print()
     print("─" * 55)
     print("  Mettre à jour .env :")
@@ -89,10 +89,10 @@ try:
     print("─" * 55)
 
 except ImportError:
-    print("❌ faster-whisper n'est pas installé.")
+    print("faster-whisper n'est pas installé.")
     print("   Lancer : pip install faster-whisper")
     sys.exit(1)
 
 except Exception as e:
-    print(f"❌ Erreur : {e}")
+    print(f"Erreur : {e}")
     sys.exit(1)

@@ -3,8 +3,6 @@ Service TTS — Architecture simple et rapide :
 
   1. Edge-TTS  (online Microsoft, instantané, voix naturelles)  ← PRIMAIRE
   2. gTTS      (online Google, ~1-2 s)                          ← FALLBACK
-
-Coqui et Piper sont complètement retirés.
 """
 
 from __future__ import annotations
@@ -37,7 +35,7 @@ def _configure_ffmpeg_local() -> bool:
         ffprobe = ffmpeg_dir / "ffprobe.exe"
         if ffprobe.exists():
             AudioSegment.ffprobe = str(ffprobe)
-        logger.info(f"✅ ffmpeg configuré: {ffmpeg_dir}")
+        logger.info(f"ffmpeg configuré: {ffmpeg_dir}")
         return True
     except ImportError:
         return False
@@ -62,7 +60,7 @@ class EdgeEngine(TTSEngine):
         from backend.services.edge_tts_engine import EdgeTTSEngine
         self._engine = EdgeTTSEngine()
         self.voices  = self._engine.voices
-        logger.info("✅ Edge-TTS prêt (moteur primaire)")
+        logger.info("Edge-TTS prêt (moteur primaire)")
 
     def synthesize(self, text: str, language: str = "ar") -> bytes:
         return self._engine.synthesize(text, language)
@@ -75,7 +73,7 @@ class GoogleEngine(TTSEngine):
         from gtts import gTTS
         self._gTTS = gTTS
         self.voices = {"ar": "gtts-ar", "en": "gtts-en", "fr": "gtts-fr"}
-        logger.info("✅ gTTS prêt (fallback)")
+        logger.info("gTTS prêt (fallback)")
 
     def synthesize(self, text: str, language: str = "ar") -> bytes:
         import tempfile
@@ -135,14 +133,14 @@ class TTSService:
         engine_name = type(engine).__name__.lower().replace("engine", "")
         voice_name  = engine.voices.get(language, "unknown")
 
-        logger.info(f"🎙️ TTS | moteur={engine_name} | langue={language} | voix={voice_name}")
+        logger.info(f"TTS | moteur={engine_name} | langue={language} | voix={voice_name}")
 
         # ── Cache ─────────────────────────────────────────────────────────────
         cache_key  = self._cache_key(text, language, f"{engine_name}_{voice_name}")
         cache_path = (self.cache_dir / f"{cache_key}.wav") if self.cache_dir else None
 
         if use_cache and cache_path and cache_path.exists():
-            logger.info(f"✅ Cache hit: {cache_path.name}")
+            logger.info(f"Cache hit: {cache_path.name}")
             return cache_path.read_bytes()
 
         # ── Synthèse primaire ─────────────────────────────────────────────────
@@ -150,11 +148,11 @@ class TTSService:
         try:
             audio = engine.synthesize(text, language)
         except Exception as e:
-            logger.warning(f"⚠️ Edge-TTS échoué: {e}")
+            logger.warning(f"Edge-TTS échoué: {e}")
 
         # ── Fallback gTTS ─────────────────────────────────────────────────────
         if not audio and self._fallback:
-            logger.info("🔄 Fallback → gTTS")
+            logger.info("Fallback → gTTS")
             try:
                 audio      = self._fallback.synthesize(text, language)
                 fb_name    = type(self._fallback).__name__.lower().replace("engine", "")
@@ -162,14 +160,14 @@ class TTSService:
                 cache_key  = self._cache_key(text, language, f"{fb_name}_{voice_name}")
                 cache_path = (self.cache_dir / f"{cache_key}.wav") if self.cache_dir else None
             except Exception as e:
-                logger.error(f"❌ gTTS échoué: {e}")
+                logger.error(f"gTTS échoué: {e}")
 
         # ── Mise en cache ─────────────────────────────────────────────────────
         if use_cache and cache_path and audio:
             try:
                 cache_path.write_bytes(audio)
             except Exception as e:
-                logger.warning(f"⚠️ Cache save: {e}")
+                logger.warning(f"Cache save: {e}")
 
         return audio
 
@@ -182,7 +180,7 @@ class TTSService:
             output_path.write_bytes(audio)
             return True
         except Exception as e:
-            logger.error(f"❌ Sauvegarde TTS: {e}")
+            logger.error(f"Sauvegarde TTS: {e}")
             return False
 
     @staticmethod
@@ -200,7 +198,7 @@ def get_tts_service() -> TTSService:
     try:
         primary = EdgeEngine()
     except Exception as e:
-        logger.warning(f"⚠️ Edge-TTS indisponible: {e}")
+        logger.warning(f"Edge-TTS indisponible: {e}")
 
     # ── gTTS (fallback ou primaire si Edge absent) ────────────────────────────
     fallback: Optional[TTSEngine] = None
@@ -208,11 +206,11 @@ def get_tts_service() -> TTSService:
         gtts = GoogleEngine()
         if primary is None:
             primary = gtts
-            logger.warning("⚠️ Edge-TTS absent — gTTS utilisé comme moteur primaire")
+            logger.warning("Edge-TTS absent — gTTS utilisé comme moteur primaire")
         else:
             fallback = gtts
     except Exception as e:
-        logger.warning(f"⚠️ gTTS indisponible: {e}")
+        logger.warning(f"gTTS indisponible: {e}")
 
     if primary is None:
         raise RuntimeError("Aucun moteur TTS disponible ! (Edge-TTS et gTTS ont échoué)")

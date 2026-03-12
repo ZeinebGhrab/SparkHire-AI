@@ -119,19 +119,19 @@ class InterviewSessionCRUD:
         try:
             session = InterviewSessionCRUD.get_by_session_id(session_id)
         except HTTPException:
-            return None, False, "❌ ERREUR: Session ID invalide ou introuvable."
+            return None, False, "ERREUR: Session ID invalide ou introuvable."
 
         now = datetime.utcnow()
         if now > session.expires_at:
             delay = int((now - session.expires_at).total_seconds() / 60)
             return session, False, (
-                f"⏰ ERREUR: Session expirée depuis {delay} minutes.\n"
+                f"ERREUR: Session expirée depuis {delay} minutes.\n"
                 f"Les sessions expirent après {SESSION_EXPIRATION_MINUTES} minutes."
             )
         if session.status == "completed":
-            return session, False, "✅ ERREUR: Cet entretien est déjà terminé."
+            return session, False, "ERREUR: Cet entretien est déjà terminé."
         if session.status == "cancelled":
-            return session, False, "🚫 ERREUR: Cette session a été annulée."
+            return session, False, "ERREUR: Cette session a été annulée."
 
         return session, True, ""
 
