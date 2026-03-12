@@ -85,42 +85,42 @@ class CandidateBase(BaseModel):
     last_name: str
     contact: Contact
 
-    # ✅ Compétences techniques — obligatoire, min 1
+    #  Compétences techniques — obligatoire, min 1
     technical_skills: List[TechnicalSkill] = Field(
         ...,
         min_length=1,
         description="Technical skills — at least one required"
     )
 
-    # ✅ Expérience professionnelle — obligatoire, min 1
+    #  Expérience professionnelle — obligatoire, min 1
     experiences: List[Experience] = Field(
         ...,
         min_length=1,
         description="Work experience — at least one required"
     )
 
-    # ✅ Formation — obligatoire, min 1
+    #  Formation — obligatoire, min 1
     education: List[Education] = Field(
         ...,
         min_length=1,
         description="Education background — at least one required"
     )
 
-    # ✅ Langues — obligatoire, min 1
+    #  Langues — obligatoire, min 1
     languages: List[Language] = Field(
         ...,
         min_length=1,
         description="Spoken languages — at least one required"
     )
 
-    # ✅ Soft skills — obligatoire, min 1
+    #  Soft skills — obligatoire, min 1
     soft_skills: List[SoftSkill] = Field(
         ...,
         min_length=1,
         description="Soft skills — at least one required"
     )
 
-    # ✅ Certifications — obligatoire, min 1
+    #  Certifications — obligatoire, min 1
     certifications: List[Certification] = Field(
         ...,
         min_length=1,

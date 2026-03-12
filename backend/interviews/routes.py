@@ -7,6 +7,7 @@ from backend.interviews.models import (
 from backend.interviews.crud import JobPositionCRUD, InterviewSessionCRUD
 from backend.auth.security import get_current_recruiter
 from typing import List, Optional
+from datetime import datetime
 
 router = APIRouter(prefix="/interviews", tags=["Interviews"])
 
@@ -22,12 +23,35 @@ def create_job_position(
 
 @router.get("/positions", response_model=List[JobPosition])
 def list_job_positions(
-    skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=500),
+    skip:        int            = Query(0,    ge=0),
+    limit:       int            = Query(100,  ge=1, le=500),
+    department:  Optional[str]  = Query(None, description="Filter by department"),
+    location:    Optional[str]  = Query(None, description="Filter by city / location"),
+    is_active:   Optional[bool] = Query(None, description="True=active, False=archived, None=all"),
+    period_days: Optional[int]  = Query(None, ge=1, description="Positions created in the last N days"),
+    sort_by:     str            = Query("created_at", description="Sort field: created_at | title | department"),
+    order:       str            = Query("desc", description="asc | desc"),
     _: str = Depends(get_current_recruiter),
 ):
-    """Lister tous les postes avec leurs questions"""
-    return JobPositionCRUD.get_all(skip=skip, limit=limit)
+    """List job positions with filters: department, location, period, sort order"""
+    return JobPositionCRUD.get_all(
+        skip=skip, limit=limit,
+        department=department, location=location,
+        is_active=is_active, period_days=period_days,
+        sort_by=sort_by, order=order,
+    )
+
+
+@router.get("/positions/meta/departments", response_model=List[str])
+def list_departments(_: str = Depends(get_current_recruiter)):
+    """Distinct list of all departments (for filter dropdown)"""
+    return JobPositionCRUD.get_distinct_departments()
+
+
+@router.get("/positions/meta/locations", response_model=List[str])
+def list_locations(_: str = Depends(get_current_recruiter)):
+    """Distinct list of all locations (for filter dropdown)"""
+    return JobPositionCRUD.get_distinct_locations()
 
 @router.get("/positions/{position_id}", response_model=JobPosition)
 def get_job_position(
@@ -154,3 +178,19 @@ def delete_interview_session(
     if not success:
         raise HTTPException(status_code=404, detail="Session non trouvée")
     return {"message": "Session supprimée"}
+
+@router.patch("/sessions/{session_id}/schedule")
+def schedule_interview(
+    session_id: str,
+    scheduled_at: datetime = Query(..., description="Date et heure planifiée (ISO 8601, UTC)"),
+    _: str = Depends(get_current_recruiter),
+):
+    """
+    Planifier ou replanifier un entretien.
+
+    - Définit scheduled_at sur la session
+    - Recalcule late_access_deadline = scheduled_at + 30 min
+    - Recalcule expires_at = late_access_deadline
+    - La session redevient 'pending' si elle était cancelled
+    """
+    return InterviewSessionCRUD.reschedule(session_id, scheduled_at)

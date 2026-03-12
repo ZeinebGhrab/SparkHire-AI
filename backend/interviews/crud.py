@@ -11,7 +11,8 @@ from typing import List, Optional
 import secrets
 
 # ============ CONSTANTES ============
-SESSION_EXPIRATION_MINUTES = 30
+SESSION_EXPIRATION_MINUTES = 30   # Expiration globale si pas de scheduled_at
+LATE_ACCESS_MINUTES = 30          # Retard maximum autorisé après scheduled_at
 
 
 class JobPositionCRUD:
@@ -108,19 +109,30 @@ class InterviewSessionCRUD:
         if not position:
             raise HTTPException(status_code=404, detail="Poste non trouvé")
 
-        session_id = f"session_{secrets.token_urlsafe(16)}"
-        now = datetime.utcnow()
-        expires_at = now + timedelta(minutes=SESSION_EXPIRATION_MINUTES)
+        session_id   = f"session_{secrets.token_urlsafe(16)}"
+        now          = datetime.utcnow()
+        scheduled_at = session.scheduled_at if hasattr(session, "scheduled_at") else None
+
+        if scheduled_at:
+            # La session expire 30 min après l'heure planifiée (retard max)
+            late_access_deadline = scheduled_at + timedelta(minutes=LATE_ACCESS_MINUTES)
+            expires_at           = late_access_deadline
+        else:
+            # Pas de planification : expire 30 min après la création
+            late_access_deadline = None
+            expires_at           = now + timedelta(minutes=SESSION_EXPIRATION_MINUTES)
 
         session_dict = session.model_dump()
         session_dict.update({
-            "session_id": session_id,
-            "status": "pending",
+            "session_id":            session_id,
+            "status":                "pending",
             "current_question_index": 0,
-            "answers": [],
-            "created_at": now,
-            "expires_at": expires_at,
-            "updated_at": now,
+            "answers":               [],
+            "created_at":            now,
+            "expires_at":            expires_at,
+            "updated_at":            now,
+            "scheduled_at":          scheduled_at,
+            "late_access_deadline":  late_access_deadline,
         })
 
         result = db.interview_sessions.insert_one(session_dict)
@@ -157,24 +169,92 @@ class InterviewSessionCRUD:
 
     @staticmethod
     def validate_session_access(session_id: str) -> tuple:
+        """
+        Valide l'accès à une session avant de démarrer l'entretien.
+
+        Règles de planification (si scheduled_at est défini) :
+          - Avant scheduled_at          → trop tôt, accès refusé
+          - Entre scheduled_at et +30mn → fenêtre autorisée ✅
+          - Après scheduled_at + 30mn   → retard dépassé, accès refusé
+
+        Retourne : (session, is_valid: bool, error_message: str)
+        """
         try:
             session = InterviewSessionCRUD.get_by_session_id(session_id)
         except HTTPException:
-            return None, False, "❌ ERREUR: Session ID invalide ou introuvable."
+            return None, False, "❌ Session ID invalide ou introuvable."
 
-        now = datetime.utcnow()
-        if now > session.expires_at:
+        now          = datetime.utcnow()
+        scheduled_at = getattr(session, "scheduled_at", None)
+        deadline     = getattr(session, "late_access_deadline", None)
+
+        # ── Statuts terminaux ─────────────────────────────────────────────────
+        if session.status == "completed":
+            return session, False, "✅ Cet entretien est déjà terminé."
+        if session.status == "cancelled":
+            return session, False, "🚫 Cette session a été annulée."
+
+        # ── Fenêtre de planification ──────────────────────────────────────────
+        if scheduled_at:
+            if now < scheduled_at:
+                delta_min = int((scheduled_at - now).total_seconds() / 60)
+                hrs, mins = divmod(delta_min, 60)
+                human = f"{hrs}h{mins:02d}" if hrs else f"{mins} min"
+                return session, False, (
+                    f"⏰ Entretien non encore disponible. "
+                    f"Il commence dans {human} "
+                    f"(prévu le {scheduled_at.strftime('%d/%m/%Y à %H:%M')} UTC)."
+                )
+
+            if deadline and now > deadline:
+                delay_min = int((now - scheduled_at).total_seconds() / 60)
+                return session, False, (
+                    f"⌛ Retard trop important ({delay_min} min). "
+                    f"Le délai maximum autorisé est de {LATE_ACCESS_MINUTES} minutes "
+                    f"après l'heure prévue ({scheduled_at.strftime('%d/%m/%Y à %H:%M')} UTC). "
+                    f"Veuillez contacter le recruteur pour reprogrammer."
+                )
+
+        # ── Expiration globale (sessions sans planification) ──────────────────
+        elif now > session.expires_at:
             delay = int((now - session.expires_at).total_seconds() / 60)
             return session, False, (
-                f"⏰ ERREUR: Session expirée depuis {delay} minutes.\n"
-                f"Les sessions expirent après {SESSION_EXPIRATION_MINUTES} minutes."
+                f"⏰ Session expirée depuis {delay} minutes. "
+                f"Les sessions sans planification expirent après {SESSION_EXPIRATION_MINUTES} minutes."
             )
-        if session.status == "completed":
-            return session, False, "✅ ERREUR: Cet entretien est déjà terminé."
-        if session.status == "cancelled":
-            return session, False, "🚫 ERREUR: Cette session a été annulée."
 
         return session, True, ""
+
+
+    @staticmethod
+    def reschedule(session_id: str, scheduled_at: datetime) -> InterviewSession:
+        """
+        Replanifie un entretien :
+        - scheduled_at          = nouvelle date/heure
+        - late_access_deadline  = scheduled_at + 30 min
+        - expires_at            = late_access_deadline
+        - status repassé à pending si cancelled
+        """
+        session = InterviewSessionCRUD.get_by_session_id(session_id)
+        if session.status == "completed":
+            raise HTTPException(status_code=400, detail="Impossible de replanifier un entretien terminé.")
+
+        late_access_deadline = scheduled_at + timedelta(minutes=LATE_ACCESS_MINUTES)
+
+        fields: dict = {
+            "scheduled_at":         scheduled_at,
+            "late_access_deadline": late_access_deadline,
+            "expires_at":           late_access_deadline,
+            "updated_at":           datetime.utcnow(),
+        }
+        if session.status == "cancelled":
+            fields["status"] = "pending"
+
+        db.interview_sessions.update_one(
+            {"session_id": session_id},
+            {"$set": fields},
+        )
+        return InterviewSessionCRUD.get_by_session_id(session_id)
 
     @staticmethod
     def update_status(session_id: str, status: str) -> InterviewSession:

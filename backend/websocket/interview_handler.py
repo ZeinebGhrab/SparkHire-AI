@@ -678,7 +678,7 @@ class InterviewHandler:
         )
 
         logger.info(
-            f"✅ BD mise à jour Q{question.order} | "
+            f"BD mise à jour Q{question.order} | "
             f"score_initial={initial_score}/10 | score_final={final_score}/10 | "
             f"initial_transcript={len(initial_transcript)} chars | followup_transcript={len(followup_transcript)} chars"
         )
