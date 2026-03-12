@@ -9,7 +9,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from backend.evaluation.models import AnswerEvaluation, GlobalEvaluation
+from backend.evaluation.models import (
+    AnswerEvaluation, GlobalEvaluation,
+    compute_decision, DECISION_LABELS, DECISION_COLORS
+)
 from backend.services.llm_service import OllamaLLMService
 from backend.database import db
 from bson import ObjectId
@@ -147,6 +150,9 @@ class EvaluationService:
             language=lang,
         )
 
+        final_score = global_raw.get("global_score", avg_score)
+        decision    = compute_decision(final_score)
+
         evaluation = GlobalEvaluation(
             session_id=session_id,
             candidate_name=candidate_name,
@@ -155,9 +161,13 @@ class EvaluationService:
             total_questions=len(position.get("questions", [])),
             answered_questions=len(answers),
             average_score=round(avg_score, 2),
-            global_score=global_raw.get("global_score", avg_score),
+            global_score=final_score,
             global_verdict=global_raw.get("global_verdict", ""),
             recommendation=global_raw.get("recommendation", ""),
+            decision=decision,
+            decision_label=DECISION_LABELS.get(lang, DECISION_LABELS["fr"]).get(decision, decision),
+            decision_color=DECISION_COLORS.get(decision, "#F59E0B"),
+            decision_reason=global_raw.get("decision_reason", ""),
             key_strengths=global_raw.get("key_strengths", []),
             key_improvements=global_raw.get("key_improvements", []),
             summary=global_raw.get("summary", ""),
@@ -168,7 +178,7 @@ class EvaluationService:
         # ── Persistance ───────────────────────────────────────────────────
         self._save_evaluation(session_id, evaluation)
         logger.info(
-            f"Évaluation terminée {session_id} | "
+            f"✅ Évaluation terminée {session_id} | "
             f"score={evaluation.global_score}/10 | "
             f"verdict={evaluation.global_verdict}"
         )
@@ -214,9 +224,13 @@ class EvaluationService:
             db.interview_sessions.update_one(
                 {"session_id": session_id},
                 {"$set": {
-                    "evaluation_score": evaluation.global_score,
-                    "evaluation_verdict": evaluation.global_verdict,
+                    "evaluation_score":          evaluation.global_score,
+                    "evaluation_verdict":        evaluation.global_verdict,
                     "evaluation_recommendation": evaluation.recommendation,
+                    "evaluation_decision":       evaluation.decision,
+                    "evaluation_decision_label": evaluation.decision_label,
+                    "evaluation_decision_color": evaluation.decision_color,
+                    "evaluation_decision_reason": evaluation.decision_reason,
                 }},
             )
         except Exception as e:

@@ -96,6 +96,7 @@ class InterviewSessionBase(BaseModel):
     candidate_id: str
     job_position_id: str
     language: str = "ar"
+    scheduled_at: Optional[datetime] = None   # Date/heure planifiée de l'entretien
 
 class InterviewSessionCreate(InterviewSessionBase):
     pass
@@ -112,9 +113,15 @@ class InterviewSession(InterviewSessionBase):
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
     # Scores agrégés — mis à jour par EvaluationService après l'entretien complet
+    scheduled_at: Optional[datetime] = None         # Date/heure planifiée
+    late_access_deadline: Optional[datetime] = None  # scheduled_at + 30 min (calculé)
     evaluation_score: Optional[float] = None
     evaluation_verdict: Optional[str] = None
     evaluation_recommendation: Optional[str] = None
+    evaluation_decision: Optional[str] = None        # accepted | pending | rejected
+    evaluation_decision_label: Optional[str] = None  # libellé localisé
+    evaluation_decision_color: Optional[str] = None  # couleur hex
+    evaluation_decision_reason: Optional[str] = None # justification
 
     model_config = {"populate_by_name": True}
 

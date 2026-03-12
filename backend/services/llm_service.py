@@ -433,29 +433,60 @@ class OllamaLLMService:
             for i, a in enumerate(answers_eval)
         )
 
+        # Règles de décision communes
+        rules = {
+            "fr": (
+                "RÈGLES DE DÉCISION (obligatoire) :\n"
+                "  - score >= 7.0  → recommendation = \"Embaucher\"\n"
+                "  - 5.0 <= score < 7.0 → recommendation = \"En attente\"\n"
+                "  - score < 5.0   → recommendation = \"Refuser\"\n"
+            ),
+            "en": (
+                "DECISION RULES (mandatory):\n"
+                "  - score >= 7.0  → recommendation = \"Hire\"\n"
+                "  - 5.0 <= score < 7.0 → recommendation = \"On Hold\"\n"
+                "  - score < 5.0   → recommendation = \"Reject\"\n"
+            ),
+            "ar": (
+                "قواعد القرار (إلزامي) :\n"
+                "  - score >= 7.0  → recommendation = \"توظيف\"\n"
+                "  - 5.0 <= score < 7.0 → recommendation = \"قيد الانتظار\"\n"
+                "  - score < 5.0   → recommendation = \"رفض\"\n"
+            ),
+        }
+
         prompts = {
             "fr": (
                 f"Tu évalues l'entretien de {candidate_name} pour le poste {position_title}.\n"
                 f"Score moyen : {avg}/10\n"
                 f"Détail par question :\n{summaries_prompt}\n\n"
-                "Génère un résumé global en JSON :\n"
-                '{"global_score":<0-10>,"global_verdict":"<str>","recommendation":"<Embaucher|À considérer|Refuser>",'
+                + rules["fr"] +
+                "Génère un résumé global en JSON STRICT (aucun texte avant/après) :\n"
+                '{"global_score":<float 0-10>,"global_verdict":"<verdict court>",'
+                '"recommendation":"<Embaucher|En attente|Refuser>",'
+                '"decision_reason":"<1 phrase justifiant la décision>",'
                 '"key_strengths":["<str>"],"key_improvements":["<str>"],"summary":"<3 phrases>"}'
             ),
             "en": (
                 f"You are evaluating the interview of {candidate_name} for position {position_title}.\n"
                 f"Average score: {avg}/10\n"
                 f"Per-question detail:\n{summaries_prompt}\n\n"
-                "Generate a global summary as JSON:\n"
-                '{"global_score":<0-10>,"global_verdict":"<str>","recommendation":"<Hire|Consider|Reject>",'
+                + rules["en"] +
+                "Generate a global summary as strict JSON (no text before/after):\n"
+                '{"global_score":<float 0-10>,"global_verdict":"<short verdict>",'
+                '"recommendation":"<Hire|On Hold|Reject>",'
+                '"decision_reason":"<1 sentence justifying the decision>",'
                 '"key_strengths":["<str>"],"key_improvements":["<str>"],"summary":"<3 sentences>"}'
             ),
             "ar": (
                 f"أنت تقيّم مقابلة {candidate_name} لمنصب {position_title}.\n"
                 f"المتوسط : {avg}/10\n"
                 f"التفاصيل :\n{summaries_prompt}\n\n"
-                "أنشئ ملخصاً عاماً بصيغة JSON :\n"
-                '{"global_score":<0-10>,"global_verdict":"<str>","recommendation":"<توظيف|للنظر|رفض>",'
+                + rules["ar"] +
+                "أنشئ ملخصاً عاماً بصيغة JSON صارمة (بدون أي نص قبل أو بعد) :\n"
+                '{"global_score":<float 0-10>,"global_verdict":"<حكم قصير>",'
+                '"recommendation":"<توظيف|قيد الانتظار|رفض>",'
+                '"decision_reason":"<جملة واحدة تبرر القرار>",'
                 '"key_strengths":["<str>"],"key_improvements":["<str>"],"summary":"<3 جمل>"}'
             ),
         }
@@ -468,6 +499,7 @@ class OllamaLLMService:
         result.setdefault("key_strengths",     [])
         result.setdefault("key_improvements",  [])
         result.setdefault("summary",           "")
+        result.setdefault("decision_reason",   "")
         return result
 
     # ── HTTP Ollama ───────────────────────────────────────────────────────────
