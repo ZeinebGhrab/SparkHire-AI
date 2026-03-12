@@ -98,7 +98,7 @@ class WhisperASR(ASREngine):
             transcript = " ".join(seg.text.strip() for seg in segments).strip()
 
             logger.info(
-                f"📝 Whisper [{lang}] | durée détectée={info.duration:.1f}s "
+                f" Whisper [{lang}] | durée détectée={info.duration:.1f}s "
                 f"| '{transcript[:80]}'"
             )
             return transcript

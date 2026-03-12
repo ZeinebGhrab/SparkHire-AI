@@ -168,7 +168,7 @@ class EvaluationService:
         # ── Persistance ───────────────────────────────────────────────────
         self._save_evaluation(session_id, evaluation)
         logger.info(
-            f"✅ Évaluation terminée {session_id} | "
+            f"Évaluation terminée {session_id} | "
             f"score={evaluation.global_score}/10 | "
             f"verdict={evaluation.global_verdict}"
         )
