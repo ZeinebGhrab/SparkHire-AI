@@ -338,7 +338,6 @@ sparkhire-ai/
 <p align="center">
   <img src="docs/SparkHire%20AI%20—%20Final%20Evaluation%20%26%20Decision.png" width="400" alt="Final Evaluation & Decision"/>
 </p>
----
 
 ## 🔌 WebSocket Protocol
 
