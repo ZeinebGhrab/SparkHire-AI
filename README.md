@@ -1,4 +1,4 @@
-# 🎤 Stark Recruitment — AI-Powered Voice Interview System
+# 🎤 SparkHire AI — Intelligent Voice Interview Platform
 
 Complete recruitment platform with automated voice interviews via AI avatar.
 
@@ -49,8 +49,8 @@ Complete recruitment platform with automated voice interviews via AI avatar.
 ### 1. Clone the project
 
 ```bash
-git clone https://github.com/ZeinebGhrab/stark-recruitment-chatbot.git
-cd stark-recruitment-chatbot
+git clone https://github.com/ZeinebGhrab/sparkhire-ai.git
+cd sparkhire-ai
 ```
 
 ### 2. Virtual environment
@@ -218,7 +218,7 @@ python scripts/test_interview.py
 ## 📂 Project Structure
 
 ```
-stark-recruitment-chatbot/
+sparkhire-ai/
 │
 ├── backend/                        ← FastAPI backend
 │   ├── main.py                     ← Entry point + lifespan + routes
@@ -339,7 +339,7 @@ Copy `.env.example` → `.env` and fill in:
 ```bash
 # ── MongoDB ───────────────────────────────
 MONGODB_URL=mongodb://localhost:27017
-MONGODB_DB_NAME=stark_recruitment
+MONGODB_DB_NAME=sparkhire_ai
 SECRET_KEY=<python -c "import secrets; print(secrets.token_hex(32))">
 
 # ── ASR ───────────────────────────────────
@@ -435,17 +435,25 @@ The LLM evaluator applies a strict grading scale across all three languages:
 ```bash
 python scripts/test_interview.py
 ```
+
 ---
 
 ## 🎓 Academic Context
 
 This project was developed as a **Final Year Project** for the **2nd year of an Engineering Degree in Data Engineering & Decisional Systems**.
 
+It integrates key competencies from the program:
+
+- **Data Engineering** — real-time audio pipeline, MongoDB data modeling, REST API design with FastAPI
+- **AI** — speech recognition (Whisper), large language model evaluation (Llama 3 via Ollama), text-to-speech synthesis (Edge-TTS)
+- **Decisional Systems** — automated scoring engine with strict grading logic, follow-up question generation, global hiring recommendation
+- **Software Engineering** — WebSocket communication, cross-platform desktop client (PySide6), JWT authentication, CSV/JSON export
+
 ---
 
 ## 📄 License
 
-Proprietary — Stark Solutions © 2026
+Proprietary — SparkHire AI © 2026
 
 ## 👥 Support
 
