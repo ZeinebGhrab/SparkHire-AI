@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends, Query
 from backend.analytics.models import (
     CandidateStats, InterviewStats,
-    SystemStats, DashboardStats, SchedulingStats
+    SystemStats, DashboardStats, SchedulingStats,
+    ScoreStats, MonthlyTrend, StatusDistribution, ScoreBucket, DepartmentPerformance
 )
 from backend.auth.security import get_current_recruiter
 from backend.database import db
@@ -258,4 +259,187 @@ async def get_scheduling_statistics(
         by_position=by_position,
         by_language=by_language,
         upcoming_7_days=upcoming_7_days,
+    )
+
+
+@router.get("/scores", response_model=ScoreStats)
+async def get_score_statistics(
+    _: str = Depends(get_current_recruiter)
+):
+    """
+    Statistiques scores & candidatures pour le dashboard :
+    - KPI cards : acceptés / refusés / en entretien / en attente + variation mensuelle
+    - Tendance des candidatures sur 6 mois
+    - Répartition des statuts (camembert)
+    - Distribution des scores 0-100 (histogramme)
+    - Performance par département
+    """
+    from bson import ObjectId
+    now = datetime.utcnow()
+
+    # ── Helpers ───────────────────────────────────────────────────────────────
+    def _avg_score(session: dict) -> float | None:
+        scores = [
+            float(a["evaluation"]["score"])
+            for a in session.get("answers", [])
+            if a.get("evaluation") and a["evaluation"].get("score") is not None
+        ]
+        return round(sum(scores) / len(scores), 2) if scores else None
+
+    def _month_range(months_ago: int):
+        """Retourne (start, end) pour le mois N mois en arrière."""
+        d = now - timedelta(days=30 * months_ago)
+        start = d.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        if start.month == 12:
+            end = start.replace(year=start.year + 1, month=1)
+        else:
+            end = start.replace(month=start.month + 1)
+        return start, end
+
+    # ── KPI : compteurs current month ─────────────────────────────────────────
+    month_start, month_end = _month_range(0)
+    prev_start,  prev_end  = _month_range(1)
+
+    def _count_kpi(status_filter: dict, date_range: tuple) -> int:
+        q = {"created_at": {"$gte": date_range[0], "$lt": date_range[1]}}
+        q.update(status_filter)
+        return db.interview_sessions.count_documents(q)
+
+    def _pct_change(curr: int, prev: int) -> float:
+        if prev == 0:
+            return 100.0 if curr > 0 else 0.0
+        return round((curr - prev) / prev * 100, 1)
+
+    # Acceptés = completed avec score_moyen >= 7
+    all_completed = list(db.interview_sessions.find(
+        {"status": "completed"}, {"answers": 1, "created_at": 1}
+    ))
+    accepted_curr = sum(
+        1 for s in all_completed
+        if month_start <= s.get("created_at", now) < month_end
+        and (_avg_score(s) or 0) >= 7
+    )
+    accepted_prev = sum(
+        1 for s in all_completed
+        if prev_start <= s.get("created_at", now) < prev_end
+        and (_avg_score(s) or 0) >= 7
+    )
+
+    # Refusés = completed avec score_moyen < 5
+    rejected_curr = sum(
+        1 for s in all_completed
+        if month_start <= s.get("created_at", now) < month_end
+        and (_avg_score(s) or 0) < 5
+    )
+    rejected_prev = sum(
+        1 for s in all_completed
+        if prev_start <= s.get("created_at", now) < prev_end
+        and (_avg_score(s) or 0) < 5
+    )
+
+    # En entretien = in_progress
+    in_interview_curr = _count_kpi({"status": "in_progress"}, (month_start, month_end))
+    in_interview_prev = _count_kpi({"status": "in_progress"}, (prev_start, prev_end))
+
+    # En attente = pending
+    pending_total = db.interview_sessions.count_documents({"status": "pending"})
+
+    # ── Tendance 6 mois ───────────────────────────────────────────────────────
+    FR_MONTHS = ["Jan", "Fév", "Mar", "Avr", "Mai", "Jun",
+                 "Jul", "Aoû", "Sep", "Oct", "Nov", "Déc"]
+    monthly_trend = []
+    for i in range(5, -1, -1):   # 5 mois en arrière → mois courant
+        ms, me = _month_range(i)
+        label  = FR_MONTHS[ms.month - 1]
+
+        sessions_m = list(db.interview_sessions.find(
+            {"created_at": {"$gte": ms, "$lt": me}},
+            {"status": 1, "answers": 1}
+        ))
+        applications = len(sessions_m)
+        interviews   = sum(1 for s in sessions_m if s.get("status") in ("in_progress", "completed"))
+        hires        = sum(
+            1 for s in sessions_m
+            if s.get("status") == "completed" and (_avg_score(s) or 0) >= 7
+        )
+        monthly_trend.append(MonthlyTrend(
+            month=label,
+            applications=applications,
+            interviews=interviews,
+            hires=hires,
+        ))
+
+    # ── Répartition des statuts ───────────────────────────────────────────────
+    total_sessions = db.interview_sessions.count_documents({})
+    hired_total    = sum(1 for s in all_completed if (_avg_score(s) or 0) >= 7)
+    rejected_total = sum(1 for s in all_completed if (_avg_score(s) or 0) < 5)
+    in_iv_total    = db.interview_sessions.count_documents({"status": "in_progress"})
+    pending_stat   = db.interview_sessions.count_documents({"status": "pending"})
+
+    status_distribution = StatusDistribution(
+        hired=hired_total,
+        rejected=rejected_total,
+        in_interview=in_iv_total,
+        pending=pending_stat,
+    )
+
+    # ── Distribution des scores (buckets 0-100) ───────────────────────────────
+    buckets = {"0-20": 0, "20-40": 0, "40-60": 0, "60-80": 0, "80-100": 0}
+    for session in db.interview_sessions.find({}, {"answers": 1}):
+        avg = _avg_score(session)
+        if avg is None:
+            continue
+        score_100 = avg * 10    # Convertir /10 → /100
+        if score_100 <= 20:
+            buckets["0-20"] += 1
+        elif score_100 <= 40:
+            buckets["20-40"] += 1
+        elif score_100 <= 60:
+            buckets["40-60"] += 1
+        elif score_100 <= 80:
+            buckets["60-80"] += 1
+        else:
+            buckets["80-100"] += 1
+
+    score_distribution = [
+        ScoreBucket(range=k, count=v) for k, v in buckets.items()
+    ]
+
+    # ── Performance par département ───────────────────────────────────────────
+    # Récupérer tous les postes pour mapper id → département
+    positions_map = {
+        str(p["_id"]): p.get("department", "Autre")
+        for p in db.job_positions.find({}, {"_id": 1, "department": 1})
+    }
+
+    dept_candidates: dict = {}
+    dept_hires:      dict = {}
+
+    for session in db.interview_sessions.find({}, {"job_position_id": 1, "status": 1, "answers": 1}):
+        dept = positions_map.get(session.get("job_position_id", ""), "Autre")
+        dept_candidates[dept] = dept_candidates.get(dept, 0) + 1
+        if session.get("status") == "completed" and (_avg_score(session) or 0) >= 7:
+            dept_hires[dept] = dept_hires.get(dept, 0) + 1
+
+    department_performance = [
+        DepartmentPerformance(
+            department=dept,
+            candidates=count,
+            rate=round(dept_hires.get(dept, 0) / count * 100, 1) if count > 0 else 0.0,
+        )
+        for dept, count in sorted(dept_candidates.items(), key=lambda x: -x[1])
+    ]
+
+    return ScoreStats(
+        accepted=accepted_curr,
+        accepted_pct_change=_pct_change(accepted_curr, accepted_prev),
+        rejected=rejected_curr,
+        rejected_pct_change=_pct_change(rejected_curr, rejected_prev),
+        in_interview=in_interview_curr,
+        in_interview_pct_change=_pct_change(in_interview_curr, in_interview_prev),
+        pending=pending_total,
+        monthly_trend=monthly_trend,
+        status_distribution=status_distribution,
+        score_distribution=score_distribution,
+        department_performance=department_performance,
     )

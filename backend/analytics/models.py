@@ -54,3 +54,46 @@ class SchedulingStats(BaseModel):
     by_position: Dict[str, int]        # {"Data Scientist": 3, ...}
     by_language: Dict[str, int]        # {"ar": 2, "fr": 1, "en": 0}
     upcoming_7_days: int          # Sessions créées dans les 7 prochains jours (expires_at)
+
+
+# ── Score / Candidature Statistics ───────────────────────────────────────────
+
+class MonthlyTrend(BaseModel):
+    month: str                     # "Jan", "Fév", "Mar" ...
+    applications: int              # Candidatures (sessions créées)
+    interviews: int                # Entretiens démarrés (in_progress + completed)
+    hires: int                     # Entretiens avec score >= 7 (recommandés)
+
+
+class StatusDistribution(BaseModel):
+    hired: int                     # score >= 7 + completed
+    rejected: int                  # score < 5 + completed
+    in_interview: int              # in_progress
+    pending: int                   # pending
+
+
+class ScoreBucket(BaseModel):
+    range: str                     # "0-20", "20-40", "40-60", "60-80", "80-100"
+    count: int
+
+
+class DepartmentPerformance(BaseModel):
+    department: str
+    candidates: int                # Nombre de sessions pour ce département
+    rate: float                    # Taux de réussite (score >= 7) en %
+
+
+class ScoreStats(BaseModel):
+    # ── KPI cards ──────────────────────────────────────────────────────
+    accepted: int                  # Sessions completed avec score_moyen >= 7
+    accepted_pct_change: float     # % variation vs mois précédent
+    rejected: int                  # Sessions completed avec score_moyen < 5
+    rejected_pct_change: float
+    in_interview: int              # Sessions in_progress
+    in_interview_pct_change: float
+    pending: int                   # Sessions pending
+    # ── Graphiques ─────────────────────────────────────────────────────
+    monthly_trend: List[MonthlyTrend]         # 6 derniers mois
+    status_distribution: StatusDistribution   # Répartition des statuts (%)
+    score_distribution: List[ScoreBucket]     # Distribution des scores 0-100
+    department_performance: List[DepartmentPerformance]  # Performance par département
