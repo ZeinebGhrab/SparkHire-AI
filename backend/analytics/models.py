@@ -97,3 +97,28 @@ class ScoreStats(BaseModel):
     status_distribution: StatusDistribution   # Répartition des statuts (%)
     score_distribution: List[ScoreBucket]     # Distribution des scores 0-100
     department_performance: List[DepartmentPerformance]  # Performance par département
+
+
+# ── Per-Position Statistics ───────────────────────────────────────────────────
+
+class PositionScoreStats(BaseModel):
+    position_id: str
+    position_title: str
+    department: str
+    total_candidates: int          # Nombre de sessions pour ce poste
+    average_score: float           # Score moyen /100
+    excellent: int                 # score >= 80
+    good: int                      # 60 <= score < 80
+    average: int                   # 40 <= score < 60
+    weak: int                      # score < 40
+    no_score: int                  # Sessions sans évaluation
+
+
+class AllPositionsStats(BaseModel):
+    total_candidates: int          # Toutes sessions confondues
+    average_score: float           # Score moyen global /100
+    excellent: int
+    good: int
+    average: int
+    weak: int
+    positions: List[PositionScoreStats]

@@ -2,7 +2,8 @@ from fastapi import APIRouter, Depends, Query
 from backend.analytics.models import (
     CandidateStats, InterviewStats,
     SystemStats, DashboardStats, SchedulingStats,
-    ScoreStats, MonthlyTrend, StatusDistribution, ScoreBucket, DepartmentPerformance
+    ScoreStats, MonthlyTrend, StatusDistribution, ScoreBucket, DepartmentPerformance,
+    PositionScoreStats, AllPositionsStats
 )
 from backend.auth.security import get_current_recruiter
 from backend.database import db
@@ -442,4 +443,118 @@ async def get_score_statistics(
         status_distribution=status_distribution,
         score_distribution=score_distribution,
         department_performance=department_performance,
+    )
+
+
+@router.get("/positions/scores", response_model=AllPositionsStats)
+async def get_positions_score_statistics(
+    position_id: str = None,
+    _: str = Depends(get_current_recruiter)
+):
+    """
+    Statistiques de scores par offre d'emploi.
+
+    - Sans paramètre      → stats globales toutes offres + détail par offre
+    - ?position_id=<id>   → stats pour une offre spécifique uniquement
+
+    Score sur 100 = score_moyen_llm * 10
+    Seuils :
+      Excellent  >= 80
+      Bon        60–79
+      Moyen      40–59
+      Faible      < 40
+    """
+    from bson import ObjectId
+
+    def _avg_score_100(session: dict) -> float | None:
+        scores = [
+            float(a["evaluation"]["score"])
+            for a in session.get("answers", [])
+            if a.get("evaluation") and a["evaluation"].get("score") is not None
+        ]
+        if not scores:
+            return None
+        return round(sum(scores) / len(scores) * 10, 1)   # /10 → /100
+
+    def _bucket(score_100: float) -> str:
+        if score_100 >= 80:   return "excellent"
+        if score_100 >= 60:   return "good"
+        if score_100 >= 40:   return "average"
+        return "weak"
+
+    # ── Charger tous les postes ───────────────────────────────────────────────
+    pos_query = {}
+    if position_id:
+        try:
+            pos_query["_id"] = ObjectId(position_id)
+        except Exception:
+            pass
+
+    positions_map = {
+        str(p["_id"]): {"title": p.get("title", ""), "department": p.get("department", "")}
+        for p in db.job_positions.find(pos_query, {"_id": 1, "title": 1, "department": 1})
+    }
+
+    # ── Charger toutes les sessions concernées ────────────────────────────────
+    session_query = {}
+    if position_id:
+        session_query["job_position_id"] = position_id
+
+    sessions = list(db.interview_sessions.find(
+        session_query,
+        {"job_position_id": 1, "answers": 1}
+    ))
+
+    # ── Agréger par poste ─────────────────────────────────────────────────────
+    from collections import defaultdict
+    pos_data: dict = defaultdict(lambda: {
+        "total": 0, "scores": [],
+        "excellent": 0, "good": 0, "average": 0, "weak": 0, "no_score": 0
+    })
+
+    for s in sessions:
+        pid   = s.get("job_position_id", "unknown")
+        score = _avg_score_100(s)
+        d     = pos_data[pid]
+        d["total"] += 1
+        if score is None:
+            d["no_score"] += 1
+        else:
+            d["scores"].append(score)
+            d[_bucket(score)] += 1
+
+    # ── Construire la liste par poste ─────────────────────────────────────────
+    position_stats = []
+    for pid, d in pos_data.items():
+        info  = positions_map.get(pid, {"title": pid, "department": ""})
+        avg   = round(sum(d["scores"]) / len(d["scores"]), 1) if d["scores"] else 0.0
+        position_stats.append(PositionScoreStats(
+            position_id=pid,
+            position_title=info["title"],
+            department=info["department"],
+            total_candidates=d["total"],
+            average_score=avg,
+            excellent=d["excellent"],
+            good=d["good"],
+            average=d["average"],
+            weak=d["weak"],
+            no_score=d["no_score"],
+        ))
+
+    # Trier par nombre de candidats décroissant
+    position_stats.sort(key=lambda x: -x.total_candidates)
+
+    # ── Stats globales (toutes offres) ────────────────────────────────────────
+    all_scores   = [sc for d in pos_data.values() for sc in d["scores"]]
+    global_avg   = round(sum(all_scores) / len(all_scores), 1) if all_scores else 0.0
+    global_total = sum(d["total"] for d in pos_data.values())
+
+    return AllPositionsStats(
+        total_candidates=global_total,
+        average_score=global_avg,
+        excellent=sum(d["excellent"] for d in pos_data.values()),
+        good=sum(d["good"]      for d in pos_data.values()),
+        average=sum(d["average"] for d in pos_data.values()),
+        weak=sum(d["weak"]      for d in pos_data.values()),
+        positions=position_stats,
     )
