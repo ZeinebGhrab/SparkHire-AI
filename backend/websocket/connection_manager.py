@@ -2,6 +2,7 @@
 Gestionnaire de connexions WebSocket
 """
 
+import asyncio
 import logging
 from typing import Dict
 from fastapi import WebSocket, WebSocketDisconnect
@@ -52,6 +53,54 @@ class ConnectionManager:
             self.disconnect(session_id)
             # Convertir en WebSocketDisconnect pour une gestion uniforme dans le handler
             raise WebSocketDisconnect(code=1006, reason=str(e)) from e
+
+    async def send_heartbeat_during(
+        self,
+        session_id: str,
+        coro,
+        interval: float = 15.0,
+    ):
+        """
+        Exécute `coro` (coroutine ou future) tout en envoyant des heartbeats
+        périodiques au client pour maintenir la connexion ouverte.
+
+        Utilisé quand Coqui TTS peut prendre plusieurs minutes pour générer
+        de l'audio — sans ça la connexion WebSocket timeout côté client/proxy.
+
+        Args:
+            session_id: ID de la session WebSocket active
+            coro: coroutine à attendre (ex: synthesis task)
+            interval: intervalle entre heartbeats en secondes (défaut 15s)
+
+        Returns:
+            Le résultat de `coro`
+        """
+        result_container = {}
+
+        async def _heartbeat_loop():
+            while True:
+                await asyncio.sleep(interval)
+                if session_id not in self.active_connections:
+                    break
+                try:
+                    await self.send_json(session_id, {"type": "heartbeat"})
+                    logger.debug(f"Heartbeat → {session_id}")
+                except Exception:
+                    break
+
+        task = asyncio.ensure_future(coro)
+        heartbeat = asyncio.ensure_future(_heartbeat_loop())
+
+        try:
+            result = await task
+        finally:
+            heartbeat.cancel()
+            try:
+                await heartbeat
+            except (asyncio.CancelledError, Exception):
+                pass
+
+        return result
 
     async def broadcast(self, message: dict):
         """Diffuser à tous les clients connectés"""

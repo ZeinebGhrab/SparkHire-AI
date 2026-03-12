@@ -84,7 +84,7 @@ class InterviewHandler:
         self.websocket      = websocket
         self.session        = None
         self.position       = None
-        self.candidate      = None          # ← candidat chargé au départ
+        self.candidate      = None          
         self.audio_buffer   = bytearray()
         self.is_recording   = False
         self.asr_service    = _asr_service
@@ -179,7 +179,7 @@ class InterviewHandler:
             "type": "audio_chunk_end",
             "data": {"msg_type": msg_type},
         })
-        logger.info(f"✅ {n_chunks} chunks PCM pour '{msg_type}' [{self.lang}]")
+        logger.info(f"{n_chunks} chunks PCM pour '{msg_type}' [{self.lang}]")
 
     # ── TTS ──────────────────────────────────────────────────────────────────
 
@@ -213,7 +213,7 @@ class InterviewHandler:
         while True:
             remaining = deadline - loop.time()
             if remaining <= 0:
-                logger.warning("⚠️ Timeout audio_finished")
+                logger.warning("Timeout audio_finished")
                 return
             try:
                 data = await asyncio.wait_for(
@@ -235,7 +235,7 @@ class InterviewHandler:
         try:
             if not await self._load_session():
                 return
-            logger.info(f"🌍 Langue active: {self.lang!r} | Candidat: {self.candidate_full_name}")
+            logger.info(f"Langue active: {self.lang!r} | Candidat: {self.candidate_full_name}")
             await asyncio.sleep(0.2)
             self._check_connected()
             await self._send_welcome()
@@ -405,12 +405,12 @@ class InterviewHandler:
         1.  Sauvegarde audio WAV
         2.  Transcription Whisper (ASR)
         3.  Évaluation LLM initiale (avec détection de suivi)
-        4.  ✅ Sauvegarde immédiate en BD (réponse + score initial)
+        4.  Sauvegarde immédiate en BD (réponse + score initial)
         5.  Notification client : answer_evaluated (score initial)
         6.  Si suivi nécessaire → avatar pose question → candidat répond
         7.  Sauvegarde audio suivi + transcription
         8.  Réévaluation LLM finale (prend en compte les deux réponses)
-        9.  ✅ Mise à jour BD : score final + toutes les traces (Q suivi, réponse suivi)
+        9.  Mise à jour BD : score final + toutes les traces (Q suivi, réponse suivi)
         10. Notification client : answer_followup_completed (score final)
         """
         idx           = self.session.current_question_index
@@ -429,7 +429,7 @@ class InterviewHandler:
 
         # ── 2. Transcription Whisper ──────────────────────────────────────────
         transcript = await self._transcribe_audio(wav)
-        logger.info(f"📝 Transcription [{self.lang}] Q{question.order}: '{transcript[:80]}'")
+        logger.info(f"Transcription [{self.lang}] Q{question.order}: '{transcript[:80]}'")
 
         # ── 3. Notification immédiate de réception ────────────────────────────
         if manager.is_connected(self.session_id):
@@ -464,7 +464,7 @@ class InterviewHandler:
             needs_followup    = initial_eval.get("needs_followup", False)
             followup_question = initial_eval.get("followup_question", "").strip()
 
-            # ── 5. ✅ Sauvegarde immédiate en BD avec le score initial ─────────
+            # ── 5. Sauvegarde immédiate en BD avec le score initial ─────────
             await self._save_answer_to_db(
                 question=question,
                 transcript=transcript,
@@ -491,7 +491,7 @@ class InterviewHandler:
                 })
 
             logger.info(
-                f"✅ Score initial Q{question.order} sauvegardé | "
+                f"Score initial Q{question.order} sauvegardé | "
                 f"score={initial_eval.get('score')}/10 | "
                 f"needs_followup={needs_followup}"
             )
@@ -546,7 +546,7 @@ class InterviewHandler:
         - Met à jour la BD avec le score final et toutes les traces
         """
         logger.info(
-            f"🔄 Suivi Q{question.order} | "
+            f"Suivi Q{question.order} | "
             f"score_initial={initial_eval.get('score')}/10 | "
             f"question='{followup_question[:60]}'"
         )
@@ -601,7 +601,7 @@ class InterviewHandler:
         # Transcription réponse de suivi
         followup_transcript = await self._transcribe_audio(followup_wav)
         logger.info(
-            f"📝 Transcription suivi [{self.lang}] Q{question.order}: "
+            f"Transcription suivi [{self.lang}] Q{question.order}: "
             f"'{followup_transcript[:80]}'"
         )
 
@@ -634,12 +634,12 @@ class InterviewHandler:
         final_verdict   = final_eval.get("verdict", "")
 
         logger.info(
-            f"🏁 Score Q{question.order} | "
+            f"Score Q{question.order} | "
             f"initial={initial_score}/10 ({initial_verdict}) → "
             f"final={final_score}/10 ({final_verdict})"
         )
 
-        # ── ✅ Mise à jour BD — champs structurés + évaluation finale ───────────
+        # ── Mise à jour BD — champs structurés + évaluation finale ───────────
         # transcript garde uniquement la réponse principale (non modifié)
         # Les données de suivi sont stockées dans evaluation.followup_*
 
@@ -680,7 +680,7 @@ class InterviewHandler:
         logger.info(
             f"✅ BD mise à jour Q{question.order} | "
             f"score_initial={initial_score}/10 | score_final={final_score}/10 | "
-            f"transcript={len(full_transcript)} chars"
+            f"initial_transcript={len(initial_transcript)} chars | followup_transcript={len(followup_transcript)} chars"
         )
 
         # Notification client : les deux scores + toutes les traces
@@ -705,7 +705,6 @@ class InterviewHandler:
                     "followup_question":   followup_question,
                     "followup_transcript": followup_transcript,
                     "followup_audio_path": str(followup_audio_path),
-                    "full_transcript":     full_transcript,
                     "had_followup":        True,
                     # ─ Delta d'amélioration ─
                     "score_delta":         round(final_score - initial_score, 1),
@@ -819,7 +818,7 @@ class InterviewHandler:
             evaluation=evaluation_data,
         )
         logger.info(
-            f"💾 Score initial sauvegardé | Q{question.order} | "
+            f"Score initial sauvegardé | Q{question.order} | "
             f"score={eval_result.get('score')}/10"
         )
 
@@ -890,7 +889,7 @@ class InterviewHandler:
                     },
                 })
                 logger.info(
-                    f"📊 Rapport global {self.session_id} | "
+                    f"Rapport global {self.session_id} | "
                     f"score={result.global_score}/10 | {result.recommendation}"
                 )
         except Exception as e:
