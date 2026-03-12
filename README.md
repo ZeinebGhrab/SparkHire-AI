@@ -320,13 +320,13 @@ sparkhire-ai/
 
 ![Class Diagram](docs/Class_Diagram.png)
 
----
+
 
 ### 🗓️ Flow 1 — Access Validation
 <p align="center">
   <img src="docs/SparkHire%20AI%20—%20Access%20authorization.png" width="400" alt="Access Validation"/>
 </p>
----
+
 
 ### 🎤 Flow 2 — Real-time Interview
 <p align="center">
