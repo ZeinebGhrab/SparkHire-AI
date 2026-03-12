@@ -213,7 +213,9 @@ class CoquiTTSEngine:
                 "en": "coqui-xtts-en",
                 "fr": "coqui-xtts-fr",
             }
-            self.generation_params = {"temperature": 0.7, "speed": 1.0}
+            self.generation_params = {"temperature": 0.65, "speed": 1.0}
+            # XTTS-v2 outputs 24000 Hz — stored here for downstream resampling
+            self.sample_rate = 24000
             logger.info(f"   Langues supportées: {list(self.languages.keys())}")
 
         except ImportError as e:
@@ -260,6 +262,7 @@ class CoquiTTSEngine:
                     "language": lang,
                     "file_path": tmp_path,
                     "speed": self.generation_params["speed"],
+                    "temperature": self.generation_params["temperature"],
                 }
 
                 if speaker_wav and os.path.exists(speaker_wav):
@@ -273,11 +276,11 @@ class CoquiTTSEngine:
 
                 self.tts.tts_to_file(**kwargs)
 
-                with open(tmp_path, "rb") as f:
-                    audio_data = f.read()
+                # Normalise WAV to 24000 Hz mono 16-bit for consistent playback
+                audio_data = self._normalize_wav(tmp_path)
 
                 if audio_data:
-                    logger.info(f" Audio généré: {len(audio_data)} bytes")
+                    logger.info(f" Audio généré: {len(audio_data)} bytes @ {self.sample_rate}Hz")
                     return audio_data
                 else:
                     logger.error(" Audio vide généré")
@@ -294,6 +297,97 @@ class CoquiTTSEngine:
             import traceback
             logger.error(traceback.format_exc())
             return b""
+
+    def _normalize_wav(self, wav_path: str) -> bytes:
+        """
+        Relit le WAV généré par XTTS-v2 et le réécrit en :
+          - 24 000 Hz (sample rate natif XTTS-v2)
+          - Mono
+          - 16-bit PCM
+        Cela garantit une sortie cohérente quel que soit le moteur amont,
+        évitant les grésillements causés par un mauvais taux de rééchantillonnage
+        côté client.
+        """
+        import struct
+        import wave as wave_mod
+
+        try:
+            with wave_mod.open(wav_path, "rb") as wf:
+                n_channels  = wf.getnchannels()
+                samp_width  = wf.getsampwidth()   # bytes per sample
+                frame_rate  = wf.getframerate()
+                n_frames    = wf.getnframes()
+                raw_frames  = wf.readframes(n_frames)
+
+            # ── Convert to mono int16 numpy array ──────────────────────────
+            import numpy as np
+
+            if samp_width == 2:
+                samples = np.frombuffer(raw_frames, dtype=np.int16)
+            elif samp_width == 4:
+                samples = np.frombuffer(raw_frames, dtype=np.int32)
+                samples = (samples >> 16).astype(np.int16)
+            elif samp_width == 3:
+                # 24-bit — unpack manually
+                n = len(raw_frames) // 3
+                arr = np.zeros(n, dtype=np.int32)
+                for i in range(n):
+                    b0, b1, b2 = raw_frames[i*3], raw_frames[i*3+1], raw_frames[i*3+2]
+                    val = (b2 << 16) | (b1 << 8) | b0
+                    if val & 0x800000:
+                        val -= 0x1000000
+                    arr[i] = val
+                samples = (arr >> 8).astype(np.int16)
+            else:
+                # Fallback: raw read
+                with open(wav_path, "rb") as f:
+                    return f.read()
+
+            # ── Downmix to mono if stereo ───────────────────────────────────
+            if n_channels > 1:
+                samples = samples.reshape(-1, n_channels)
+                samples = samples.mean(axis=1).astype(np.int16)
+
+            # ── Resample to target sample_rate if needed ────────────────────
+            target_sr = self.sample_rate  # 24000
+            if frame_rate != target_sr:
+                try:
+                    import scipy.signal as sps
+                    num_samples = int(len(samples) * target_sr / frame_rate)
+                    samples = sps.resample(samples.astype(np.float32), num_samples)
+                    samples = np.clip(samples, -32768, 32767).astype(np.int16)
+                    logger.info(
+                        f"   Resampled {frame_rate}Hz → {target_sr}Hz "
+                        f"({n_frames} → {len(samples)} samples)"
+                    )
+                except ImportError:
+                    logger.warning("   scipy absent — pas de rééchantillonnage")
+
+            # ── Re-encode as WAV ────────────────────────────────────────────
+            out = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+            out_path = out.name
+            out.close()
+            try:
+                with wave_mod.open(out_path, "wb") as wout:
+                    wout.setnchannels(1)
+                    wout.setsampwidth(2)
+                    wout.setframerate(target_sr)
+                    wout.writeframes(samples.tobytes())
+                with open(out_path, "rb") as f:
+                    return f.read()
+            finally:
+                try:
+                    os.unlink(out_path)
+                except Exception:
+                    pass
+
+        except Exception as e:
+            logger.warning(f"   _normalize_wav échoué ({e}) — fallback lecture directe")
+            try:
+                with open(wav_path, "rb") as f:
+                    return f.read()
+            except Exception:
+                return b""
 
     def list_speakers(self) -> list:
         """Retourner la liste de tous les speakers disponibles"""

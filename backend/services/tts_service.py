@@ -1,237 +1,225 @@
 """
-Service TTS - CHARGEMENT LAZY (non-bloquant)
-Le modèle Coqui est chargé dans un thread en arrière-plan,
-pendant ce temps Edge-TTS ou gTTS prend le relais.
+Service TTS — Architecture simple et rapide :
+
+  1. Edge-TTS  (online Microsoft, instantané, voix naturelles)  ← PRIMAIRE
+  2. gTTS      (online Google, ~1-2 s)                          ← FALLBACK
+
+Coqui et Piper sont complètement retirés.
 """
 
-import logging
+from __future__ import annotations
+
 import hashlib
+import logging
 import os
-import threading
+from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Optional
-from abc import ABC, abstractmethod
 
 logger = logging.getLogger(__name__)
 
 
-# ==================== CONFIGURATION FFMPEG ====================
+# ── FFMPEG ────────────────────────────────────────────────────────────────────
 
-def configure_ffmpeg_local():
+def _configure_ffmpeg_local() -> bool:
     project_root = Path(__file__).resolve().parent.parent.parent
-    ffmpeg_dir = project_root / "models" / "ffmpeg-8.0.1-essentials_build" / "bin"
-    if ffmpeg_dir.exists():
-        ffmpeg_exe = ffmpeg_dir / "ffmpeg.exe"
-        if ffmpeg_exe.exists():
-            os.environ["PATH"] = f"{ffmpeg_dir};{os.environ.get('PATH', '')}"
-            try:
-                from pydub import AudioSegment
-                AudioSegment.converter = str(ffmpeg_exe)
-                AudioSegment.ffmpeg = str(ffmpeg_exe)
-                ffprobe_exe = ffmpeg_dir / "ffprobe.exe"
-                if ffprobe_exe.exists():
-                    AudioSegment.ffprobe = str(ffprobe_exe)
-                logger.info(f"✅ ffmpeg configuré: {ffmpeg_dir}")
-                return True
-            except ImportError:
-                pass
-    return False
+    ffmpeg_dir   = project_root / "models" / "ffmpeg-8.0.1-essentials_build" / "bin"
+    if not ffmpeg_dir.exists():
+        return False
+    ffmpeg_exe = ffmpeg_dir / "ffmpeg.exe"
+    if not ffmpeg_exe.exists():
+        return False
+    os.environ["PATH"] = f"{ffmpeg_dir};{os.environ.get('PATH', '')}"
+    try:
+        from pydub import AudioSegment
+        AudioSegment.converter = str(ffmpeg_exe)
+        AudioSegment.ffmpeg    = str(ffmpeg_exe)
+        ffprobe = ffmpeg_dir / "ffprobe.exe"
+        if ffprobe.exists():
+            AudioSegment.ffprobe = str(ffprobe)
+        logger.info(f"✅ ffmpeg configuré: {ffmpeg_dir}")
+        return True
+    except ImportError:
+        return False
 
-configure_ffmpeg_local()
+_configure_ffmpeg_local()
 
 
-# ==================== MOTEURS TTS ====================
+# ── INTERFACE ─────────────────────────────────────────────────────────────────
 
 class TTSEngine(ABC):
+    voices: dict[str, str] = {}
+
     @abstractmethod
     def synthesize(self, text: str, language: str = "ar") -> bytes:
-        pass
+        ...
 
 
-class CoquiTTSEngine(TTSEngine):
+# ── MOTEUR 1 : EDGE-TTS (primaire) ───────────────────────────────────────────
+
+class EdgeEngine(TTSEngine):
     def __init__(self):
-        from backend.services.coqui_tts_engine import CoquiTTSEngine as CoquiEngine
-        self.engine = CoquiEngine()
-        self.voices = self.engine.voices
-        logger.info("✅ Coqui TTS prêt")
+        from backend.services.edge_tts_engine import EdgeTTSEngine
+        self._engine = EdgeTTSEngine()
+        self.voices  = self._engine.voices
+        logger.info("✅ Edge-TTS prêt (moteur primaire)")
 
     def synthesize(self, text: str, language: str = "ar") -> bytes:
-        return self.engine.synthesize(text, language)
+        return self._engine.synthesize(text, language)
 
 
-class EdgeTTSEngine(TTSEngine):
-    def __init__(self):
-        from backend.services.edge_tts_engine import EdgeTTSEngine as EdgeEngine
-        self.engine = EdgeEngine()
-        self.voices = self.engine.voices
-        logger.info("✅ Edge-TTS prêt")
+# ── MOTEUR 2 : gTTS (fallback) ────────────────────────────────────────────────
 
-    def synthesize(self, text: str, language: str = "ar") -> bytes:
-        return self.engine.synthesize(text, language)
-
-
-class GoogleTTS(TTSEngine):
+class GoogleEngine(TTSEngine):
     def __init__(self):
         from gtts import gTTS
-        self.gTTS = gTTS
+        self._gTTS = gTTS
         self.voices = {"ar": "gtts-ar", "en": "gtts-en", "fr": "gtts-fr"}
-        logger.info("✅ gTTS prêt")
+        logger.info("✅ gTTS prêt (fallback)")
 
     def synthesize(self, text: str, language: str = "ar") -> bytes:
-        import tempfile, os
+        import tempfile
         try:
             from pydub import AudioSegment
         except ImportError:
             return b""
         try:
-            lang_code = language if language in ['ar', 'en', 'fr'] else 'ar'
-            tts = self.gTTS(text=text, lang=lang_code, slow=False)
-            with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp:
-                tmp_mp3 = tmp.name
-            tts.save(tmp_mp3)
-            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
-                tmp_wav = tmp.name
+            lang = language if language in ("ar", "en", "fr") else "ar"
+            tts  = self._gTTS(text=text, lang=lang, slow=False)
+            with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
+                mp3 = f.name
+            tts.save(mp3)
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+                wav = f.name
             try:
-                audio = AudioSegment.from_mp3(tmp_mp3)
-                audio.export(tmp_wav, format="wav")
-                with open(tmp_wav, 'rb') as f:
+                AudioSegment.from_mp3(mp3).export(wav, format="wav")
+                with open(wav, "rb") as f:
                     return f.read()
             finally:
-                for p in [tmp_mp3, tmp_wav]:
+                for p in (mp3, wav):
                     try: os.unlink(p)
-                    except: pass
+                    except Exception: pass
         except Exception as e:
-            logger.error(f"❌ gTTS: {e}")
+            logger.error(f"gTTS: {e}")
             return b""
 
 
-# ==================== SERVICE TTS AVEC CHARGEMENT LAZY ====================
+# ── SERVICE PRINCIPAL ─────────────────────────────────────────────────────────
 
 class TTSService:
-    """
-    Service TTS avec chargement Coqui en arrière-plan.
-
-    Au démarrage: utilise Edge-TTS ou gTTS (instantané).
-    En parallèle: charge Coqui TTS dans un thread.
-    Une fois Coqui prêt: bascule automatiquement sur lui.
-    """
-
-    def __init__(self, fast_engine: TTSEngine, cache_dir: Optional[Path] = None):
-        self._fast_engine = fast_engine        # Moteur rapide (Edge-TTS / gTTS)
-        self._coqui_engine: Optional[TTSEngine] = None  # Sera chargé en arrière-plan
-        self._coqui_ready = False
-        self._loading_lock = threading.Lock()
+    def __init__(
+        self,
+        primary_engine: TTSEngine,
+        fallback_engine: Optional[TTSEngine] = None,
+        cache_dir: Optional[Path] = None,
+    ):
+        self._primary  = primary_engine
+        self._fallback = fallback_engine
         self.cache_dir = cache_dir
         if cache_dir:
             cache_dir.mkdir(parents=True, exist_ok=True)
 
     @property
     def engine(self) -> TTSEngine:
-        """Retourne Coqui si prêt, sinon le moteur rapide."""
-        if self._coqui_ready and self._coqui_engine:
-            return self._coqui_engine
-        return self._fast_engine
+        return self._primary
 
-    def start_coqui_background_loading(self):
-        """Lance le chargement de Coqui dans un thread daemon."""
-        def _load():
-            logger.info("🔄 Chargement Coqui TTS en arrière-plan...")
-            try:
-                engine = CoquiTTSEngine()
-                with self._loading_lock:
-                    self._coqui_engine = engine
-                    self._coqui_ready = True
-                logger.info("✅ Coqui TTS chargé et actif (remplacement Edge-TTS)")
-            except Exception as e:
-                logger.warning(f"⚠️ Coqui TTS non disponible: {e}")
-
-        t = threading.Thread(target=_load, daemon=True, name="coqui-loader")
-        t.start()
-
+    # Compatibilité avec le reste du code qui appelle is_coqui_ready()
     def is_coqui_ready(self) -> bool:
-        return self._coqui_ready
+        return False
 
     def synthesize(self, text: str, language: str = "ar", use_cache: bool = True) -> bytes:
         if not text or not text.strip():
             return b""
 
-        active_engine = self.engine
-        voice_name = "unknown"
-        if hasattr(active_engine, 'voices') and isinstance(active_engine.voices, dict):
-            voice_name = active_engine.voices.get(language, "unknown")
+        engine      = self._primary
+        engine_name = type(engine).__name__.lower().replace("engine", "")
+        voice_name  = engine.voices.get(language, "unknown")
 
-        logger.info(f"🎙️ TTS | moteur={'coqui' if self._coqui_ready else 'fast'} | langue={language} | voix={voice_name}")
+        logger.info(f"🎙️ TTS | moteur={engine_name} | langue={language} | voix={voice_name}")
 
-        if use_cache and self.cache_dir:
-            cache_key = self._get_cache_key(text, language, voice_name)
-            cache_path = self.cache_dir / f"{cache_key}.wav"
-            if cache_path.exists():
-                logger.info(f"✅ Cache hit: {cache_path.name}")
-                with open(cache_path, 'rb') as f:
-                    return f.read()
+        # ── Cache ─────────────────────────────────────────────────────────────
+        cache_key  = self._cache_key(text, language, f"{engine_name}_{voice_name}")
+        cache_path = (self.cache_dir / f"{cache_key}.wav") if self.cache_dir else None
 
-        audio_data = active_engine.synthesize(text, language)
+        if use_cache and cache_path and cache_path.exists():
+            logger.info(f"✅ Cache hit: {cache_path.name}")
+            return cache_path.read_bytes()
 
-        if use_cache and self.cache_dir and audio_data:
-            cache_key = self._get_cache_key(text, language, voice_name)
-            cache_path = self.cache_dir / f"{cache_key}.wav"
+        # ── Synthèse primaire ─────────────────────────────────────────────────
+        audio = b""
+        try:
+            audio = engine.synthesize(text, language)
+        except Exception as e:
+            logger.warning(f"⚠️ Edge-TTS échoué: {e}")
+
+        # ── Fallback gTTS ─────────────────────────────────────────────────────
+        if not audio and self._fallback:
+            logger.info("🔄 Fallback → gTTS")
             try:
-                with open(cache_path, 'wb') as f:
-                    f.write(audio_data)
+                audio      = self._fallback.synthesize(text, language)
+                fb_name    = type(self._fallback).__name__.lower().replace("engine", "")
+                voice_name = self._fallback.voices.get(language, "unknown")
+                cache_key  = self._cache_key(text, language, f"{fb_name}_{voice_name}")
+                cache_path = (self.cache_dir / f"{cache_key}.wav") if self.cache_dir else None
+            except Exception as e:
+                logger.error(f"❌ gTTS échoué: {e}")
+
+        # ── Mise en cache ─────────────────────────────────────────────────────
+        if use_cache and cache_path and audio:
+            try:
+                cache_path.write_bytes(audio)
             except Exception as e:
                 logger.warning(f"⚠️ Cache save: {e}")
 
-        return audio_data
+        return audio
 
     def synthesize_to_file(self, text: str, output_path: Path, language: str = "ar", use_cache: bool = True) -> bool:
-        audio_data = self.synthesize(text, language, use_cache)
-        if not audio_data:
+        audio = self.synthesize(text, language, use_cache)
+        if not audio:
             return False
         try:
             output_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(output_path, 'wb') as f:
-                f.write(audio_data)
+            output_path.write_bytes(audio)
             return True
         except Exception as e:
-            logger.error(f"❌ Sauvegarde: {e}")
+            logger.error(f"❌ Sauvegarde TTS: {e}")
             return False
 
     @staticmethod
-    def _get_cache_key(text: str, language: str, voice: str = "") -> str:
-        content = f"{text}_{language}_{voice}"
-        return hashlib.md5(content.encode()).hexdigest()
+    def _cache_key(text: str, language: str, voice: str = "") -> str:
+        return hashlib.md5(f"{text}_{language}_{voice}".encode()).hexdigest()
 
+
+# ── FACTORY ───────────────────────────────────────────────────────────────────
 
 def get_tts_service() -> TTSService:
-    """
-    Crée le service TTS INSTANTANÉMENT.
-    - Démarre avec Edge-TTS (rapide, disponible immédiatement)
-    - Lance Coqui en arrière-plan
-    - Bascule sur Coqui automatiquement une fois chargé
-    """
     from backend.config import settings
 
-    # ── Moteur rapide de secours (démarre instantanément) ──
-    fast_engine = None
-
+    # ── Edge-TTS (primaire) ───────────────────────────────────────────────────
+    primary: Optional[TTSEngine] = None
     try:
-        fast_engine = EdgeTTSEngine()
-        logger.info("✅ Edge-TTS actif (démarrage instantané)")
+        primary = EdgeEngine()
     except Exception as e:
         logger.warning(f"⚠️ Edge-TTS indisponible: {e}")
 
-    if fast_engine is None:
-        try:
-            fast_engine = GoogleTTS()
-            logger.info("✅ gTTS actif (fallback)")
-        except Exception as e:
-            logger.error(f"❌ gTTS indisponible: {e}")
-            raise ValueError("Aucun moteur TTS rapide disponible!")
+    # ── gTTS (fallback ou primaire si Edge absent) ────────────────────────────
+    fallback: Optional[TTSEngine] = None
+    try:
+        gtts = GoogleEngine()
+        if primary is None:
+            primary = gtts
+            logger.warning("⚠️ Edge-TTS absent — gTTS utilisé comme moteur primaire")
+        else:
+            fallback = gtts
+    except Exception as e:
+        logger.warning(f"⚠️ gTTS indisponible: {e}")
 
-    # ── Créer le service avec le moteur rapide ──
-    service = TTSService(fast_engine, cache_dir=settings.TTS_CACHE_DIR)
+    if primary is None:
+        raise RuntimeError("Aucun moteur TTS disponible ! (Edge-TTS et gTTS ont échoué)")
 
-    # ── Lancer Coqui en arrière-plan (non-bloquant) ──
-    service.start_coqui_background_loading()
-
+    service = TTSService(primary, fallback, cache_dir=settings.TTS_CACHE_DIR)
+    logger.info(
+        f"🎙️ TTS Service prêt | primaire={type(primary).__name__} "
+        f"| fallback={type(fallback).__name__ if fallback else 'aucun'}"
+    )
     return service

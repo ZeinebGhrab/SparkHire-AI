@@ -211,6 +211,48 @@ class InterviewSessionCRUD:
         return result.matched_count > 0
 
     @staticmethod
+    def update_answer(
+        session_id: str,
+        question_order: int,
+        transcript: str | None = None,
+        evaluation: "AnswerEvaluationData | None" = None,
+        audio_followup_path: str | None = None,
+        initial_score: float | None = None,
+        initial_verdict: str | None = None,
+    ) -> bool:
+        """
+        Met à jour une réponse existante identifiée par question_order.
+        Seuls les champs fournis (non-None) sont modifiés.
+
+        Utilisé après une interaction de suivi pour persister :
+          - le transcript combiné (réponse initiale + suivi)
+          - l'évaluation finale
+          - le chemin audio du suivi
+          - les scores initiaux (pour traçabilité)
+        """
+        fields: dict = {"updated_at": datetime.utcnow()}
+
+        if transcript is not None:
+            fields["answers.$.transcript"] = transcript
+        if evaluation is not None:
+            fields["answers.$.evaluation"] = evaluation.model_dump()
+        if audio_followup_path is not None:
+            fields["answers.$.audio_followup_path"] = audio_followup_path
+        if initial_score is not None:
+            fields["answers.$.initial_score"] = initial_score
+        if initial_verdict is not None:
+            fields["answers.$.initial_verdict"] = initial_verdict
+
+        result = db.interview_sessions.update_one(
+            {
+                "session_id":             session_id,
+                "answers.question_order": question_order,
+            },
+            {"$set": fields},
+        )
+        return result.matched_count > 0
+
+    @staticmethod
     def get_answers_with_evaluations(session_id: str) -> List[Answer]:
         """
         Retourne uniquement le tableau answers (projection légère),
