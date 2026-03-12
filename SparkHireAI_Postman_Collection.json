@@ -1,0 +1,761 @@
+{
+  "info": {
+    "name": "SparkHire AI — Complete API Collection",
+    "description": "Collection complète pour tester toutes les routes de SparkHire AI.\n\n**Workflow typique :**\n1. Auth → Login → copier le token dans la variable `{{token}}`\n2. Candidates → Create Candidate\n3. Interviews → Create Job Position\n4. Interviews → Create Session (avec scheduled_at)\n5. WebSocket ws://localhost:8000/ws/interview/{{session_id}}?lang=fr\n6. Evaluations → Get Evaluation\n7. Analytics → Dashboard",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url",      "value": "http://localhost:8000",   "type": "string" },
+    { "key": "token",         "value": "",                        "type": "string" },
+    { "key": "candidate_id",  "value": "",                        "type": "string" },
+    { "key": "position_id",   "value": "",                        "type": "string" },
+    { "key": "session_id",    "value": "",                        "type": "string" },
+    { "key": "notification_id","value": "",                       "type": "string" }
+  ],
+  "item": [
+
+    {
+      "name": "System",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/health",
+            "description": "Vérifie l'état de tous les services (ASR, TTS, LLM, DB)"
+          }
+        },
+        {
+          "name": "Root",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/",
+            "description": "Message de bienvenue"
+          }
+        },
+        {
+          "name": "API Info",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/info",
+            "description": "Informations sur l'API et ses endpoints"
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.access_token) {",
+                  "    pm.collectionVariables.set('token', json.access_token);",
+                  "    console.log('✅ Token sauvegardé');",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/auth/login",
+            "header": [{ "key": "Content-Type", "value": "application/x-www-form-urlencoded" }],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                { "key": "username", "value": "rh@stark.tn" },
+                { "key": "password", "value": "admin123" }
+              ]
+            },
+            "description": "Connexion recruteur → sauvegarde automatique du token"
+          }
+        },
+        {
+          "name": "Get Me",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/auth/me",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "description": "Profil du recruteur connecté"
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "Candidates",
+      "item": [
+        {
+          "name": "Create Candidate",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json._id) pm.collectionVariables.set('candidate_id', json._id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/candidates/",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type",  "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"first_name\": \"Ahmed\",\n  \"last_name\": \"Ben Ali\",\n  \"contact\": {\n    \"email\": \"ahmed.benali@example.com\",\n    \"phone\": \"+216 55 123 456\",\n    \"linkedin\": \"https://linkedin.com/in/ahmedbenali\",\n    \"github\": \"https://github.com/ahmedbenali\"\n  },\n  \"technical_skills\": [\n    { \"name\": \"Python\",   \"level\": \"Advanced\",      \"years_experience\": 4 },\n    { \"name\": \"FastAPI\",  \"level\": \"Intermediate\",  \"years_experience\": 2 },\n    { \"name\": \"MongoDB\",  \"level\": \"Intermediate\",  \"years_experience\": 2 },\n    { \"name\": \"Machine Learning\", \"level\": \"Advanced\", \"years_experience\": 3 }\n  ],\n  \"experiences\": [\n    {\n      \"title\": \"Data Scientist\",\n      \"company\": \"TechCorp Tunis\",\n      \"location\": \"Tunis\",\n      \"start_date\": \"2022-01\",\n      \"end_date\": null,\n      \"currently_working\": true,\n      \"description\": \"Développement de modèles ML pour la prédiction client\",\n      \"technologies\": [\"Python\", \"Scikit-learn\", \"TensorFlow\"]\n    }\n  ],\n  \"education\": [\n    {\n      \"degree\": \"Ingénieur\",\n      \"field\": \"Data Engineering & Systèmes Décisionnels\",\n      \"institution\": \"ENETCOM Sfax\",\n      \"start_date\": \"2020\",\n      \"end_date\": \"2023\",\n      \"currently_studying\": false\n    }\n  ],\n  \"languages\": [\n    { \"name\": \"Arabic\",  \"level\": \"Native\" },\n    { \"name\": \"French\",  \"level\": \"C1\" },\n    { \"name\": \"English\", \"level\": \"B2\" }\n  ],\n  \"soft_skills\": [\n    { \"name\": \"Teamwork\" },\n    { \"name\": \"Communication\" },\n    { \"name\": \"Problem Solving\" }\n  ],\n  \"certifications\": [\n    {\n      \"name\": \"AWS Certified Developer\",\n      \"issuer\": \"Amazon Web Services\",\n      \"issue_date\": \"2023-06\",\n      \"expiry_date\": \"2026-06\",\n      \"credential_id\": \"AWS-DEV-123456\",\n      \"credential_url\": \"https://aws.amazon.com/verify\"\n    }\n  ]\n}"
+            },
+            "description": "Crée un candidat avec tous les champs obligatoires"
+          }
+        },
+        {
+          "name": "List Candidates",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/candidates/?skip=0&limit=20",
+              "host": ["{{base_url}}"],
+              "path": ["candidates", ""],
+              "query": [
+                { "key": "skip",  "value": "0" },
+                { "key": "limit", "value": "20" }
+              ]
+            },
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }]
+          }
+        },
+        {
+          "name": "Get Candidate by ID",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/candidates/{{candidate_id}}",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }]
+          }
+        },
+        {
+          "name": "Search by Email",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/candidates/search/email?email=ahmed.benali@example.com",
+              "host": ["{{base_url}}"],
+              "path": ["candidates", "search", "email"],
+              "query": [{ "key": "email", "value": "ahmed.benali@example.com" }]
+            },
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }]
+          }
+        },
+        {
+          "name": "Search by Skills",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/candidates/search/skills?skills=Python&skills=FastAPI",
+              "host": ["{{base_url}}"],
+              "path": ["candidates", "search", "skills"],
+              "query": [
+                { "key": "skills", "value": "Python" },
+                { "key": "skills", "value": "FastAPI" }
+              ]
+            },
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }]
+          }
+        },
+        {
+          "name": "Update Candidate (PATCH)",
+          "request": {
+            "method": "PATCH",
+            "url": "{{base_url}}/candidates/{{candidate_id}}",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type",  "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"soft_skills\": [\n    { \"name\": \"Leadership\" },\n    { \"name\": \"Adaptability\" }\n  ]\n}"
+            }
+          }
+        },
+        {
+          "name": "Add Consent",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/candidates/{{candidate_id}}/consents",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type",  "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"voice_recording\",\n  \"granted\": true,\n  \"ip_address\": \"192.168.1.1\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Delete Candidate",
+          "request": {
+            "method": "DELETE",
+            "url": "{{base_url}}/candidates/{{candidate_id}}",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }]
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "💼 Interviews — Positions",
+      "item": [
+        {
+          "name": "Create Job Position",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json._id) pm.collectionVariables.set('position_id', json._id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/interviews/positions",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type",  "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Data Scientist\",\n  \"department\": \"Tech\",\n  \"location\": \"Tunis\",\n  \"is_active\": true,\n  \"questions\": [\n    {\n      \"order\": 1,\n      \"question_ar\": \"أخبرني عن نفسك وعن تجربتك في علم البيانات.\",\n      \"question_fr\": \"Parlez-moi de vous et de votre expérience en data science.\",\n      \"question_en\": \"Tell me about yourself and your experience in data science.\",\n      \"max_duration_seconds\": 120,\n      \"evaluation_criteria\": [\"clarté\", \"expérience pertinente\", \"motivation\"]\n    },\n    {\n      \"order\": 2,\n      \"question_ar\": \"ما هي أدوات تعلم الآلة التي استخدمتها؟ أعطني مثالاً.\",\n      \"question_fr\": \"Quels outils de machine learning avez-vous utilisés ? Donnez un exemple concret.\",\n      \"question_en\": \"What machine learning tools have you used? Give a concrete example.\",\n      \"max_duration_seconds\": 150,\n      \"evaluation_criteria\": [\"maîtrise technique\", \"exemples concrets\", \"profondeur\"]\n    },\n    {\n      \"order\": 3,\n      \"question_ar\": \"كيف تتعامل مع البيانات المفقودة في مجموعة بيانات؟\",\n      \"question_fr\": \"Comment gérez-vous les données manquantes dans un jeu de données ?\",\n      \"question_en\": \"How do you handle missing data in a dataset?\",\n      \"max_duration_seconds\": 120,\n      \"evaluation_criteria\": [\"méthodes\", \"justification\", \"expérience pratique\"]\n    }\n  ]\n}"
+            }
+          }
+        },
+        {
+          "name": "List Positions (with filters)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/interviews/positions?skip=0&limit=20&sort_by=created_at&order=desc",
+              "host": ["{{base_url}}"],
+              "path": ["interviews", "positions"],
+              "query": [
+                { "key": "skip",        "value": "0" },
+                { "key": "limit",       "value": "20" },
+                { "key": "department",  "value": "",     "disabled": true },
+                { "key": "location",    "value": "",     "disabled": true },
+                { "key": "is_active",   "value": "true", "disabled": true },
+                { "key": "period_days", "value": "30",   "disabled": true },
+                { "key": "sort_by",     "value": "created_at" },
+                { "key": "order",       "value": "desc" }
+              ]
+            },
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }]
+          }
+        },
+        {
+          "name": "Get Distinct Departments",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/interviews/positions/meta/departments",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }]
+          }
+        },
+        {
+          "name": "Get Distinct Locations",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/interviews/positions/meta/locations",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }]
+          }
+        },
+        {
+          "name": "Get Position by ID",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/interviews/positions/{{position_id}}",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }]
+          }
+        },
+        {
+          "name": "Delete Position",
+          "request": {
+            "method": "DELETE",
+            "url": "{{base_url}}/interviews/positions/{{position_id}}",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }]
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "Interviews — Sessions",
+      "item": [
+        {
+          "name": "Create Session (with schedule)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.session_id) pm.collectionVariables.set('session_id', json.session_id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/interviews/sessions",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type",  "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"candidate_id\": \"{{candidate_id}}\",\n  \"job_position_id\": \"{{position_id}}\",\n  \"language\": \"fr\",\n  \"scheduled_at\": \"2026-03-20T10:00:00Z\"\n}"
+            },
+            "description": "Crée une session planifiée. La fenêtre d'accès est scheduled_at → scheduled_at + 30 min.\nSi scheduled_at est omis, expire 30 min après création."
+          }
+        },
+        {
+          "name": "Create Session (no schedule)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.session_id) pm.collectionVariables.set('session_id', json.session_id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/interviews/sessions",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type",  "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"candidate_id\": \"{{candidate_id}}\",\n  \"job_position_id\": \"{{position_id}}\",\n  \"language\": \"fr\"\n}"
+            }
+          }
+        },
+        {
+          "name": "List Sessions",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/interviews/sessions?skip=0&limit=20",
+              "host": ["{{base_url}}"],
+              "path": ["interviews", "sessions"],
+              "query": [
+                { "key": "skip",   "value": "0" },
+                { "key": "limit",  "value": "20" },
+                { "key": "status", "value": "pending", "disabled": true }
+              ]
+            },
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }]
+          }
+        },
+        {
+          "name": "Get Session by ID",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/interviews/sessions/{{session_id}}",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }]
+          }
+        },
+        {
+          "name": "Get Session Answers",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/interviews/sessions/{{session_id}}/answers",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "description": "Retourne toutes les réponses avec les évaluations LLM + champs followup"
+          }
+        },
+        {
+          "name": "Get Session Answers Summary",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/interviews/sessions/{{session_id}}/answers/summary",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }]
+          }
+        },
+        {
+          "name": "Get Sessions by Candidate",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/interviews/sessions/candidate/{{candidate_id}}",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }]
+          }
+        },
+        {
+          "name": "Schedule / Reschedule Session",
+          "request": {
+            "method": "PATCH",
+            "url": {
+              "raw": "{{base_url}}/interviews/sessions/{{session_id}}/schedule?scheduled_at=2026-03-20T10:00:00Z",
+              "host": ["{{base_url}}"],
+              "path": ["interviews", "sessions", "{{session_id}}", "schedule"],
+              "query": [{ "key": "scheduled_at", "value": "2026-03-20T10:00:00Z" }]
+            },
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "description": "Planifie ou replanifie un entretien.\nRègles : accès refusé avant scheduled_at, retard max 30 min."
+          }
+        },
+        {
+          "name": "Update Session Status",
+          "request": {
+            "method": "PATCH",
+            "url": {
+              "raw": "{{base_url}}/interviews/sessions/{{session_id}}/status?status=cancelled",
+              "host": ["{{base_url}}"],
+              "path": ["interviews", "sessions", "{{session_id}}", "status"],
+              "query": [{ "key": "status", "value": "cancelled" }]
+            },
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "description": "Statuts valides : pending | in_progress | completed | cancelled"
+          }
+        },
+        {
+          "name": "Delete Session",
+          "request": {
+            "method": "DELETE",
+            "url": "{{base_url}}/interviews/sessions/{{session_id}}",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }]
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "Evaluations",
+      "item": [
+        {
+          "name": "Trigger Evaluation (manual)",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/evaluations/trigger",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type",  "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"session_id\": \"{{session_id}}\",\n  \"language\": \"fr\"\n}"
+            },
+            "description": "Déclenche manuellement l'évaluation LLM globale d'une session terminée.\nRésultat : decision = accepted | pending | rejected"
+          }
+        },
+        {
+          "name": "Get Evaluation",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/evaluations/{{session_id}}",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "description": "Récupère l'évaluation globale avec la décision finale"
+          }
+        },
+        {
+          "name": "List All Evaluations",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/evaluations/",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }]
+          }
+        },
+        {
+          "name": "Delete Evaluation",
+          "request": {
+            "method": "DELETE",
+            "url": "{{base_url}}/evaluations/{{session_id}}",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }]
+          }
+        },
+        {
+          "name": "LLM Health Check",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/evaluations/health/llm",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }]
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "Analytics",
+      "item": [
+        {
+          "name": "Dashboard (all stats)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/analytics/dashboard?days=30",
+              "host": ["{{base_url}}"],
+              "path": ["analytics", "dashboard"],
+              "query": [{ "key": "days", "value": "30" }]
+            },
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }]
+          }
+        },
+        {
+          "name": "Candidate Stats",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/analytics/candidates?days=30",
+              "host": ["{{base_url}}"],
+              "path": ["analytics", "candidates"],
+              "query": [{ "key": "days", "value": "30" }]
+            },
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }]
+          }
+        },
+        {
+          "name": "Interview Stats",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/analytics/interviews?days=30",
+              "host": ["{{base_url}}"],
+              "path": ["analytics", "interviews"],
+              "query": [{ "key": "days", "value": "30" }]
+            },
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }]
+          }
+        },
+        {
+          "name": "System Stats",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/analytics/system",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }]
+          }
+        },
+        {
+          "name": "Scheduling Stats",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/analytics/scheduling",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "description": "Total planifiés / cette semaine / confirmés / en attente\nRépartition par jour, poste, langue"
+          }
+        },
+        {
+          "name": "Score Stats (KPIs + charts)",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/analytics/scores",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "description": "Acceptés / Refusés / En entretien / En attente\nTendance 6 mois, distribution scores, performance par département"
+          }
+        },
+        {
+          "name": "Position Score Stats (all)",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/analytics/positions/scores",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "description": "Excellent (80+) / Bon (60-79) / Moyen (40-59) / Faible (0-39) — toutes offres"
+          }
+        },
+        {
+          "name": "Position Score Stats (by position)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/analytics/positions/scores?position_id={{position_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["analytics", "positions", "scores"],
+              "query": [{ "key": "position_id", "value": "{{position_id}}" }]
+            },
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }]
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "Export",
+      "item": [
+        {
+          "name": "Export Candidates CSV",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/export/candidates/csv",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "description": "CSV : ID, Prénom, Nom, Email, Téléphone, Compétences techniques, Langues, Soft Skills, Certifications"
+          }
+        },
+        {
+          "name": "Export Interviews CSV",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/export/interviews/csv",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "description": "CSV : sessions avec score moyen"
+          }
+        },
+        {
+          "name": "Export Interview JSON",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/export/interviews/{{session_id}}/json",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "description": "JSON détaillé d'une session : réponses + évaluations + score moyen"
+          }
+        },
+        {
+          "name": "Export Evaluations CSV",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/export/evaluations/csv",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "description": "CSV : toutes les évaluations LLM par question (score, verdict, feedback, followup)"
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "Notifications",
+      "item": [
+        {
+          "name": "Create Notification",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json._id) pm.collectionVariables.set('notification_id', json._id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/notifications/",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type",  "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Nouvel entretien planifié\",\n  \"message\": \"Ahmed Ben Ali a un entretien prévu le 20/03/2026 à 10h00\",\n  \"type\": \"interview_scheduled\",\n  \"session_id\": \"{{session_id}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "List Notifications",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/notifications/",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }]
+          }
+        },
+        {
+          "name": "Get Unread Count",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/notifications/unread-count",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }]
+          }
+        },
+        {
+          "name": "Mark Notification as Read",
+          "request": {
+            "method": "PATCH",
+            "url": "{{base_url}}/notifications/{{notification_id}}",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }]
+          }
+        },
+        {
+          "name": "Mark All as Read",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/notifications/mark-all-read",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }]
+          }
+        },
+        {
+          "name": "Delete Notification",
+          "request": {
+            "method": "DELETE",
+            "url": "{{base_url}}/notifications/{{notification_id}}",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }]
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "Media",
+      "item": [
+        {
+          "name": "Upload File",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/media/upload",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "file",     "type": "file",   "src": "" },
+                { "key": "category", "type": "text",   "value": "interviews" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Download File",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/media/download/interviews/answer_session_xxx_1.wav",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }]
+          }
+        },
+        {
+          "name": "Delete File",
+          "request": {
+            "method": "DELETE",
+            "url": "{{base_url}}/media/interviews/answer_session_xxx_1.wav",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }]
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "🔌 WebSocket (info)",
+      "item": [
+        {
+          "name": "WebSocket — Info (use WS client)",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/health",
+            "description": "⚠️ Le WebSocket ne peut pas être testé via Postman REST.\nUtiliser l'onglet WebSocket de Postman :\n\n  URL : ws://localhost:8000/ws/interview/{{session_id}}?lang=fr\n\nMessages à envoyer (JSON) :\n  {\"type\": \"audio_chunk\", \"audio_data\": \"<base64_pcm>\"}\n  {\"type\": \"answer_complete\"}\n  {\"type\": \"audio_finished\"}\n  {\"type\": \"end_interview\"}\n\nMessages reçus :\n  welcome → question → answer_evaluated → followup_question (si score < 8)\n  → answer_followup_completed → interview_completed → global_evaluation\n  (decision: accepted | pending | rejected)"
+          }
+        }
+      ]
+    }
+
+  ]
+}
