@@ -13,7 +13,8 @@ Complete recruitment platform with automated voice interviews via AI avatar.
 - 🧠 **AI transcription** via Whisper (faster-whisper) — high accuracy
 - 📝 **Strict AI evaluation** via Ollama + Llama 3 (score 0–10, rigorous grading scale)
 - 🔁 **Intelligent follow-up questions** if the answer is insufficient (score < 8)
-- 📊 **Global interview report** with hiring recommendation
+- 📊 **Global interview report** with final hiring decision (Accepted / On Hold / Rejected)
+- 🗓️ **Interview scheduling** with 30-minute late access window
 - 🔊 **Text-to-speech** via Edge-TTS (Microsoft) — primary engine, instant
 - 🔁 **Automatic TTS fallback** via gTTS (Google) if Edge-TTS is unavailable
 - ⚡ **Real-time WebSocket** (chunked PCM audio)
@@ -172,18 +173,32 @@ python -m client.main
 curl -X POST http://localhost:8000/auth/login \
   -d "username=rh@stark.tn&password=admin123"
 
-# Create a candidate
-curl -X POST http://localhost:8000/candidates \
+# Create a candidate (all 6 fields are required)
+curl -X POST http://localhost:8000/candidates/ \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
-  -d '{"first_name":"Ahmed","last_name":"Ben Ali",
-       "contact":{"email":"ahmed@example.com"},"skills":["Python"]}'
+  -d '{
+    "first_name": "Ahmed",
+    "last_name": "Ben Ali",
+    "contact": { "email": "ahmed@example.com", "phone": "+216 55 000 000" },
+    "technical_skills": [{ "name": "Python", "level": "Advanced" }],
+    "experiences":  [{ "title": "Data Scientist", "company": "TechCorp" }],
+    "education":    [{ "degree": "Engineer", "field": "Data Engineering", "institution": "ENETCOM" }],
+    "languages":    [{ "name": "French", "level": "C1" }],
+    "soft_skills":  [{ "name": "Teamwork" }],
+    "certifications": [{ "name": "AWS Developer", "issuer": "Amazon" }]
+  }'
 
-# Create an interview session
+# Create an interview session (with optional scheduling)
 curl -X POST http://localhost:8000/interviews/sessions \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
-  -d '{"candidate_id":"<id>","job_position_id":"<id>","language":"en"}'
+  -d '{
+    "candidate_id": "<id>",
+    "job_position_id": "<id>",
+    "language": "fr",
+    "scheduled_at": "2026-03-20T10:00:00Z"
+  }'
 ```
 
 ### 2. Take the interview (Client)
@@ -195,7 +210,7 @@ curl -X POST http://localhost:8000/interviews/sessions \
 5. Listen to the avatar ask questions
 6. Click **Record** → speak → **Stop**
 7. Score and feedback appear in real time after each answer
-8. A global report is displayed at the end of the interview
+8. A global report with hiring decision is displayed at the end
 
 ### 3. View results
 
@@ -203,7 +218,7 @@ curl -X POST http://localhost:8000/interviews/sessions \
 # Full session details
 GET http://localhost:8000/interviews/sessions/<session_id>
 
-# LLM evaluation
+# LLM evaluation + hiring decision
 GET http://localhost:8000/evaluations/<session_id>
 
 # Export all evaluations as CSV
@@ -232,7 +247,7 @@ sparkhire-ai/
 │   │
 │   ├── candidates/                 ← Candidate management
 │   │   ├── crud.py
-│   │   ├── models.py               ← Candidate, Education, Experience
+│   │   ├── models.py               ← CandidateCreate (strict) · Candidate (response)
 │   │   └── routes.py               ← /candidates CRUD + search
 │   │
 │   ├── interviews/                 ← Sessions and job positions
@@ -241,7 +256,7 @@ sparkhire-ai/
 │   │   └── routes.py               ← /interviews/positions · /interviews/sessions
 │   │
 │   ├── evaluation/                 ← LLM evaluation pipeline
-│   │   ├── models.py               ← AnswerEvaluation, GlobalEvaluation
+│   │   ├── models.py               ← AnswerEvaluation, GlobalEvaluation + decision
 │   │   ├── service.py              ← EvaluationService (ASR → LLM orchestration)
 │   │   └── routes.py               ← /evaluations CRUD + trigger + health
 │   │
@@ -257,7 +272,7 @@ sparkhire-ai/
 │   │   └── interview_handler.py    ← Full pipeline per session
 │   │
 │   ├── media/                      ← File upload / download
-│   ├── analytics/                  ← Dashboard stats (candidates, interviews, system)
+│   ├── analytics/                  ← Dashboard stats + scheduling + score KPIs
 │   ├── notifications/              ← Notification system
 │   └── export/                     ← CSV (candidates, interviews, evaluations) + JSON
 │
@@ -270,7 +285,7 @@ sparkhire-ai/
 │   │   └── websocket_client.py     ← Thread-safe WebSocketClient
 │   └── ui/
 │       ├── stark_theme.py          ← Design system (colors, fonts, styles)
-│       ├── icons.py                ← Lucide SVG icons + Stark logos
+│       ├── icons.py                ← Lucide SVG icons + SparkHire logos
 │       ├── main_window.py          ← Main window (pygame 24000 Hz)
 │       ├── interview_widget.py     ← Interview controls + progress
 │       └── video_player_widget.py  ← Avatar video (cv2 + pygame)
@@ -324,9 +339,10 @@ ws://localhost:8000/ws/interview/{session_id}?lang=ar|fr|en
 | `audio_chunk_end` | End of audio stream |
 | `heartbeat` | Connection keepalive during long processing |
 | `answer_saved` | Save confirmation + transcript |
-| `answer_evaluated` | LLM score, verdict, feedback |
+| `answer_evaluated` | LLM score, verdict, feedback (initial) |
 | `followup_question` | Follow-up question if score < 8 |
-| `global_evaluation` | Final interview report |
+| `answer_followup_completed` | Final score after clarification + followup transcript |
+| `global_evaluation` | Final report + hiring decision |
 | `interview_completed` | Interview ended + closing audio |
 | `error` | Error message + `error_type` |
 
@@ -388,6 +404,43 @@ KMP_DUPLICATE_LIB_OK=TRUE
 
 ---
 
+## 👤 Candidate Model
+
+When creating a candidate, all 6 enriched fields are **required** (minimum 1 item each):
+
+| Field | Type | Description |
+|---|---|---|
+| `technical_skills` | `[{name, level?, years_experience?}]` | e.g. Python / Advanced / 3 years |
+| `experiences` | `[{title, company, ...}]` | Work history |
+| `education` | `[{degree, field, institution, ...}]` | Academic background |
+| `languages` | `[{name, level}]` | Level: A1–C2 or Native |
+| `soft_skills` | `[{name}]` | e.g. Teamwork, Leadership |
+| `certifications` | `[{name, issuer, ...}]` | AWS, PMP, etc. |
+
+---
+
+## 🗓️ Interview Scheduling
+
+Sessions can be created with an optional `scheduled_at` datetime (ISO 8601, UTC):
+
+```json
+{ "candidate_id": "...", "job_position_id": "...", "language": "fr",
+  "scheduled_at": "2026-03-20T10:00:00Z" }
+```
+
+**Access window rules:**
+
+| Situation | Result |
+|---|---|
+| Before `scheduled_at` | ❌ Access denied — too early |
+| Between `scheduled_at` and `+30 min` | ✅ Access allowed |
+| After `scheduled_at + 30 min` | ❌ Access denied — late limit exceeded |
+| No `scheduled_at` | Session expires 30 min after creation |
+
+To reschedule: `PATCH /interviews/sessions/{session_id}/schedule?scheduled_at=<ISO datetime>`
+
+---
+
 ## 📊 Evaluation Grading Scale
 
 The LLM evaluator applies a strict grading scale across all three languages:
@@ -404,14 +457,42 @@ The LLM evaluator applies a strict grading scale across all three languages:
 
 ---
 
+## ✅ Hiring Decision
+
+At the end of every interview, the LLM generates a **structured hiring decision** based on the global score:
+
+| Score /10 | Decision | Color |
+|---|---|---|
+| ≥ 7.0 | ✅ Accepted | Green |
+| 5.0 – 6.9 | 🟡 On Hold | Amber |
+| < 5.0 | ❌ Rejected | Red |
+
+The `global_evaluation` WebSocket message includes `decision`, `decision_label` (localized), `decision_color`, and `decision_reason` (1-sentence LLM justification).
+
+---
+
 ## 📤 Available Exports
 
 | Endpoint | Format | Content |
 |---|---|---|
-| `GET /export/candidates/csv` | CSV | All candidates |
+| `GET /export/candidates/csv` | CSV | All candidates with skills, languages, certifications |
 | `GET /export/interviews/csv` | CSV | All sessions with average score |
 | `GET /export/interviews/{id}/json` | JSON | Full details of one interview |
-| `GET /export/evaluations/csv` | CSV | All LLM evaluations per question |
+| `GET /export/evaluations/csv` | CSV | All LLM evaluations per question (with followup data) |
+
+---
+
+## 📈 Analytics Endpoints
+
+| Endpoint | Description |
+|---|---|
+| `GET /analytics/dashboard` | All stats combined |
+| `GET /analytics/candidates` | Candidate stats + top skills |
+| `GET /analytics/interviews` | Interview stats + completion rate |
+| `GET /analytics/scheduling` | Total planned / this week / confirmed / pending |
+| `GET /analytics/scores` | Accepted / Rejected KPIs + 6-month trend + score distribution |
+| `GET /analytics/positions/scores` | Excellent/Good/Average/Weak per job position |
+| `GET /analytics/system` | System health + storage |
 
 ---
 
@@ -421,12 +502,14 @@ The LLM evaluator applies a strict grading scale across all three languages:
 |---|---|---|
 | `OMP: Error #15 (libiomp5md)` | OpenMP conflict between PyTorch and ctranslate2 (Windows) | Add `KMP_DUPLICATE_LIB_OK=TRUE` to `.env` |
 | `AttributeError: WEBSOCKET_URL` | Field missing from `client/config.py` | Check `WEBSOCKET_URL=ws://localhost:8000` in `.env` |
+| `AttributeError: send_heartbeat_during` | Old `connection_manager.py` on your machine | Replace with the latest version from the repo |
 | `PyAudio: No module found` | PortAudio not installed | Windows: `pipwin install pyaudio` / Linux: `sudo apt install portaudio19-dev` |
 | `ffmpeg not found` | FFmpeg not in PATH | Windows: extract to `models/ffmpeg-*/` / Linux: `sudo apt install ffmpeg` |
 | `Connection refused :11434` | Ollama not running | Run `ollama serve` in a separate terminal |
 | `MongoDB timeout` | MongoDB service stopped | Windows: `net start MongoDB` / Linux: `sudo systemctl start mongod` |
 | `Empty transcription` | Audio too short or silent | VAD filter active — speak clearly for at least 1 second |
 | `WebSocket disconnected` | Long TTS processing | Heartbeat maintains the connection automatically |
+| `ValidationError: technical_skills missing` | Old candidate document in MongoDB | Fixed — `Candidate` response model uses empty list defaults |
 
 ---
 
@@ -446,7 +529,7 @@ It integrates key competencies from the program:
 
 - **Data Engineering** — real-time audio pipeline, MongoDB data modeling, REST API design with FastAPI
 - **AI** — speech recognition (Whisper), large language model evaluation (Llama 3 via Ollama), text-to-speech synthesis (Edge-TTS)
-- **Decisional Systems** — automated scoring engine with strict grading logic, follow-up question generation, global hiring recommendation
+- **Decisional Systems** — automated scoring engine with strict grading logic, follow-up question generation, global hiring decision (Accepted / On Hold / Rejected)
 - **Software Engineering** — WebSocket communication, cross-platform desktop client (PySide6), JWT authentication, CSV/JSON export
 
 ---
