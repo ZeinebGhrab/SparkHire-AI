@@ -1,6 +1,6 @@
 # ═══════════════════════════════════════════════════════════════
-# STARK RECRUITMENT AI — requirements.txt (Backend)
-# Python 3.10+ | pip install -r requirements.txt
+# SPARKHIRE AI — requirements.txt (Backend)
+# Python 3.10 or 3.11 | pip install -r requirements.txt
 # ═══════════════════════════════════════════════════════════════
 
 # ── API Framework ────────────────────────────────────────────────
@@ -17,7 +17,7 @@ python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
 bcrypt==4.2.0
 
-# ── Base de Donnees ──────────────────────────────────────────────
+# ── Base de Données ──────────────────────────────────────────────
 pymongo==4.10.1
 motor==3.5.1
 python-dotenv==1.0.1
@@ -25,16 +25,33 @@ python-dotenv==1.0.1
 # ── WebSocket ────────────────────────────────────────────────────
 websockets==13.0.1
 
-# ── ASR — Whisper ────────────────────────────────────────────────
+# ── ASR — Whisper GPU ────────────────────────────────────────────
+# CTranslate2 avec support CUDA (nécessaire pour Whisper sur GPU)
+# Si NVIDIA GPU + CUDA 12.x :
+#   pip install ctranslate2==4.4.0
+# Si NVIDIA GPU + CUDA 11.x :
+#   pip install ctranslate2==3.24.0
+# Si CPU uniquement :
+#   pip install ctranslate2
+ctranslate2==4.4.0
 faster-whisper==1.0.3
 
 # ── ASR — Vosk (fallback hors-ligne) ─────────────────────────────
 vosk==0.3.45
 
+# ── GPU — PyTorch CUDA (pour Whisper GPU + détection GPU) ────────
+# IMPORTANT : installer manuellement avec la bonne version CUDA :
+#   CUDA 12.1 → pip install torch --index-url https://download.pytorch.org/whl/cu121
+#   CUDA 11.8 → pip install torch --index-url https://download.pytorch.org/whl/cu118
+#   CPU only  → pip install torch
+# torch est listé ici pour référence — ne pas installer via pip install -r
+# si vous avez besoin du support CUDA (la version PyPI est CPU-only)
+torch
+
 # ── TTS — Edge-TTS (Microsoft, moteur principal) ─────────────────
 edge-tts==6.1.12
 
-# ── TTS — gTTS (Google, fallback) ────────────────────────────────
+# ── TTS — gTTS (Google, fallback automatique) ────────────────────
 gTTS==2.5.3
 
 # ── Audio Processing ─────────────────────────────────────────────
@@ -56,3 +73,22 @@ pytz==2024.2
 # pytest==8.3.0
 # pytest-asyncio==0.24.0
 
+# ═══════════════════════════════════════════════════════════════
+# INSTALLATION GPU COMPLÈTE (dans l'ordre) :
+#
+#   1. pip install torch --index-url https://download.pytorch.org/whl/cu121
+#   2. pip install ctranslate2==4.4.0 faster-whisper==1.0.3
+#   3. pip install -r requirements.txt
+#
+# VÉRIFICATION GPU :
+#   python -c "import torch; print(torch.cuda.is_available())"
+#   python -c "import ctranslate2; print(ctranslate2.get_supported_compute_types('cuda'))"
+#
+# .env GPU :
+#   WHISPER_DEVICE=cuda
+#   WHISPER_COMPUTE_TYPE=float16
+#
+# .env CPU :
+#   WHISPER_DEVICE=cpu
+#   WHISPER_COMPUTE_TYPE=int8
+# ═══════════════════════════════════════════════════════════════

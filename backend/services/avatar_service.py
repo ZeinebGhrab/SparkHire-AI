@@ -122,13 +122,13 @@ def get_avatar_service() -> AvatarService:
     if provider_name in _SIMPLE_FALLBACK_PROVIDERS:
         if provider_name != "simple":
             logger.info(
-                f"ℹ️  Avatar provider '{provider_name}' non implémenté "
+                f"ℹAvatar provider '{provider_name}' non implémenté "
                 f"→ mode simple activé (vidéos statiques)"
             )
         provider = SimpleAvatarProvider()
     else:
         logger.warning(
-            f"⚠️  Provider avatar inconnu : '{provider_name}' → mode simple activé"
+            f"Provider avatar inconnu : '{provider_name}' → mode simple activé"
         )
         provider = SimpleAvatarProvider()
 

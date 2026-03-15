@@ -2,7 +2,7 @@
 
 Complete recruitment platform with automated voice interviews via AI avatar.
 
-> **Pipeline:** Candidate speaks → Whisper ASR → Llama 3 LLM → Score + Real-time Feedback
+> **Pipeline:** Candidate speaks → Whisper ASR (GPU) → Llama 3.2 LLM (GPU) → Score + Real-time Feedback
 
 ---
 
@@ -10,8 +10,8 @@ Complete recruitment platform with automated voice interviews via AI avatar.
 
 - 🎙️ **Automated voice interviews** with animated HR avatar
 - 🌍 **Trilingual** support: Arabic / French / English
-- 🧠 **AI transcription** via Whisper (faster-whisper) — high accuracy
-- 📝 **Strict AI evaluation** via Ollama + Llama 3 (score 0–10, rigorous grading scale)
+- 🧠 **AI transcription** via Whisper (faster-whisper) — GPU-accelerated, ~0.3s per answer
+- 📝 **Strict AI evaluation** via Ollama + Llama 3.2 (score 0–10, rigorous grading scale)
 - 🔁 **Intelligent follow-up questions** if the answer is insufficient (score < 8)
 - 📊 **Global interview report** with final hiring decision (Accepted / On Hold / Rejected)
 - 🔔 **Automatic recruiter notification** when an interview is completed
@@ -19,8 +19,10 @@ Complete recruitment platform with automated voice interviews via AI avatar.
 - 🔊 **Text-to-speech** via Edge-TTS (Microsoft) — primary engine, instant
 - 🔁 **Automatic TTS fallback** via gTTS (Google) if Edge-TTS is unavailable
 - ⚡ **Real-time WebSocket** (chunked PCM audio)
+- ⚡ **TTS prefetch** — next question audio generated while candidate answers current one
+- 🚀 **Non-blocking LLM evaluation** — transition between questions is immediate
 - 🔐 **JWT authentication** for recruiters
-- 🖥️ **PySide6 client interface** (glassmorphism design)
+- 🖥️ **PySide6 client interface** (light professional design)
 - 🗃️ **MongoDB** — candidates, positions, sessions, evaluations, notifications
 - 📤 **CSV / JSON export** + analytics dashboard
 - 🖥️ **Cross-platform** — Windows, Linux, macOS
@@ -36,6 +38,7 @@ Complete recruitment platform with automated voice interviews via AI avatar.
 | MongoDB | 7.x Community | [mongodb.com](https://www.mongodb.com) | Install as a service |
 | Ollama | latest | [ollama.com](https://ollama.com/download) | Required for LLM evaluation |
 | FFmpeg | 6.0+ | [ffmpeg.org](https://ffmpeg.org) | Only needed if gTTS fallback is used |
+| CUDA Toolkit | 11.x or 12.x | [nvidia.com](https://developer.nvidia.com/cuda-downloads) | Optional — for GPU acceleration |
 
 > **FFmpeg installation by OS:**
 > - **Windows** — Extract to `models/ffmpeg-8.0.1-essentials_build/` (auto-detected) or add to PATH
@@ -55,7 +58,7 @@ git clone https://github.com/ZeinebGhrab/sparkhire-ai.git
 cd sparkhire-ai
 ```
 
-### 2. Virtual environment
+### 2. Virtual environment (optional but recommended)
 
 ```bash
 python -m venv .venv
@@ -94,7 +97,28 @@ pip install -r requirements.txt
 pip install -r client/requirements.txt
 ```
 
-### 5. Configure `.env`
+### 5. GPU support — PyTorch + CTranslate2 (recommended)
+
+If you have an NVIDIA GPU, install the CUDA-enabled versions for maximum performance:
+
+```bash
+# Check your CUDA version first
+nvidia-smi
+
+# Install PyTorch with CUDA 12.1 support
+pip install torch --index-url https://download.pytorch.org/whl/cu121
+
+# Install CTranslate2 with CUDA support (for Whisper GPU)
+pip install ctranslate2==4.4.0 faster-whisper==1.0.3
+```
+
+> **Verify GPU support:**
+> ```bash
+> python -c "import torch; print(torch.cuda.is_available(), torch.version.cuda)"
+> python -c "import ctranslate2; print(ctranslate2.get_supported_compute_types('cuda'))"
+> ```
+
+### 6. Configure `.env`
 
 ```bash
 cp .env.example .env
@@ -102,7 +126,7 @@ cp .env.example .env
 
 Edit `.env` with your settings (see [Configuration](#%EF%B8%8F-configuration) below).
 
-### 6. Download the Whisper model
+### 7. Download the Whisper model
 
 ```bash
 python scripts/download_whisper.py medium
@@ -114,26 +138,35 @@ python scripts/download_whisper.py medium
 | base | 145 MB | — |
 | small | 483 MB | — |
 | **medium** | **1.5 GB** | ✅ **recommended** |
-| large-v3 | 3.1 GB | GPU only |
+| large-v3 | 3.1 GB | GPU only (6 GB+ VRAM) |
 
 The model is saved automatically in `models/whisper/`.
 
-### 7. Ollama LLM model
+### 8. Ollama LLM model
 
 ```bash
 # Start the Ollama server (separate terminal)
 ollama serve
 
-# Download Llama 3 (4.7 GB)
+# Download Llama 3.2 (recommended — 2.8 GB GPU)
+ollama pull llama3.2
+
+# Alternative: Llama 3 full size (4.7 GB)
 ollama pull llama3
 
 # Alternative if RAM < 8 GB
 ollama pull llama3:8b-instruct-q4_0   # 2.3 GB
 ```
 
+> Verify Ollama is using GPU:
+> ```bash
+> ollama ps
+> # Should show: 100% GPU
+> ```
+
 > If you use a different model, update `OLLAMA_MODEL` in `.env`.
 
-### 8. Database setup
+### 9. Database setup
 
 ```bash
 # Create the admin recruiter account
@@ -153,6 +186,14 @@ python scripts/seed_job_positions.py
 uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
+**Expected startup logs (GPU mode):**
+```
+🎮 GPU détecté : NVIDIA GeForce RTX XXXX | VRAM=X.X GB
+✅ Whisper 'medium' prêt sur CUDA
+🎙️ TTS Service prêt | primaire=EdgeEngine | fallback=GoogleEngine
+LLM Ollama disponible | modèle=llama3.2
+```
+
 - API: [http://localhost:8000](http://localhost:8000)
 - Swagger docs: [http://localhost:8000/docs](http://localhost:8000/docs)
 - Health check: [http://localhost:8000/health](http://localhost:8000/health)
@@ -162,6 +203,22 @@ uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
 ```bash
 python -m client.main
 ```
+
+---
+
+## ⚡ Performance
+
+| Component | CPU mode | GPU mode (RTX 4050+) |
+|---|---|---|
+| Whisper ASR (medium) | 5–10s | **~0.3–0.5s** |
+| Ollama LLM (llama3.2) | 15–30s | **~2–4s** |
+| Edge-TTS | ~1s | ~1s (network) |
+| **Total inter-question** | **25–45s** | **~3–7s** |
+
+**VRAM usage (RTX 4050 6.4 GB):**
+- Whisper medium: ~1.5 GB
+- llama3.2: ~2.8 GB
+- Total: ~4.3 GB / 6.4 GB
 
 ---
 
@@ -191,8 +248,6 @@ curl -X POST http://localhost:8000/candidates/ \
   }'
 
 # Create an interview session
-# The recruiter email (from JWT) is automatically stored in created_by
-# → a notification will be sent to this email when the interview ends
 curl -X POST http://localhost:8000/interviews/sessions \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
@@ -262,34 +317,11 @@ Interview ends (last answer submitted)
         │         │
         │         ├── Reads created_by from session (recruiter email)
         │         ├── Fallback: notifies ALL recruiters if created_by is empty
-        │         └── Inserts into db.notifications:
-        │               {
-        │                 "type": "interview_completed",
-        │                 "title": "Entretien Terminé",
-        │                 "message": "Ahmed Ben Ali a terminé
-        │                             l'entretien (3/3 réponses)",
-        │                 "priority": "high",
-        │                 "read": false
-        │               }
+        │         └── Inserts into db.notifications
         │
         └── _run_global_evaluation()       ← non-blocking task
                   └── LLM global report + hiring decision
 ```
-
-### Notification fields
-
-| Field | Type | Description |
-|---|---|---|
-| `recipient_email` | string | Email of the recruiter who created the session |
-| `type` | string | `interview_completed` |
-| `title` | string | Localized title |
-| `message` | string | Candidate name + answer count |
-| `data.session_id` | string | Related session ID |
-| `data.candidate_name` | string | Full name of the candidate |
-| `data.total_questions` | int | Total questions in the position |
-| `data.total_answers` | int | Answers given by the candidate |
-| `priority` | string | `high` |
-| `read` | bool | `false` on creation |
 
 ### Notification API endpoints
 
@@ -300,17 +332,6 @@ Interview ends (last answer submitted)
 | `PATCH /notifications/{id}` | Mark a single notification as read |
 | `POST /notifications/mark-all-read` | Mark all notifications as read |
 | `DELETE /notifications/{id}` | Delete a notification |
-
-### created_by field
-
-The `created_by` field is automatically stored on every new session:
-
-```python
-# POST /interviews/sessions  →  recruiter email extracted from JWT
-session.created_by = "rh@stark.tn"
-```
-
-This ensures the notification is always sent to the correct recruiter, even in a multi-recruiter environment.
 
 ---
 
@@ -345,15 +366,15 @@ sparkhire-ai/
 │   │   └── routes.py               ← /evaluations CRUD + trigger + health
 │   │
 │   ├── services/                   ← Core services
-│   │   ├── asr_service.py          ← WhisperASR + VoskASR + factory
+│   │   ├── asr_service.py          ← WhisperASR (GPU auto-detect) + VoskASR + factory
 │   │   ├── tts_service.py          ← TTSService (Edge-TTS → gTTS fallback)
 │   │   ├── edge_tts_engine.py      ← Microsoft Edge-TTS (Arabic / FR / EN voices)
-│   │   ├── llm_service.py          ← OllamaLLMService (Llama 3, strict grading)
-│   │   └── avatar_service.py       ← AvatarService (simple / wav2lip / did)
+│   │   ├── llm_service.py          ← OllamaLLMService (Llama 3.2, strict grading)
+│   │   └── avatar_service.py       ← AvatarService (simple / liveportrait / wav2lip / did)
 │   │
 │   ├── websocket/                  ← Real-time communication
 │   │   ├── connection_manager.py   ← ConnectionManager + heartbeat keepalive
-│   │   └── interview_handler.py    ← Full pipeline + notification on completion
+│   │   └── interview_handler.py    ← Full pipeline + TTS prefetch + non-blocking LLM
 │   │
 │   ├── notifications/              ← Notification system
 │   │   ├── models.py               ← Notification, NotificationCreate
@@ -380,7 +401,7 @@ sparkhire-ai/
 │
 ├── scripts/
 │   ├── create_admin.py             ← Create admin recruiter in DB
-│   ├── seed_job_positions.py       ← Insert positions + questions
+│   ├── seed_job_positions.py       ← Insert positions + questions (AR/FR/EN)
 │   ├── download_whisper.py         ← Download Whisper model
 │   └── test_interview.py           ← Full flow automated test
 │
@@ -392,45 +413,6 @@ sparkhire-ai/
 ├── requirements.txt                ← Backend dependencies
 └── client/requirements.txt         ← Client dependencies
 ```
-
----
-
-## 🗺️ Architecture Diagrams
-
-### 🗄️ Class Diagram (Database)
-
-![Class Diagram](docs/Class_Diagram.png)
-
-### 🗓️ Flow 1 — Access Validation
-<p align="center">
-  <img src="docs/SparkHire%20AI%20—%20Access%20authorization.png" width="400" alt="Access Validation"/>
-</p>
-
-### 🎤 Flow 2 — Real-time Interview
-<p align="center">
-  <img src="docs/SparkHire%20AI%20—%20Real-time%20interview.png" width="400" alt="Real-time Interview"/>
-</p>
-
-### 📊 Flow 3 — Final Evaluation & Decision
-<p align="center">
-  <img src="docs/SparkHire%20AI%20—%20Final%20Evaluation%20%26%20Decision.png" width="400" alt="Final Evaluation & Decision"/>
-</p>
-
-### 🔔 Flow 4 — Recruiter Notification
-<p align="center">
-
-```
-Candidate answers last question
-         │
-         ▼
- interview_completed (WebSocket)
-         │
-         ├──► db.notifications INSERT  ──► GET /notifications/unread-count (+1)
-         │
-         └──► LLM global evaluation   ──► global_evaluation (WebSocket)
-```
-
-</p>
 
 ---
 
@@ -459,11 +441,9 @@ ws://localhost:8000/ws/interview/{session_id}?lang=ar|fr|en
 | `audio_chunk_end` | End of audio stream |
 | `heartbeat` | Connection keepalive during long processing |
 | `answer_saved` | Save confirmation + transcript |
-| `answer_evaluated` | LLM score, verdict, feedback (initial) |
-| `followup_question` | Follow-up question if score < 8 |
-| `answer_followup_completed` | Final score after clarification + followup transcript |
+| `answer_evaluated` | LLM score, verdict, feedback (background) |
 | `global_evaluation` | Final report + hiring decision |
-| `interview_completed` | Interview ended + closing audio → **triggers recruiter notification** |
+| `interview_completed` | Interview ended + closing audio → triggers recruiter notification |
 | `error` | Error message + `error_type` |
 
 ---
@@ -481,20 +461,24 @@ SECRET_KEY=<python -c "import secrets; print(secrets.token_hex(32))">
 # ── ASR ───────────────────────────────────
 ASR_ENGINE=faster-whisper          # or: vosk
 WHISPER_MODEL_SIZE=medium          # tiny | base | small | medium | large-v3
-WHISPER_DEVICE=cpu                 # cpu | cuda
-WHISPER_COMPUTE_TYPE=int8          # int8 (CPU) | float16 (GPU)
+
+# GPU (NVIDIA CUDA) — recommandé
+WHISPER_DEVICE=cuda                # cuda | cpu
+WHISPER_COMPUTE_TYPE=float16       # float16 (GPU) | int8 (CPU)
 
 # ── TTS ───────────────────────────────────
 TTS_ENGINE=edge-tts                # edge-tts (default) | gtts
-TTS_LANGUAGE=ar                    # ar | fr | en
+TTS_LANGUAGE=fr                    # ar | fr | en
 
 # ── LLM ───────────────────────────────────
 OLLAMA_URL=http://localhost:11434
-OLLAMA_MODEL=llama3
+OLLAMA_MODEL=llama3.2              # llama3.2 | llama3 | mistral ...
 OLLAMA_TIMEOUT=60.0
 
 # ── Avatar ────────────────────────────────
-AVATAR_PROVIDER=simple             # or: wav2lip, did
+# simple | liveportrait | wav2lip | did
+# (liveportrait, wav2lip, did → mode simple automatiquement si non implémenté)
+AVATAR_PROVIDER=simple
 
 # ── Client ────────────────────────────────
 WEBSOCKET_URL=ws://localhost:8000
@@ -502,10 +486,7 @@ API_BASE_URL=http://localhost:8000
 
 # ── Windows only ──────────────────────────
 KMP_DUPLICATE_LIB_OK=TRUE
-# Note: unknown .env variables are safely ignored (extra="ignore" in Settings)
 ```
-
-> **Note:** Any extra variables in `.env` (e.g. `KMP_DUPLICATE_LIB_OK`, `LIVEPORTRAIT_DEVICE`) are automatically ignored by Pydantic Settings — they will not cause startup errors.
 
 ---
 
@@ -515,11 +496,12 @@ KMP_DUPLICATE_LIB_OK=TRUE
 |---|---|---|
 | Backend | FastAPI 0.115 + Uvicorn | REST API + WebSocket ASGI |
 | Database | MongoDB 7 / PyMongo 4.10 | Data persistence |
-| ASR | faster-whisper 1.0.3 | Primary speech transcription |
+| ASR | faster-whisper 1.0.3 | Primary speech transcription (GPU) |
 | ASR | Vosk 0.3.45 | Offline transcription fallback |
 | TTS | Edge-TTS 6.1 | Microsoft TTS — primary engine |
 | TTS | gTTS 2.5.3 | Google TTS — automatic fallback |
-| LLM | Ollama + Llama 3 | AI answer evaluation (strict grading) |
+| LLM | Ollama + Llama 3.2 | AI answer evaluation (strict grading, GPU) |
+| GPU | CTranslate2 4.4.0 + PyTorch CUDA | Whisper GPU acceleration |
 | Auth | python-jose + bcrypt 4.2 | JWT + password hashing |
 | Client | PySide6 6.7 | Qt GUI framework |
 | Client | pygame 2.6 + OpenCV 4.10 | Audio playback (24kHz) + avatar video |
@@ -527,46 +509,7 @@ KMP_DUPLICATE_LIB_OK=TRUE
 
 ---
 
-## 👤 Candidate Model
-
-When creating a candidate, all 6 enriched fields are **required** (minimum 1 item each):
-
-| Field | Type | Description |
-|---|---|---|
-| `technical_skills` | `[{name, level?, years_experience?}]` | e.g. Python / Advanced / 3 years |
-| `experiences` | `[{title, company, ...}]` | Work history |
-| `education` | `[{degree, field, institution, ...}]` | Academic background |
-| `languages` | `[{name, level}]` | Level: A1–C2 or Native |
-| `soft_skills` | `[{name}]` | e.g. Teamwork, Leadership |
-| `certifications` | `[{name, issuer, ...}]` | AWS, PMP, etc. |
-
----
-
-## 🗓️ Interview Scheduling
-
-Sessions can be created with an optional `scheduled_at` datetime (ISO 8601, UTC):
-
-```json
-{ "candidate_id": "...", "job_position_id": "...", "language": "fr",
-  "scheduled_at": "2026-03-20T10:00:00Z" }
-```
-
-**Access window rules:**
-
-| Situation | Result |
-|---|---|
-| Before `scheduled_at` | ❌ Access denied — too early |
-| Between `scheduled_at` and `+30 min` | ✅ Access allowed |
-| After `scheduled_at + 30 min` | ❌ Access denied — late limit exceeded |
-| No `scheduled_at` | Session expires 30 min after creation |
-
-To reschedule: `PATCH /interviews/sessions/{session_id}/schedule?scheduled_at=<ISO datetime>`
-
----
-
 ## 📊 Evaluation Grading Scale
-
-The LLM evaluator applies a strict grading scale across all three languages:
 
 | Score | Verdict | Meaning |
 |---|---|---|
@@ -582,15 +525,11 @@ The LLM evaluator applies a strict grading scale across all three languages:
 
 ## ✅ Hiring Decision
 
-At the end of every interview, the LLM generates a **structured hiring decision** based on the global score:
-
 | Score /10 | Decision | Color |
 |---|---|---|
 | ≥ 7.0 | ✅ Accepted | Green |
 | 5.0 – 6.9 | 🟡 On Hold | Amber |
 | < 5.0 | ❌ Rejected | Red |
-
-The `global_evaluation` WebSocket message includes `decision`, `decision_label` (localized), `decision_color`, and `decision_reason` (1-sentence LLM justification).
 
 ---
 
@@ -601,7 +540,7 @@ The `global_evaluation` WebSocket message includes `decision`, `decision_label` 
 | `GET /export/candidates/csv` | CSV | All candidates with skills, languages, certifications |
 | `GET /export/interviews/csv` | CSV | All sessions with average score |
 | `GET /export/interviews/{id}/json` | JSON | Full details of one interview |
-| `GET /export/evaluations/csv` | CSV | All LLM evaluations per question (with followup data) |
+| `GET /export/evaluations/csv` | CSV | All LLM evaluations per question |
 
 ---
 
@@ -623,18 +562,18 @@ The `global_evaluation` WebSocket message includes `decision`, `decision_label` 
 
 | Error | Cause | Fix |
 |---|---|---|
-| `Extra inputs are not permitted` | Unknown variable in `.env` (e.g. `KMP_DUPLICATE_LIB_OK`) | Already fixed — `extra = "ignore"` in `Settings.Config` |
-| `OMP: Error #15 (libiomp5md)` | OpenMP conflict between PyTorch and ctranslate2 (Windows) | Add `KMP_DUPLICATE_LIB_OK=TRUE` to `.env` |
-| `AttributeError: WEBSOCKET_URL` | Field missing from `client/config.py` | Check `WEBSOCKET_URL=ws://localhost:8000` in `.env` |
-| `AttributeError: send_heartbeat_during` | Old `connection_manager.py` on your machine | Replace with the latest version from the repo |
+| `float16 compute type not supported` | `WHISPER_DEVICE=cpu` avec `float16` | Mettre `WHISPER_COMPUTE_TYPE=int8` sur CPU, ou `WHISPER_DEVICE=cuda` sur GPU |
+| `Extra inputs are not permitted` | Unknown variable in `.env` | Already fixed — `extra = "ignore"` in `Settings.Config` |
+| `OMP: Error #15 (libiomp5md)` | OpenMP conflict PyTorch / ctranslate2 | Add `KMP_DUPLICATE_LIB_OK=TRUE` to `.env` |
+| `torch.cuda.is_available() = False` | PyTorch installé sans CUDA | `pip install torch --index-url https://download.pytorch.org/whl/cu121` |
+| `CUDA support []` dans ctranslate2 | ctranslate2 sans CUDA | `pip install ctranslate2==4.4.0 faster-whisper==1.0.3` |
 | `PyAudio: No module found` | PortAudio not installed | Windows: `pipwin install pyaudio` / Linux: `sudo apt install portaudio19-dev` |
 | `ffmpeg not found` | FFmpeg not in PATH | Windows: extract to `models/ffmpeg-*/` / Linux: `sudo apt install ffmpeg` |
 | `Connection refused :11434` | Ollama not running | Run `ollama serve` in a separate terminal |
 | `MongoDB timeout` | MongoDB service stopped | Windows: `net start MongoDB` / Linux: `sudo systemctl start mongod` |
 | `Empty transcription` | Audio too short or silent | VAD filter active — speak clearly for at least 1 second |
 | `WebSocket disconnected` | Long TTS processing | Heartbeat maintains the connection automatically |
-| `ValidationError: technical_skills missing` | Old candidate document in MongoDB | Fixed — `Candidate` response model uses empty list defaults |
-| `Notification not received` | `created_by` empty on old sessions | Fallback active — all recruiters are notified automatically |
+| `Avatar provider inconnu` | Provider non implémenté | Tous les providers inconnus → mode simple automatiquement |
 
 ---
 
@@ -648,14 +587,14 @@ python scripts/test_interview.py
 
 ## 🎓 Academic Context
 
-This project was developed as a **Final Year Project** for the **2nd year of an Engineering Degree in Data Engineering & Decisional Systems**.
+This project was developed as a **Final Year Project** for the **2nd year of an Engineering Degree in Data Engineering & Decisional Systems** at ENET'Com Sfax.
 
 It integrates key competencies from the program:
 
 - **Data Engineering** — real-time audio pipeline, MongoDB data modeling, REST API design with FastAPI
-- **AI** — speech recognition (Whisper), large language model evaluation (Llama 3 via Ollama), text-to-speech synthesis (Edge-TTS)
+- **AI** — speech recognition (Whisper GPU), large language model evaluation (Llama 3.2 via Ollama GPU), text-to-speech synthesis (Edge-TTS)
 - **Decisional Systems** — automated scoring engine with strict grading logic, follow-up question generation, global hiring decision (Accepted / On Hold / Rejected)
-- **Software Engineering** — WebSocket communication, cross-platform desktop client (PySide6), JWT authentication, CSV/JSON export, automatic recruiter notifications
+- **Software Engineering** — WebSocket communication, TTS prefetch optimization, non-blocking LLM evaluation, cross-platform desktop client (PySide6), JWT authentication, CSV/JSON export, automatic recruiter notifications
 
 ---
 

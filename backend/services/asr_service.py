@@ -53,7 +53,7 @@ class WhisperASR(ASREngine):
                     import torch
                     if not torch.cuda.is_available():
                         logger.warning(
-                            "⚠️  CUDA demandé mais non disponible → fallback CPU/int8"
+                            "CUDA demandé mais non disponible → fallback CPU/int8"
                         )
                         actual_device       = "cpu"
                         actual_compute_type = "int8"
@@ -61,13 +61,13 @@ class WhisperASR(ASREngine):
                         gpu_name = torch.cuda.get_device_name(0)
                         vram_gb  = torch.cuda.get_device_properties(0).total_memory / 1e9
                         logger.info(
-                            f"🎮 GPU détecté : {gpu_name} | VRAM={vram_gb:.1f} GB"
+                            f"GPU détecté : {gpu_name} | VRAM={vram_gb:.1f} GB"
                         )
                         # float16 requis sur GPU — forcer si oublié
                         if actual_compute_type == "int8":
                             actual_compute_type = "float16"
                             logger.info(
-                                "ℹ️  compute_type int8 → float16 (GPU)"
+                                "ℹcompute_type int8 → float16 (GPU)"
                             )
                 except ImportError:
                     logger.warning(
@@ -91,7 +91,7 @@ class WhisperASR(ASREngine):
             self.model_size   = model_size
             self.actual_device = actual_device
             logger.info(
-                f"✅ Whisper '{model_size}' prêt sur {actual_device.upper()}"
+                f"Whisper '{model_size}' prêt sur {actual_device.upper()}"
             )
 
         except ImportError:
