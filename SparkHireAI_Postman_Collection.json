@@ -1,16 +1,16 @@
 {
   "info": {
-    "name": "SparkHire AI — Complete API Collection",
-    "description": "Collection complète pour tester toutes les routes de SparkHire AI.\n\n**Workflow typique :**\n1. Auth → Login → copier le token dans la variable `{{token}}`\n2. Candidates → Create Candidate\n3. Interviews → Create Job Position\n4. Interviews → Create Session (avec scheduled_at)\n5. WebSocket ws://localhost:8000/ws/interview/{{session_id}}?lang=fr\n6. Evaluations → Get Evaluation\n7. Analytics → Dashboard",
+    "name": "SparkHire AI — Complete API Collection (v2 — Notifications)",
+    "description": "Collection complète pour tester toutes les routes de SparkHire AI.\n\n**Nouveautés v2 :**\n- `POST /interviews/sessions` stocke automatiquement `created_by` (email du recruteur JWT)\n- À la fin de l'entretien, une notification est automatiquement insérée dans `db.notifications`\n- Nouveau dossier **Notifications — Flow Entretien** pour tester le cycle complet\n\n**Workflow typique :**\n1. Auth → Login → token sauvegardé automatiquement dans `{{token}}`\n2. Candidates → Create Candidate → `{{candidate_id}}`\n3. Interviews → Create Job Position → `{{position_id}}`\n4. Interviews → Create Session → `{{session_id}}` (created_by = email JWT)\n5. WebSocket ws://localhost:8000/ws/interview/{{session_id}}?lang=fr\n6. [AUTO] Notification insérée à la fin de l'entretien\n7. Notifications → Get Unread Count  → badge recruteur\n8. Notifications → List Notifications → voir la notification\n9. Evaluations → Get Evaluation → rapport LLM",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
-    { "key": "base_url",      "value": "http://localhost:8000",   "type": "string" },
-    { "key": "token",         "value": "",                        "type": "string" },
-    { "key": "candidate_id",  "value": "",                        "type": "string" },
-    { "key": "position_id",   "value": "",                        "type": "string" },
-    { "key": "session_id",    "value": "",                        "type": "string" },
-    { "key": "notification_id","value": "",                       "type": "string" }
+    { "key": "base_url",         "value": "http://localhost:8000", "type": "string" },
+    { "key": "token",            "value": "",                      "type": "string" },
+    { "key": "candidate_id",     "value": "",                      "type": "string" },
+    { "key": "position_id",      "value": "",                      "type": "string" },
+    { "key": "session_id",       "value": "",                      "type": "string" },
+    { "key": "notification_id",  "value": "",                      "type": "string" }
   ],
   "item": [
 
@@ -58,6 +58,7 @@
                   "if (json.access_token) {",
                   "    pm.collectionVariables.set('token', json.access_token);",
                   "    console.log('✅ Token sauvegardé');",
+                  "    console.log('ℹ️  Ce token sera automatiquement stocké dans created_by lors de la création d\\'une session.');",
                   "}"
                 ]
               }
@@ -74,7 +75,7 @@
                 { "key": "password", "value": "admin123" }
               ]
             },
-            "description": "Connexion recruteur → sauvegarde automatique du token"
+            "description": "Connexion recruteur → sauvegarde automatique du token.\n\n**Important (v2) :** L'email extrait de ce token JWT sera stocké dans le champ `created_by` de chaque session créée par ce recruteur, afin de lui envoyer une notification à la fin de l'entretien."
           }
         },
         {
@@ -83,7 +84,7 @@
             "method": "GET",
             "url": "{{base_url}}/auth/me",
             "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
-            "description": "Profil du recruteur connecté"
+            "description": "Profil du recruteur connecté. L'email retourné ici est celui qui sera enregistré dans created_by."
           }
         }
       ]
@@ -214,7 +215,7 @@
     },
 
     {
-      "name": "💼 Interviews — Positions",
+      "name": "Interviews — Positions",
       "item": [
         {
           "name": "Create Job Position",
@@ -303,14 +304,19 @@
       "name": "Interviews — Sessions",
       "item": [
         {
-          "name": "Create Session (with schedule)",
+          "name": "Create Session (with schedule) ★ created_by auto",
           "event": [
             {
               "listen": "test",
               "script": {
                 "exec": [
                   "const json = pm.response.json();",
-                  "if (json.session_id) pm.collectionVariables.set('session_id', json.session_id);"
+                  "if (json.session_id) {",
+                  "    pm.collectionVariables.set('session_id', json.session_id);",
+                  "    console.log('✅ session_id sauvegardé :', json.session_id);",
+                  "    console.log('ℹ️  created_by =', json.created_by, '(email du recruteur connecté)');",
+                  "    console.log('ℹ️  Une notification sera envoyée à cet email à la fin de l\\'entretien.');",
+                  "}"
                 ]
               }
             }
@@ -326,18 +332,22 @@
               "mode": "raw",
               "raw": "{\n  \"candidate_id\": \"{{candidate_id}}\",\n  \"job_position_id\": \"{{position_id}}\",\n  \"language\": \"fr\",\n  \"scheduled_at\": \"2026-03-20T10:00:00Z\"\n}"
             },
-            "description": "Crée une session planifiée. La fenêtre d'accès est scheduled_at → scheduled_at + 30 min.\nSi scheduled_at est omis, expire 30 min après création."
+            "description": "**v2 — Notification automatique**\n\nCrée une session planifiée.\n\nLe backend extrait automatiquement l'email du recruteur depuis le JWT et le stocke dans le champ `created_by` de la session MongoDB.\n\nÀ la fin de l'entretien (WebSocket `interview_completed`), une notification est automatiquement insérée dans `db.notifications` pour cet email :\n```json\n{\n  \"type\": \"interview_completed\",\n  \"title\": \"Entretien Terminé\",\n  \"message\": \"<candidat> a terminé l'entretien (<n>/<total> réponses)\",\n  \"read\": false\n}\n```\n\nFenêtre d'accès : `scheduled_at` → `scheduled_at + 30 min`."
           }
         },
         {
-          "name": "Create Session (no schedule)",
+          "name": "Create Session (no schedule) ★ created_by auto",
           "event": [
             {
               "listen": "test",
               "script": {
                 "exec": [
                   "const json = pm.response.json();",
-                  "if (json.session_id) pm.collectionVariables.set('session_id', json.session_id);"
+                  "if (json.session_id) {",
+                  "    pm.collectionVariables.set('session_id', json.session_id);",
+                  "    console.log('✅ session_id sauvegardé :', json.session_id);",
+                  "    console.log('ℹ️  created_by =', json.created_by);",
+                  "}"
                 ]
               }
             }
@@ -352,7 +362,34 @@
             "body": {
               "mode": "raw",
               "raw": "{\n  \"candidate_id\": \"{{candidate_id}}\",\n  \"job_position_id\": \"{{position_id}}\",\n  \"language\": \"fr\"\n}"
+            },
+            "description": "Session sans planification — expire 30 min après création.\ncreated_by est automatiquement rempli depuis le JWT."
+          }
+        },
+        {
+          "name": "Verify created_by on Session",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "console.log('created_by :', json.created_by);",
+                  "pm.test('created_by est renseigné', () => {",
+                  "    pm.expect(json.created_by).to.be.a('string').and.not.empty;",
+                  "});",
+                  "pm.test('created_by ressemble à un email', () => {",
+                  "    pm.expect(json.created_by).to.include('@');",
+                  "});"
+                ]
+              }
             }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/interviews/sessions/{{session_id}}",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "description": "Vérifie que le champ `created_by` a bien été enregistré sur la session.\nLes tests automatiques valident la présence et le format de l'email."
           }
         },
         {
@@ -415,8 +452,7 @@
               "path": ["interviews", "sessions", "{{session_id}}", "schedule"],
               "query": [{ "key": "scheduled_at", "value": "2026-03-20T10:00:00Z" }]
             },
-            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
-            "description": "Planifie ou replanifie un entretien.\nRègles : accès refusé avant scheduled_at, retard max 30 min."
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }]
           }
         },
         {
@@ -438,6 +474,225 @@
           "request": {
             "method": "DELETE",
             "url": "{{base_url}}/interviews/sessions/{{session_id}}",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }]
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "Notifications — Flow Entretien ★",
+      "description": "Dossier dédié au cycle complet de notification.\n\nOrdre recommandé :\n1. Unread Count (avant entretien) → doit retourner 0 ou N\n2. [Lancer l'entretien via WebSocket et le terminer]\n3. Unread Count (après entretien) → doit avoir augmenté de 1\n4. List Notifications → trouver la notification type=interview_completed\n5. Mark as Read → marquer la notification\n6. Unread Count → doit être revenu à N",
+      "item": [
+        {
+          "name": "1. Unread Count (avant entretien)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "pm.test('Réponse OK', () => pm.response.to.have.status(200));",
+                  "pm.test('unread_count est un nombre', () => {",
+                  "    pm.expect(json.unread_count).to.be.a('number');",
+                  "});",
+                  "pm.environment.set('unread_before', json.unread_count);",
+                  "console.log('📬 Notifications non lues AVANT entretien :', json.unread_count);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/notifications/unread-count",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "description": "Snapshot du compteur avant l'entretien. Sauvegardé dans `unread_before` pour comparaison."
+          }
+        },
+        {
+          "name": "2. [WebSocket] Lancer et terminer l'entretien",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/health",
+            "description": "⚠️ Cette étape se fait via le client WebSocket (PySide6 ou onglet WebSocket Postman).\n\n**URL :** `ws://localhost:8000/ws/interview/{{session_id}}?lang=fr`\n\n**Séquence :**\n1. Connexion → réception `welcome` (audio)\n2. Envoi `audio_finished` → réception `question` (audio)\n3. Enregistrement réponse → envoi `audio_chunk` × N + `answer_complete`\n4. Réception `answer_evaluated` (score LLM)\n5. Répéter pour chaque question\n6. Réception `interview_completed`\n\n**À ce moment :**\n- Le backend appelle automatiquement `_notify_recruiter_completed()`\n- La notification est insérée dans `db.notifications` pour `{{token}}` (email extrait du JWT)\n- Le backend lance aussi `_run_global_evaluation()` → `global_evaluation` WebSocket message\n\nPassez ensuite à l'étape 3."
+          }
+        },
+        {
+          "name": "3. Unread Count (après entretien)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "pm.test('Réponse OK', () => pm.response.to.have.status(200));",
+                  "const before = parseInt(pm.environment.get('unread_before') || '0');",
+                  "pm.test('Le compteur a augmenté d\\'au moins 1', () => {",
+                  "    pm.expect(json.unread_count).to.be.at.least(before + 1);",
+                  "});",
+                  "console.log('📬 Notifications non lues APRÈS entretien :', json.unread_count);",
+                  "console.log('   Différence :', json.unread_count - before, 'nouvelle(s) notification(s)');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/notifications/unread-count",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "description": "Vérifie que le compteur a augmenté suite à la fin de l'entretien.\nLe test automatique compare avec la valeur sauvegardée à l'étape 1."
+          }
+        },
+        {
+          "name": "4. List Notifications — Voir la notification",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "pm.test('Réponse OK', () => pm.response.to.have.status(200));",
+                  "",
+                  "// Chercher la notification interview_completed pour cette session",
+                  "const sessionId = pm.collectionVariables.get('session_id');",
+                  "const notif = json.find(n =>",
+                  "    n.type === 'interview_completed' &&",
+                  "    n.data && n.data.session_id === sessionId",
+                  ");",
+                  "",
+                  "if (notif) {",
+                  "    pm.collectionVariables.set('notification_id', notif._id);",
+                  "    console.log('✅ Notification trouvée !');",
+                  "    console.log('   ID         :', notif._id);",
+                  "    console.log('   Type       :', notif.type);",
+                  "    console.log('   Titre      :', notif.title);",
+                  "    console.log('   Message    :', notif.message);",
+                  "    console.log('   Lu         :', notif.read);",
+                  "    console.log('   Session    :', notif.data.session_id);",
+                  "    console.log('   Candidat   :', notif.data.candidate_name);",
+                  "    console.log('   Réponses   :', notif.data.total_answers, '/', notif.data.total_questions);",
+                  "    pm.test('Notification interview_completed trouvée', () => pm.expect(notif).to.exist);",
+                  "    pm.test('Notification non lue', () => pm.expect(notif.read).to.be.false);",
+                  "    pm.test('Candidat renseigné', () => pm.expect(notif.data.candidate_name).to.be.a('string').and.not.empty);",
+                  "} else {",
+                  "    console.warn('⚠️  Notification non trouvée. Avez-vous bien terminé l\\'entretien ?');",
+                  "    pm.test('Notification interview_completed trouvée', () => pm.expect(notif).to.exist);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/notifications/?unread_only=true",
+              "host": ["{{base_url}}"],
+              "path": ["notifications", ""],
+              "query": [{ "key": "unread_only", "value": "true" }]
+            },
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "description": "Liste les notifications non lues.\n\n**Structure attendue de la notification :**\n```json\n{\n  \"_id\": \"<mongo_id>\",\n  \"recipient_email\": \"rh@stark.tn\",\n  \"type\": \"interview_completed\",\n  \"title\": \"Entretien Terminé\",\n  \"message\": \"Ahmed Ben Ali a terminé l'entretien (3/3 réponses)\",\n  \"data\": {\n    \"session_id\": \"session_xxx\",\n    \"candidate_name\": \"Ahmed Ben Ali\",\n    \"total_questions\": 3,\n    \"total_answers\": 3\n  },\n  \"priority\": \"high\",\n  \"read\": false,\n  \"created_at\": \"2026-03-15T...\"\n}\n```\n\nLe `notification_id` est automatiquement sauvegardé pour l'étape suivante."
+          }
+        },
+        {
+          "name": "5. Mark Notification as Read",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "pm.test('Réponse OK', () => pm.response.to.have.status(200));",
+                  "pm.test('Notification marquée comme lue', () => {",
+                  "    pm.expect(json.read).to.be.true;",
+                  "});",
+                  "console.log('✅ Notification marquée comme lue');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "url": "{{base_url}}/notifications/{{notification_id}}",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type",  "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"read\": true\n}"
+            },
+            "description": "Marque la notification comme lue (simule le clic sur la cloche dans la plateforme RH)."
+          }
+        },
+        {
+          "name": "6. Unread Count (après lecture)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "const before = parseInt(pm.environment.get('unread_before') || '0');",
+                  "pm.test('Compteur revenu à la valeur initiale', () => {",
+                  "    pm.expect(json.unread_count).to.equal(before);",
+                  "});",
+                  "console.log('📬 Compteur après lecture :', json.unread_count, '(attendu :', before, ')');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/notifications/unread-count",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "description": "Vérifie que le compteur est revenu à la valeur d'avant l'entretien."
+          }
+        },
+        {
+          "name": "List All Notifications (toutes)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/notifications/?skip=0&limit=50",
+              "host": ["{{base_url}}"],
+              "path": ["notifications", ""],
+              "query": [
+                { "key": "skip",         "value": "0" },
+                { "key": "limit",        "value": "50" },
+                { "key": "unread_only",  "value": "false", "disabled": true }
+              ]
+            },
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "description": "Liste toutes les notifications (lues et non lues)."
+          }
+        },
+        {
+          "name": "Mark All as Read",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "pm.test('Réponse OK', () => pm.response.to.have.status(200));",
+                  "console.log('✅ Notifications mises à jour :', json.updated_count);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/notifications/mark-all-read",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "description": "Marque toutes les notifications comme lues — utile pour le bouton 'tout lire' de la plateforme RH."
+          }
+        },
+        {
+          "name": "Delete Notification",
+          "request": {
+            "method": "DELETE",
+            "url": "{{base_url}}/notifications/{{notification_id}}",
             "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }]
           }
         }
@@ -554,8 +809,7 @@
           "request": {
             "method": "GET",
             "url": "{{base_url}}/analytics/scheduling",
-            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
-            "description": "Total planifiés / cette semaine / confirmés / en attente\nRépartition par jour, poste, langue"
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }]
           }
         },
         {
@@ -563,8 +817,7 @@
           "request": {
             "method": "GET",
             "url": "{{base_url}}/analytics/scores",
-            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
-            "description": "Acceptés / Refusés / En entretien / En attente\nTendance 6 mois, distribution scores, performance par département"
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }]
           }
         },
         {
@@ -572,8 +825,7 @@
           "request": {
             "method": "GET",
             "url": "{{base_url}}/analytics/positions/scores",
-            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
-            "description": "Excellent (80+) / Bon (60-79) / Moyen (40-59) / Faible (0-39) — toutes offres"
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }]
           }
         },
         {
@@ -600,8 +852,7 @@
           "request": {
             "method": "GET",
             "url": "{{base_url}}/export/candidates/csv",
-            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
-            "description": "CSV : ID, Prénom, Nom, Email, Téléphone, Compétences techniques, Langues, Soft Skills, Certifications"
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }]
           }
         },
         {
@@ -609,8 +860,7 @@
           "request": {
             "method": "GET",
             "url": "{{base_url}}/export/interviews/csv",
-            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
-            "description": "CSV : sessions avec score moyen"
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }]
           }
         },
         {
@@ -618,8 +868,7 @@
           "request": {
             "method": "GET",
             "url": "{{base_url}}/export/interviews/{{session_id}}/json",
-            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
-            "description": "JSON détaillé d'une session : réponses + évaluations + score moyen"
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }]
           }
         },
         {
@@ -627,18 +876,17 @@
           "request": {
             "method": "GET",
             "url": "{{base_url}}/export/evaluations/csv",
-            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
-            "description": "CSV : toutes les évaluations LLM par question (score, verdict, feedback, followup)"
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }]
           }
         }
       ]
     },
 
     {
-      "name": "Notifications",
+      "name": "Notifications — CRUD complet",
       "item": [
         {
-          "name": "Create Notification",
+          "name": "Create Notification (manuelle)",
           "event": [
             {
               "listen": "test",
@@ -659,15 +907,29 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"title\": \"Nouvel entretien planifié\",\n  \"message\": \"Ahmed Ben Ali a un entretien prévu le 20/03/2026 à 10h00\",\n  \"type\": \"interview_scheduled\",\n  \"session_id\": \"{{session_id}}\"\n}"
-            }
+              "raw": "{\n  \"recipient_email\": \"rh@stark.tn\",\n  \"title\": \"Test notification manuelle\",\n  \"message\": \"Notification créée manuellement via l'API\",\n  \"type\": \"interview_completed\",\n  \"data\": {\n    \"session_id\": \"{{session_id}}\",\n    \"candidate_name\": \"Test Candidat\",\n    \"total_questions\": 3,\n    \"total_answers\": 3\n  },\n  \"priority\": \"high\"\n}"
+            },
+            "description": "Crée une notification manuellement (pour tests).\nEn production, les notifications sont créées automatiquement par le backend."
           }
         },
         {
-          "name": "List Notifications",
+          "name": "List Notifications (toutes)",
           "request": {
             "method": "GET",
             "url": "{{base_url}}/notifications/",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }]
+          }
+        },
+        {
+          "name": "List Notifications (non lues)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/notifications/?unread_only=true",
+              "host": ["{{base_url}}"],
+              "path": ["notifications", ""],
+              "query": [{ "key": "unread_only", "value": "true" }]
+            },
             "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }]
           }
         },
@@ -684,7 +946,14 @@
           "request": {
             "method": "PATCH",
             "url": "{{base_url}}/notifications/{{notification_id}}",
-            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }]
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type",  "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"read\": true\n}"
+            }
           }
         },
         {
@@ -744,14 +1013,14 @@
     },
 
     {
-      "name": "🔌 WebSocket (info)",
+      "name": "WebSocket (info)",
       "item": [
         {
           "name": "WebSocket — Info (use WS client)",
           "request": {
             "method": "GET",
             "url": "{{base_url}}/health",
-            "description": "⚠️ Le WebSocket ne peut pas être testé via Postman REST.\nUtiliser l'onglet WebSocket de Postman :\n\n  URL : ws://localhost:8000/ws/interview/{{session_id}}?lang=fr\n\nMessages à envoyer (JSON) :\n  {\"type\": \"audio_chunk\", \"audio_data\": \"<base64_pcm>\"}\n  {\"type\": \"answer_complete\"}\n  {\"type\": \"audio_finished\"}\n  {\"type\": \"end_interview\"}\n\nMessages reçus :\n  welcome → question → answer_evaluated → followup_question (si score < 8)\n  → answer_followup_completed → interview_completed → global_evaluation\n  (decision: accepted | pending | rejected)"
+            "description": "⚠️ Le WebSocket ne peut pas être testé via Postman REST.\nUtiliser l'onglet WebSocket de Postman :\n\n  URL : ws://localhost:8000/ws/interview/{{session_id}}?lang=fr\n\nMessages à envoyer (JSON) :\n  {\"type\": \"audio_chunk\", \"audio_data\": \"<base64_pcm>\"}\n  {\"type\": \"answer_complete\"}\n  {\"type\": \"audio_finished\"}\n  {\"type\": \"end_interview\"}\n\nMessages reçus :\n  welcome → question → answer_evaluated → followup_question (si score < 8)\n  → answer_followup_completed → interview_completed → global_evaluation\n  (decision: accepted | pending | rejected)\n\n**v2 — Après `interview_completed` :**\n  Le backend appelle automatiquement `_notify_recruiter_completed()` :\n    → INSERT dans db.notifications pour l'email extrait de created_by\n  Puis `GET /notifications/unread-count` doit retourner N+1"
           }
         }
       ]
