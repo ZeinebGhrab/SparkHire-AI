@@ -2,7 +2,7 @@
 Handler WebSocket — AUDIO PCM PUR EN CHUNKS — MULTILINGUE AR/FR/EN
 Pipeline : Voix → Whisper (ASR) → Llama 3 (LLM) → Score / Feedback
           → Question de suivi si réponse floue
-          → Notification recruteur garantie à la fin de l'entretien
+          → Notification recruteur directe dans MongoDB à la fin de l'entretien
 """
 
 import logging, base64, io, wave, struct, asyncio
@@ -12,6 +12,7 @@ from typing import Optional
 
 from fastapi import WebSocket, WebSocketDisconnect
 from backend.config import settings
+from backend.database import db as mongo_db          # ← import direct au niveau module
 from backend.interviews.crud import InterviewSessionCRUD, JobPositionCRUD
 from backend.interviews.models import Answer, AnswerEvaluationData
 from backend.websocket.connection_manager import manager
@@ -55,6 +56,23 @@ LOCALIZED_TEXTS = {
     },
 }
 
+# ── Textes notification (trilingues) ──────────────────────────────────────────
+
+NOTIFICATION_TEXTS = {
+    "ar": {
+        "title":   "مقابلة مكتملة",
+        "message": "أكمل المرشح {candidate_name} مقابلته للمنصب {position_title}. يرجى الاطلاع عليها.",
+    },
+    "fr": {
+        "title":   "Entretien complété",
+        "message": "Le candidat {candidate_name} a complété son entretien pour le poste {position_title}. Veuillez le consulter.",
+    },
+    "en": {
+        "title":   "Interview completed",
+        "message": "Candidate {candidate_name} has completed their interview for the {position_title} position. Please review it.",
+    },
+}
+
 
 def _get_text(key: str, language: str, **kwargs) -> str:
     template = LOCALIZED_TEXTS.get(key, {}).get(language) \
@@ -72,102 +90,6 @@ def _truncate_close_reason(reason: str) -> str:
     if len(enc) <= _WS_CLOSE_REASON_MAX_BYTES:
         return reason
     return enc[:_WS_CLOSE_REASON_MAX_BYTES - 1].decode("utf-8", errors="ignore") + "…"
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-#  FONCTIONS UTILITAIRES NOTIFICATION (synchrones — appelées via run_in_executor)
-# ─────────────────────────────────────────────────────────────────────────────
-
-def _get_recruiter_emails(session_id: str) -> list:
-    """
-    Retourne la liste des emails recruteurs à notifier.
-    Priorité :
-      1. created_by sur la session  (email stocké à la création de la session)
-      2. Tous les recruteurs        (fallback pour les sessions sans created_by)
-    """
-    try:
-        from backend.database import db as _db
-
-        session_doc = _db.interview_sessions.find_one(
-            {"session_id": session_id},
-            {"created_by": 1},
-        )
-        created_by = (session_doc or {}).get("created_by", "")
-
-        if created_by and "@" in str(created_by):
-            logger.info(f"📧 Recruteur cible (created_by) : {created_by}")
-            return [created_by]
-
-        # Fallback : notifier tous les recruteurs enregistrés
-        logger.warning(
-            f"⚠️  created_by absent/invalide pour session {session_id} "
-            "— fallback : notification à tous les recruteurs"
-        )
-        all_recruiters = list(_db.recruiters.find({}, {"email": 1}))
-        emails = [r["email"] for r in all_recruiters if r.get("email")]
-        logger.info(f"📧 Recruteurs (fallback) : {emails}")
-        return emails
-
-    except Exception as e:
-        logger.error(f"❌ _get_recruiter_emails : {e}", exc_info=True)
-        return []
-
-
-def _insert_notification(
-    recruiter_email: str,
-    session_id: str,
-    candidate_name: str,
-    total_questions: int,
-    total_answers: int,
-) -> bool:
-    """
-    Insère directement la notification dans MongoDB.
-    Utilisation directe du driver (pas de service layer) pour maximiser la fiabilité.
-    """
-    try:
-        from backend.database import db as _db
-
-        doc = {
-            "recipient_email": recruiter_email,
-            "type":            "interview_completed",
-            "title":           "Entretien Terminé",
-            "message": (
-                f"{candidate_name} a terminé l'entretien "
-                f"({total_answers}/{total_questions} réponses)"
-            ),
-            "data": {
-                "session_id":      session_id,
-                "candidate_name":  candidate_name,
-                "total_questions": total_questions,
-                "total_answers":   total_answers,
-            },
-            "priority":   "high",
-            "read":       False,
-            "created_at": datetime.utcnow(),
-        }
-
-        result = _db.notifications.insert_one(doc)
-        logger.info(
-            f"🔔 Notification insérée | _id={result.inserted_id} | "
-            f"recipient={recruiter_email} | session={session_id}"
-        )
-        return True
-
-    except Exception as e:
-        logger.error(f"❌ _insert_notification : {e}", exc_info=True)
-        return False
-
-
-def _get_total_answers(session_id: str) -> int:
-    """Relit le nombre de réponses depuis MongoDB (évite les données stale)."""
-    try:
-        from backend.database import db as _db
-        doc = _db.interview_sessions.find_one(
-            {"session_id": session_id}, {"answers": 1}
-        )
-        return len((doc or {}).get("answers", []))
-    except Exception:
-        return 0
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -272,7 +194,6 @@ class InterviewHandler:
             "type": "audio_chunk_end",
             "data": {"msg_type": msg_type},
         })
-        logger.info(f"✅ {n_chunks} chunks PCM pour '{msg_type}' [{self.lang}]")
 
     # ── TTS ──────────────────────────────────────────────────────────────────
 
@@ -364,7 +285,6 @@ class InterviewHandler:
 
     async def _load_session(self) -> bool:
         try:
-            from backend.database import db
             from bson import ObjectId
 
             session, is_valid, err = InterviewSessionCRUD.validate_session_access(self.session_id)
@@ -380,7 +300,7 @@ class InterviewHandler:
             self.position = JobPositionCRUD.get_by_id(self.session.job_position_id)
 
             try:
-                self.candidate = db.candidates.find_one(
+                self.candidate = mongo_db.candidates.find_one(
                     {"_id": ObjectId(self.session.candidate_id)}
                 )
             except Exception as e:
@@ -625,8 +545,10 @@ class InterviewHandler:
         final_eval["llm_model"] = llm.model
         final_eval["evaluated"] = True
 
-        initial_score, initial_verdict = initial_eval.get("score", 0.0), initial_eval.get("verdict", "")
-        final_score,   final_verdict   = final_eval.get("score", 0.0),   final_eval.get("verdict", "")
+        initial_score   = initial_eval.get("score", 0.0)
+        initial_verdict = initial_eval.get("verdict", "")
+        final_score     = final_eval.get("score", 0.0)
+        final_verdict   = final_eval.get("verdict", "")
 
         final_ev_data = AnswerEvaluationData(
             score=final_score, verdict=final_verdict,
@@ -647,7 +569,8 @@ class InterviewHandler:
             initial_score=initial_score, initial_verdict=initial_verdict,
         )
         InterviewSessionCRUD.save_answer_evaluation(
-            session_id=self.session_id, question_order=question.order, evaluation=final_ev_data,
+            session_id=self.session_id, question_order=question.order,
+            evaluation=final_ev_data,
         )
 
         if manager.is_connected(self.session_id):
@@ -753,13 +676,13 @@ class InterviewHandler:
 
     async def _complete_interview(self):
         """
-        Séquence de fin d'entretien :
-          1. Status MongoDB → completed
+        Séquence de fin :
+          1. Status → completed
           2. Audio de clôture → candidat
-          3. await _notify_recruiter()      ← GARANTI (pas de create_task)
-          4. create_task(_run_global_evaluation())  ← non bloquant
+          3. _notify_recruiter()  ← insertion directe MongoDB, AWAIT garanti
+          4. _run_global_evaluation() ← non bloquant
         """
-        # 1. Marquer comme terminé
+        # 1. Marquer terminé
         self.session = InterviewSessionCRUD.update_status(self.session_id, "completed")
         logger.info(f"✅ Session {self.session_id} → completed")
 
@@ -779,7 +702,7 @@ class InterviewHandler:
                 self.session_id, {"type": "interview_completed", "data": extra}
             )
 
-        # 3. Notification recruteur — AWAIT (exécution garantie)
+        # 3. Notification recruteur — insertion directe, garantie
         await self._notify_recruiter()
 
         # 4. Évaluation globale LLM — non bloquante
@@ -787,58 +710,85 @@ class InterviewHandler:
 
     async def _notify_recruiter(self):
         """
-        Crée la notification de fin d'entretien dans db.notifications.
+        Insère directement dans db.notifications via mongo_db (importé au niveau module).
 
-        Stratégie :
-          - Lit created_by depuis la session MongoDB
-          - Si absent → notifie TOUS les recruteurs (fallback)
-          - Insertion directe MongoDB via run_in_executor (thread-safe)
-          - Utilise await → garantit l'exécution avant que le handler se termine
+        Message : "<candidat> a complété son entretien pour <poste>. Veuillez le consulter."
+
+        - Pas de run_in_executor (PyMongo bloquant mais rapide — <5ms)
+        - Pas de service layer — appel direct au driver
+        - Fallback automatique sur tous les recruteurs si created_by absent
         """
-        logger.info(f"🔔 _notify_recruiter démarré | session={self.session_id}")
+        logger.info(f"🔔 _notify_recruiter | session={self.session_id}")
 
-        loop = asyncio.get_event_loop()
-
-        # Récupérer les emails cibles (I/O MongoDB dans un thread)
-        emails = await loop.run_in_executor(
-            None, _get_recruiter_emails, self.session_id
-        )
-
-        if not emails:
-            logger.error("❌ Aucun recruteur trouvé — notification impossible")
-            return
-
-        # Récupérer le vrai nombre de réponses depuis la BD
-        total_answers = await loop.run_in_executor(
-            None, _get_total_answers, self.session_id
-        )
-        total_questions = len(self.position.questions)
-
-        logger.info(
-            f"📊 Notification données | "
-            f"candidat={self.candidate_full_name} | "
-            f"réponses={total_answers}/{total_questions} | "
-            f"destinataires={emails}"
-        )
-
-        # Insérer une notification par destinataire
-        ok = 0
-        for email in emails:
-            success = await loop.run_in_executor(
-                None,
-                _insert_notification,
-                email,
-                self.session_id,
-                self.candidate_full_name,
-                total_questions,
-                total_answers,
+        try:
+            # ── 1. Déterminer le(s) destinataire(s) ──────────────────────────
+            session_doc = mongo_db.interview_sessions.find_one(
+                {"session_id": self.session_id},
+                {"created_by": 1, "answers": 1},
             )
-            if success:
+
+            created_by    = (session_doc or {}).get("created_by", "")
+            total_answers = len((session_doc or {}).get("answers", []))
+
+            if created_by and "@" in str(created_by):
+                emails = [created_by]
+                logger.info(f"📧 Destinataire (created_by) : {created_by}")
+            else:
+                # Fallback : tous les recruteurs
+                logger.warning(
+                    f"⚠️  created_by absent — fallback tous recruteurs"
+                )
+                all_recruiters = list(mongo_db.recruiters.find({}, {"email": 1}))
+                emails = [r["email"] for r in all_recruiters if r.get("email")]
+                logger.info(f"📧 Destinataires (fallback) : {emails}")
+
+            if not emails:
+                logger.error("❌ Aucun email recruteur trouvé")
+                return
+
+            # ── 2. Préparer le contenu ────────────────────────────────────────
+            lang   = self.lang if self.lang in NOTIFICATION_TEXTS else "fr"
+            texts  = NOTIFICATION_TEXTS[lang]
+            title  = texts["title"]
+            message = texts["message"].format(
+                candidate_name=self.candidate_full_name,
+                position_title=self.position.title,
+            )
+
+            # ── 3. Insérer une notification par destinataire ──────────────────
+            ok = 0
+            for email in emails:
+                doc = {
+                    "recipient_email": email,
+                    "type":            "interview_completed",
+                    "title":           title,
+                    "message":         message,
+                    "data": {
+                        "session_id":     self.session_id,
+                        "candidate_name": self.candidate_full_name,
+                        "position_title": self.position.title,
+                        "total_answers":  total_answers,
+                    },
+                    "priority":   "high",
+                    "read":       False,
+                    "created_at": datetime.utcnow(),
+                }
+                result = mongo_db.notifications.insert_one(doc)
+                logger.info(
+                    f"🔔 Notification enregistrée | "
+                    f"_id={result.inserted_id} | "
+                    f"recipient={email} | "
+                    f"message='{message}'"
+                )
                 ok += 1
 
-        logger.info(
-            f"🔔 Notifications créées : {ok}/{len(emails)} | session={self.session_id}"
-        )
+            logger.info(
+                f"✅ {ok}/{len(emails)} notification(s) créée(s) | "
+                f"session={self.session_id}"
+            )
+
+        except Exception as e:
+            logger.error(f"❌ _notify_recruiter ERREUR : {e}", exc_info=True)
 
     async def _run_global_evaluation(self):
         """Génère le rapport global LLM après la fin de l'entretien."""
