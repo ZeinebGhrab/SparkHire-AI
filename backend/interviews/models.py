@@ -112,9 +112,12 @@ class InterviewSession(InterviewSessionBase):
     expires_at: datetime
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
-    # Scores agrégés — mis à jour par EvaluationService après l'entretien complet
+    # ── Recruteur créateur (pour les notifications) ────────────────────────────
+    created_by: Optional[str] = None             # Email du recruteur ayant créé la session
+    # ── Planification ─────────────────────────────────────────────────────────
     scheduled_at: Optional[datetime] = None         # Date/heure planifiée
     late_access_deadline: Optional[datetime] = None  # scheduled_at + 30 min (calculé)
+    # ── Scores agrégés — mis à jour par EvaluationService après l'entretien complet
     evaluation_score: Optional[float] = None
     evaluation_verdict: Optional[str] = None
     evaluation_recommendation: Optional[str] = None

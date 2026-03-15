@@ -14,13 +14,14 @@ Complete recruitment platform with automated voice interviews via AI avatar.
 - 📝 **Strict AI evaluation** via Ollama + Llama 3 (score 0–10, rigorous grading scale)
 - 🔁 **Intelligent follow-up questions** if the answer is insufficient (score < 8)
 - 📊 **Global interview report** with final hiring decision (Accepted / On Hold / Rejected)
+- 🔔 **Automatic recruiter notification** when an interview is completed
 - 🗓️ **Interview scheduling** with 30-minute late access window
 - 🔊 **Text-to-speech** via Edge-TTS (Microsoft) — primary engine, instant
 - 🔁 **Automatic TTS fallback** via gTTS (Google) if Edge-TTS is unavailable
 - ⚡ **Real-time WebSocket** (chunked PCM audio)
 - 🔐 **JWT authentication** for recruiters
 - 🖥️ **PySide6 client interface** (glassmorphism design)
-- 🗃️ **MongoDB** — candidates, positions, sessions, evaluations
+- 🗃️ **MongoDB** — candidates, positions, sessions, evaluations, notifications
 - 📤 **CSV / JSON export** + analytics dashboard
 - 🖥️ **Cross-platform** — Windows, Linux, macOS
 
@@ -189,7 +190,9 @@ curl -X POST http://localhost:8000/candidates/ \
     "certifications": [{ "name": "AWS Developer", "issuer": "Amazon" }]
   }'
 
-# Create an interview session (with optional scheduling)
+# Create an interview session
+# The recruiter email (from JWT) is automatically stored in created_by
+# → a notification will be sent to this email when the interview ends
 curl -X POST http://localhost:8000/interviews/sessions \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
@@ -212,7 +215,7 @@ curl -X POST http://localhost:8000/interviews/sessions \
 7. Score and feedback appear in real time after each answer
 8. A global report with hiring decision is displayed at the end
 
-### 3. View results
+### 3. View results & notifications
 
 ```bash
 # Full session details
@@ -220,6 +223,16 @@ GET http://localhost:8000/interviews/sessions/<session_id>
 
 # LLM evaluation + hiring decision
 GET http://localhost:8000/evaluations/<session_id>
+
+# Recruiter notifications (unread badge)
+GET http://localhost:8000/notifications/unread-count
+
+# List all unread notifications
+GET http://localhost:8000/notifications/?unread_only=true
+
+# Mark a notification as read
+PATCH http://localhost:8000/notifications/<notification_id>
+      Body: { "read": true }
 
 # Export all evaluations as CSV
 GET http://localhost:8000/export/evaluations/csv
@@ -230,6 +243,77 @@ python scripts/test_interview.py
 
 ---
 
+## 🔔 Recruiter Notification System
+
+When a candidate completes an interview, the platform automatically notifies the recruiter who created the session.
+
+### How it works
+
+```
+Interview ends (last answer submitted)
+        │
+        ▼
+ _complete_interview()
+        │
+        ├── Status → "completed" in MongoDB
+        ├── Closing audio sent to candidate
+        │
+        ├── _notify_recruiter_completed()  ← non-blocking task
+        │         │
+        │         ├── Reads created_by from session (recruiter email)
+        │         ├── Fallback: notifies ALL recruiters if created_by is empty
+        │         └── Inserts into db.notifications:
+        │               {
+        │                 "type": "interview_completed",
+        │                 "title": "Entretien Terminé",
+        │                 "message": "Ahmed Ben Ali a terminé
+        │                             l'entretien (3/3 réponses)",
+        │                 "priority": "high",
+        │                 "read": false
+        │               }
+        │
+        └── _run_global_evaluation()       ← non-blocking task
+                  └── LLM global report + hiring decision
+```
+
+### Notification fields
+
+| Field | Type | Description |
+|---|---|---|
+| `recipient_email` | string | Email of the recruiter who created the session |
+| `type` | string | `interview_completed` |
+| `title` | string | Localized title |
+| `message` | string | Candidate name + answer count |
+| `data.session_id` | string | Related session ID |
+| `data.candidate_name` | string | Full name of the candidate |
+| `data.total_questions` | int | Total questions in the position |
+| `data.total_answers` | int | Answers given by the candidate |
+| `priority` | string | `high` |
+| `read` | bool | `false` on creation |
+
+### Notification API endpoints
+
+| Endpoint | Description |
+|---|---|
+| `GET /notifications/unread-count` | Badge counter for the recruiter UI |
+| `GET /notifications/` | List all notifications (supports `?unread_only=true`) |
+| `PATCH /notifications/{id}` | Mark a single notification as read |
+| `POST /notifications/mark-all-read` | Mark all notifications as read |
+| `DELETE /notifications/{id}` | Delete a notification |
+
+### created_by field
+
+The `created_by` field is automatically stored on every new session:
+
+```python
+# POST /interviews/sessions  →  recruiter email extracted from JWT
+session.created_by = "rh@stark.tn"
+```
+
+This ensures the notification is always sent to the correct recruiter, even in a multi-recruiter environment.
+
+---
+
 ## 📂 Project Structure
 
 ```
@@ -237,7 +321,7 @@ sparkhire-ai/
 │
 ├── backend/                        ← FastAPI backend
 │   ├── main.py                     ← Entry point + lifespan + routes
-│   ├── config.py                   ← Pydantic Settings (all parameters)
+│   ├── config.py                   ← Pydantic Settings (extra="ignore")
 │   ├── database.py                 ← MongoDB connection
 │   │
 │   ├── auth/                       ← JWT authentication
@@ -251,9 +335,9 @@ sparkhire-ai/
 │   │   └── routes.py               ← /candidates CRUD + search
 │   │
 │   ├── interviews/                 ← Sessions and job positions
-│   │   ├── crud.py
-│   │   ├── models.py               ← Question, JobPosition, Answer, InterviewSession
-│   │   └── routes.py               ← /interviews/positions · /interviews/sessions
+│   │   ├── crud.py                 ← create(session, created_by=email)
+│   │   ├── models.py               ← InterviewSession + created_by field
+│   │   └── routes.py               ← created_by auto-filled from JWT
 │   │
 │   ├── evaluation/                 ← LLM evaluation pipeline
 │   │   ├── models.py               ← AnswerEvaluation, GlobalEvaluation + decision
@@ -262,22 +346,26 @@ sparkhire-ai/
 │   │
 │   ├── services/                   ← Core services
 │   │   ├── asr_service.py          ← WhisperASR + VoskASR + factory
-│   │   ├── tts_service.py          ← TTSService (Edge-TTS → gTTS fallback, cross-platform)
+│   │   ├── tts_service.py          ← TTSService (Edge-TTS → gTTS fallback)
 │   │   ├── edge_tts_engine.py      ← Microsoft Edge-TTS (Arabic / FR / EN voices)
 │   │   ├── llm_service.py          ← OllamaLLMService (Llama 3, strict grading)
 │   │   └── avatar_service.py       ← AvatarService (simple / wav2lip / did)
 │   │
 │   ├── websocket/                  ← Real-time communication
 │   │   ├── connection_manager.py   ← ConnectionManager + heartbeat keepalive
-│   │   └── interview_handler.py    ← Full pipeline per session
+│   │   └── interview_handler.py    ← Full pipeline + notification on completion
+│   │
+│   ├── notifications/              ← Notification system
+│   │   ├── models.py               ← Notification, NotificationCreate
+│   │   ├── routes.py               ← /notifications CRUD
+│   │   └── service.py              ← notify_interview_completed() + others
 │   │
 │   ├── media/                      ← File upload / download
 │   ├── analytics/                  ← Dashboard stats + scheduling + score KPIs
-│   ├── notifications/              ← Notification system
 │   └── export/                     ← CSV (candidates, interviews, evaluations) + JSON
 │
 ├── client/                         ← PySide6 interface
-│   ├── config.py                   ← Client settings (WEBSOCKET_URL, API_BASE_URL…)
+│   ├── config.py                   ← Client settings (extra="ignore")
 │   ├── main.py                     ← QApplication entry point
 │   ├── core/
 │   │   ├── models.py               ← Question, Answer, Progress (dataclasses)
@@ -297,15 +385,8 @@ sparkhire-ai/
 │   └── test_interview.py           ← Full flow automated test
 │
 ├── models/                         ← AI models (gitignored)
-│   ├── whisper/                    ← Whisper model files
-│   └── vosk-model-ar/              ← Arabic Vosk model (optional)
-│
 ├── uploads/                        ← Runtime files (gitignored)
-│   ├── interviews/                 ← WAV recordings of answers
-│   └── tts_cache/                  ← TTS audio cache (MD5, per engine)
-│
 ├── assets/videos/                  ← Avatar videos (idle / speaking / listening)
-│
 ├── .env                            ← Environment variables (gitignored)
 ├── .env.example                    ← Template to copy
 ├── requirements.txt                ← Backend dependencies
@@ -320,24 +401,38 @@ sparkhire-ai/
 
 ![Class Diagram](docs/Class_Diagram.png)
 
-
-
 ### 🗓️ Flow 1 — Access Validation
 <p align="center">
   <img src="docs/SparkHire%20AI%20—%20Access%20authorization.png" width="400" alt="Access Validation"/>
 </p>
-
 
 ### 🎤 Flow 2 — Real-time Interview
 <p align="center">
   <img src="docs/SparkHire%20AI%20—%20Real-time%20interview.png" width="400" alt="Real-time Interview"/>
 </p>
 
-
 ### 📊 Flow 3 — Final Evaluation & Decision
 <p align="center">
   <img src="docs/SparkHire%20AI%20—%20Final%20Evaluation%20%26%20Decision.png" width="400" alt="Final Evaluation & Decision"/>
 </p>
+
+### 🔔 Flow 4 — Recruiter Notification
+<p align="center">
+
+```
+Candidate answers last question
+         │
+         ▼
+ interview_completed (WebSocket)
+         │
+         ├──► db.notifications INSERT  ──► GET /notifications/unread-count (+1)
+         │
+         └──► LLM global evaluation   ──► global_evaluation (WebSocket)
+```
+
+</p>
+
+---
 
 ## 🔌 WebSocket Protocol
 
@@ -368,7 +463,7 @@ ws://localhost:8000/ws/interview/{session_id}?lang=ar|fr|en
 | `followup_question` | Follow-up question if score < 8 |
 | `answer_followup_completed` | Final score after clarification + followup transcript |
 | `global_evaluation` | Final report + hiring decision |
-| `interview_completed` | Interview ended + closing audio |
+| `interview_completed` | Interview ended + closing audio → **triggers recruiter notification** |
 | `error` | Error message + `error_type` |
 
 ---
@@ -407,7 +502,10 @@ API_BASE_URL=http://localhost:8000
 
 # ── Windows only ──────────────────────────
 KMP_DUPLICATE_LIB_OK=TRUE
+# Note: unknown .env variables are safely ignored (extra="ignore" in Settings)
 ```
+
+> **Note:** Any extra variables in `.env` (e.g. `KMP_DUPLICATE_LIB_OK`, `LIVEPORTRAIT_DEVICE`) are automatically ignored by Pydantic Settings — they will not cause startup errors.
 
 ---
 
@@ -525,6 +623,7 @@ The `global_evaluation` WebSocket message includes `decision`, `decision_label` 
 
 | Error | Cause | Fix |
 |---|---|---|
+| `Extra inputs are not permitted` | Unknown variable in `.env` (e.g. `KMP_DUPLICATE_LIB_OK`) | Already fixed — `extra = "ignore"` in `Settings.Config` |
 | `OMP: Error #15 (libiomp5md)` | OpenMP conflict between PyTorch and ctranslate2 (Windows) | Add `KMP_DUPLICATE_LIB_OK=TRUE` to `.env` |
 | `AttributeError: WEBSOCKET_URL` | Field missing from `client/config.py` | Check `WEBSOCKET_URL=ws://localhost:8000` in `.env` |
 | `AttributeError: send_heartbeat_during` | Old `connection_manager.py` on your machine | Replace with the latest version from the repo |
@@ -535,6 +634,7 @@ The `global_evaluation` WebSocket message includes `decision`, `decision_label` 
 | `Empty transcription` | Audio too short or silent | VAD filter active — speak clearly for at least 1 second |
 | `WebSocket disconnected` | Long TTS processing | Heartbeat maintains the connection automatically |
 | `ValidationError: technical_skills missing` | Old candidate document in MongoDB | Fixed — `Candidate` response model uses empty list defaults |
+| `Notification not received` | `created_by` empty on old sessions | Fallback active — all recruiters are notified automatically |
 
 ---
 
@@ -553,9 +653,9 @@ This project was developed as a **Final Year Project** for the **2nd year of an 
 It integrates key competencies from the program:
 
 - **Data Engineering** — real-time audio pipeline, MongoDB data modeling, REST API design with FastAPI
-- **AI & Machine Learning** — speech recognition (Whisper), large language model evaluation (Llama 3 via Ollama), text-to-speech synthesis (Edge-TTS)
+- **AI** — speech recognition (Whisper), large language model evaluation (Llama 3 via Ollama), text-to-speech synthesis (Edge-TTS)
 - **Decisional Systems** — automated scoring engine with strict grading logic, follow-up question generation, global hiring decision (Accepted / On Hold / Rejected)
-- **Software Engineering** — WebSocket communication, cross-platform desktop client (PySide6), JWT authentication, CSV/JSON export
+- **Software Engineering** — WebSocket communication, cross-platform desktop client (PySide6), JWT authentication, CSV/JSON export, automatic recruiter notifications
 
 ---
 

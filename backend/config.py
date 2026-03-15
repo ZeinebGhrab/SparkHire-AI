@@ -61,6 +61,7 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = True
+        extra = "ignore"   # ← ignore les variables .env inconnues (ex: KMP_DUPLICATE_LIB_OK)
 
 
 @lru_cache

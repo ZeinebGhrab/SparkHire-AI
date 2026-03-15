@@ -96,7 +96,14 @@ class InterviewSessionCRUD:
     """CRUD pour les sessions d'entretien"""
 
     @staticmethod
-    def create(session: InterviewSessionCreate) -> InterviewSession:
+    def create(session: InterviewSessionCreate, created_by: str = "") -> InterviewSession:
+        """
+        Crée une nouvelle session d'entretien.
+
+        Args:
+            session:    données de la session (candidat, poste, langue, scheduled_at)
+            created_by: email du recruteur créateur — utilisé pour les notifications
+        """
         if not ObjectId.is_valid(session.candidate_id):
             raise HTTPException(status_code=400, detail="ID candidat invalide")
         candidate = db.candidates.find_one({"_id": ObjectId(session.candidate_id)})
@@ -133,6 +140,7 @@ class InterviewSessionCRUD:
             "updated_at":            now,
             "scheduled_at":          scheduled_at,
             "late_access_deadline":  late_access_deadline,
+            "created_by":            created_by,          # ← email recruteur créateur
         })
 
         result = db.interview_sessions.insert_one(session_dict)
@@ -299,21 +307,6 @@ class InterviewSessionCRUD:
         """
         Persiste l'évaluation LLM dans answers[n].evaluation via l'opérateur
         positionnel MongoDB ($) ciblé par answers.question_order.
-
-        Structure MongoDB résultante :
-          interview_sessions.answers[n] = {
-            question_order: int,
-            transcript:     str,   ← Whisper ASR
-            evaluation: {           ← LLM score (ce champ)
-              score:        float,
-              verdict:      str,
-              feedback:     str,
-              strengths:    [...],
-              improvements: [...],
-              llm_model:    str,
-              evaluated_at: datetime
-            }
-          }
         """
         eval_dict = evaluation.model_dump()
 
@@ -346,16 +339,6 @@ class InterviewSessionCRUD:
         """
         Met à jour une réponse existante identifiée par question_order.
         Seuls les champs fournis (non-None) sont modifiés.
-
-        Champs persistés après un suivi :
-          - transcript           : réponse principale (inchangée, lisible seule)
-          - audio_followup_path  : chemin WAV de la réponse de suivi
-          - evaluation           : évaluation finale (score, verdict, feedback)
-            ↳ evaluation.had_followup       = True
-            ↳ evaluation.followup_question  = question posée par le LLM
-            ↳ evaluation.followup_transcript = réponse vocale du candidat
-            ↳ evaluation.initial_score      = score avant clarification
-            ↳ evaluation.initial_verdict    = verdict avant clarification
         """
         fields: dict = {"updated_at": datetime.utcnow()}
 
@@ -363,7 +346,6 @@ class InterviewSessionCRUD:
             fields["answers.$.transcript"] = transcript
         if evaluation is not None:
             eval_dict = evaluation.model_dump()
-            # Injecter les champs de suivi directement dans l'évaluation
             if followup_question is not None:
                 eval_dict["followup_question"]  = followup_question
                 eval_dict["had_followup"]        = True

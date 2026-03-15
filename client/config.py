@@ -16,7 +16,7 @@ class Settings(BaseSettings):
 
     # ================= URLs =================
     API_BASE_URL: str = "http://localhost:8000"
-    WEBSOCKET_URL: str = "ws://localhost:8000"   
+    WEBSOCKET_URL: str = "ws://localhost:8000"
 
     # ================= Database =================
     MONGODB_URL: str = "mongodb://localhost:27017"
@@ -63,6 +63,7 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = True
+        extra = "ignore"   # ← ignore les variables .env inconnues (ex: KMP_DUPLICATE_LIB_OK)
 
 
 @lru_cache

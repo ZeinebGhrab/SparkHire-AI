@@ -75,10 +75,14 @@ def delete_job_position(
 @router.post("/sessions", response_model=InterviewSession)
 def create_interview_session(
     session: InterviewSessionCreate,
-    _: str = Depends(get_current_recruiter),
+    recruiter_email: str = Depends(get_current_recruiter),
 ):
-    """Créer une nouvelle session d'entretien pour un candidat"""
-    return InterviewSessionCRUD.create(session)
+    """
+    Créer une nouvelle session d'entretien pour un candidat.
+    L'email du recruteur connecté est automatiquement stocké dans created_by
+    afin de lui envoyer une notification à la fin de l'entretien.
+    """
+    return InterviewSessionCRUD.create(session, created_by=recruiter_email)
 
 @router.get("/sessions", response_model=List[InterviewSession])
 def list_interview_sessions(
@@ -114,11 +118,6 @@ def get_session_answers(
     - transcript (Whisper ASR)
     - score, verdict, feedback, strengths, improvements (LLM)
     - evaluated=False si l'évaluation est encore en cours
-
-    Structure MongoDB lue :
-      interview_sessions.answers[n].transcript
-      interview_sessions.answers[n].evaluation.score
-      ...
     """
     answers = InterviewSessionCRUD.get_answers_with_evaluations(session_id)
     return [AnswerWithEvalResponse.from_answer(a) for a in answers]
