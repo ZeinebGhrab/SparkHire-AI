@@ -1,10 +1,11 @@
 """
 Service ASR — Whisper (faster-whisper) + Vosk
 Whisper recommandé : meilleure précision multilingue AR/FR/EN.
+GPU auto-détecté avec fallback CPU si CUDA non disponible.
 """
 
 import os
-os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"   
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
 import io
 import wave
@@ -36,27 +37,67 @@ class ASREngine(ABC):
 class WhisperASR(ASREngine):
     """
     Moteur ASR Whisper local via faster-whisper.
-    Recommandé pour la précision multilingue (AR/FR/EN).
+    GPU auto-détecté — fallback CPU automatique si CUDA non disponible.
     """
 
     def __init__(self, model_size: str = "medium", device: str = "cpu", compute_type: str = "int8"):
         try:
             from faster_whisper import WhisperModel
 
+            # ── Détection GPU et fallback automatique ─────────────────────────
+            actual_device       = device
+            actual_compute_type = compute_type
+
+            if device == "cuda":
+                try:
+                    import torch
+                    if not torch.cuda.is_available():
+                        logger.warning(
+                            "⚠️  CUDA demandé mais non disponible → fallback CPU/int8"
+                        )
+                        actual_device       = "cpu"
+                        actual_compute_type = "int8"
+                    else:
+                        gpu_name = torch.cuda.get_device_name(0)
+                        vram_gb  = torch.cuda.get_device_properties(0).total_memory / 1e9
+                        logger.info(
+                            f"🎮 GPU détecté : {gpu_name} | VRAM={vram_gb:.1f} GB"
+                        )
+                        # float16 requis sur GPU — forcer si oublié
+                        if actual_compute_type == "int8":
+                            actual_compute_type = "float16"
+                            logger.info(
+                                "ℹ️  compute_type int8 → float16 (GPU)"
+                            )
+                except ImportError:
+                    logger.warning(
+                        "⚠️  torch non installé — impossible de vérifier CUDA → fallback CPU"
+                    )
+                    actual_device       = "cpu"
+                    actual_compute_type = "int8"
+
             logger.info(
-                f"Chargement Whisper '{model_size}' | device={device} | compute={compute_type}"
+                f"Chargement Whisper '{model_size}' | "
+                f"device={actual_device} | compute={actual_compute_type}"
             )
             self.model = WhisperModel(
                 model_size,
-                device=device,
-                compute_type=compute_type,
-                download_root=str(Path(__file__).parent.parent.parent / "models" / "whisper"),
+                device=actual_device,
+                compute_type=actual_compute_type,
+                download_root=str(
+                    Path(__file__).parent.parent.parent / "models" / "whisper"
+                ),
             )
-            self.model_size = model_size
-            logger.info(f"Whisper '{model_size}' prêt")
+            self.model_size   = model_size
+            self.actual_device = actual_device
+            logger.info(
+                f"✅ Whisper '{model_size}' prêt sur {actual_device.upper()}"
+            )
 
         except ImportError:
-            raise ImportError("faster-whisper non installé : pip install faster-whisper")
+            raise ImportError(
+                "faster-whisper non installé : pip install faster-whisper"
+            )
 
     def transcribe(self, audio_data: bytes, language: str = "ar") -> str:
         """
@@ -71,7 +112,6 @@ class WhisperASR(ASREngine):
         # Écriture dans un fichier temporaire WAV
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
             tmp_path = tmp.name
-            # S'assurer que le format est WAV correct
             if audio_data[:4] == b"RIFF":
                 tmp.write(audio_data)
             else:
@@ -88,7 +128,7 @@ class WhisperASR(ASREngine):
                 language=lang,
                 beam_size=5,
                 best_of=5,
-                vad_filter=True,             # Filtre silence (Voice Activity Detection)
+                vad_filter=True,
                 vad_parameters=dict(
                     min_silence_duration_ms=500,
                     threshold=0.5,
@@ -98,7 +138,8 @@ class WhisperASR(ASREngine):
             transcript = " ".join(seg.text.strip() for seg in segments).strip()
 
             logger.info(
-                f" Whisper [{lang}] | durée détectée={info.duration:.1f}s "
+                f"✅ Whisper [{lang}] [{self.actual_device.upper()}] "
+                f"| durée={info.duration:.1f}s "
                 f"| '{transcript[:80]}'"
             )
             return transcript
