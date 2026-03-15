@@ -9,10 +9,146 @@ from fastapi import HTTPException
 from datetime import datetime, timedelta
 from typing import List, Optional
 import secrets
+import logging
+
+logger = logging.getLogger(__name__)
 
 # ============ CONSTANTES ============
-SESSION_EXPIRATION_MINUTES = 30   # Expiration globale si pas de scheduled_at
-LATE_ACCESS_MINUTES = 30          # Retard maximum autorisé après scheduled_at
+SESSION_EXPIRATION_MINUTES = 30
+LATE_ACCESS_MINUTES = 30
+
+# ── Textes notification trilingues ────────────────────────────────────────────
+_NOTIF_TEXTS = {
+    "ar": {
+        "title":   "مقابلة مكتملة",
+        "message": "أكمل المرشح {candidate_name} مقابلته للمنصب {position_title}. يرجى الاطلاع عليها.",
+    },
+    "fr": {
+        "title":   "Entretien complété",
+        "message": "Le candidat {candidate_name} a complété son entretien pour le poste {position_title}. Veuillez le consulter.",
+    },
+    "en": {
+        "title":   "Interview completed",
+        "message": "Candidate {candidate_name} has completed their interview for the {position_title} position. Please review it.",
+    },
+}
+
+
+def _send_completion_notification(session_id: str) -> None:
+    """
+    Insère une notification dans db.notifications quand une session passe à 'completed'.
+    Appelée DIRECTEMENT depuis update_status — aucune dépendance externe.
+
+    Stratégie destinataires :
+      1. created_by sur la session  (email du recruteur créateur)
+      2. Tous les recruteurs         (fallback si created_by absent)
+    """
+    try:
+        # ── Charger la session ────────────────────────────────────────────────
+        session_doc = db.interview_sessions.find_one(
+            {"session_id": session_id},
+            {"created_by": 1, "candidate_id": 1, "job_position_id": 1,
+             "language": 1, "answers": 1},
+        )
+        if not session_doc:
+            logger.error(f"_send_completion_notification: session {session_id} introuvable")
+            return
+
+        created_by    = session_doc.get("created_by", "")
+        total_answers = len(session_doc.get("answers", []))
+        language      = session_doc.get("language", "fr")
+
+        # ── Destinataires ─────────────────────────────────────────────────────
+        if created_by and "@" in str(created_by):
+            emails = [created_by]
+            logger.info(f"🔔 Notification → created_by : {created_by}")
+        else:
+            all_recruiters = list(db.recruiters.find({}, {"email": 1}))
+            emails = [r["email"] for r in all_recruiters if r.get("email")]
+            logger.warning(
+                f"🔔 created_by absent pour {session_id} — "
+                f"fallback {len(emails)} recruteur(s) : {emails}"
+            )
+
+        if not emails:
+            logger.error("🔔 Aucun recruteur trouvé — notification annulée")
+            return
+
+        # ── Candidat ──────────────────────────────────────────────────────────
+        candidate_name = "Candidat"
+        try:
+            cid = session_doc.get("candidate_id", "")
+            if cid and ObjectId.is_valid(cid):
+                cand = db.candidates.find_one(
+                    {"_id": ObjectId(cid)},
+                    {"first_name": 1, "last_name": 1},
+                )
+                if cand:
+                    candidate_name = (
+                        f"{cand.get('first_name','').strip()} "
+                        f"{cand.get('last_name','').strip()}"
+                    ).strip() or "Candidat"
+        except Exception as e:
+            logger.warning(f"Chargement candidat pour notif : {e}")
+
+        # ── Poste ─────────────────────────────────────────────────────────────
+        position_title = "Poste"
+        try:
+            pid = session_doc.get("job_position_id", "")
+            if pid and ObjectId.is_valid(pid):
+                pos = db.job_positions.find_one(
+                    {"_id": ObjectId(pid)},
+                    {"title": 1},
+                )
+                if pos:
+                    position_title = pos.get("title", "Poste")
+        except Exception as e:
+            logger.warning(f"Chargement poste pour notif : {e}")
+
+        # ── Textes ────────────────────────────────────────────────────────────
+        lang  = language if language in _NOTIF_TEXTS else "fr"
+        texts = _NOTIF_TEXTS[lang]
+        title   = texts["title"]
+        message = texts["message"].format(
+            candidate_name=candidate_name,
+            position_title=position_title,
+        )
+
+        # ── Insertion ─────────────────────────────────────────────────────────
+        ok = 0
+        for email in emails:
+            doc = {
+                "recipient_email": email,
+                "type":            "interview_completed",
+                "title":           title,
+                "message":         message,
+                "data": {
+                    "session_id":     session_id,
+                    "candidate_name": candidate_name,
+                    "position_title": position_title,
+                    "total_answers":  total_answers,
+                },
+                "priority":   "high",
+                "read":       False,
+                "created_at": datetime.utcnow(),
+            }
+            result = db.notifications.insert_one(doc)
+            logger.info(
+                f"🔔 Notification insérée | _id={result.inserted_id} | "
+                f"recipient={email} | message='{message}'"
+            )
+            ok += 1
+
+        logger.info(
+            f"✅ {ok}/{len(emails)} notification(s) créée(s) | session={session_id} | "
+            f"candidat={candidate_name} | poste={position_title}"
+        )
+
+    except Exception as e:
+        logger.error(
+            f"❌ _send_completion_notification ERREUR | session={session_id} | {e}",
+            exc_info=True,
+        )
 
 
 class JobPositionCRUD:
@@ -37,10 +173,7 @@ class JobPositionCRUD:
         sort_by: str = "created_at",
         order: str = "desc",
     ) -> List[JobPosition]:
-        from datetime import timedelta
-
         query: dict = {}
-
         if department:
             query["department"] = {"$regex": department, "$options": "i"}
         if location:
@@ -50,17 +183,12 @@ class JobPositionCRUD:
         if period_days:
             since = datetime.utcnow() - timedelta(days=period_days)
             query["created_at"] = {"$gte": since}
-
-        # Allowed sort fields — guard against injection
         allowed_sort = {"created_at", "title", "department", "location"}
         sort_field = sort_by if sort_by in allowed_sort else "created_at"
         sort_dir   = -1 if order.lower() == "desc" else 1
-
         positions = list(
             db.job_positions.find(query)
-            .skip(skip)
-            .limit(limit)
-            .sort(sort_field, sort_dir)
+            .skip(skip).limit(limit).sort(sort_field, sort_dir)
         )
         for p in positions:
             p["_id"] = str(p["_id"])
@@ -97,13 +225,6 @@ class InterviewSessionCRUD:
 
     @staticmethod
     def create(session: InterviewSessionCreate, created_by: str = "") -> InterviewSession:
-        """
-        Crée une nouvelle session d'entretien.
-
-        Args:
-            session:    données de la session (candidat, poste, langue, scheduled_at)
-            created_by: email du recruteur créateur — utilisé pour les notifications
-        """
         if not ObjectId.is_valid(session.candidate_id):
             raise HTTPException(status_code=400, detail="ID candidat invalide")
         candidate = db.candidates.find_one({"_id": ObjectId(session.candidate_id)})
@@ -121,11 +242,9 @@ class InterviewSessionCRUD:
         scheduled_at = session.scheduled_at if hasattr(session, "scheduled_at") else None
 
         if scheduled_at:
-            # La session expire 30 min après l'heure planifiée (retard max)
             late_access_deadline = scheduled_at + timedelta(minutes=LATE_ACCESS_MINUTES)
             expires_at           = late_access_deadline
         else:
-            # Pas de planification : expire 30 min après la création
             late_access_deadline = None
             expires_at           = now + timedelta(minutes=SESSION_EXPIRATION_MINUTES)
 
@@ -140,11 +259,14 @@ class InterviewSessionCRUD:
             "updated_at":            now,
             "scheduled_at":          scheduled_at,
             "late_access_deadline":  late_access_deadline,
-            "created_by":            created_by,          # ← email recruteur créateur
+            "created_by":            created_by,
         })
 
         result = db.interview_sessions.insert_one(session_dict)
         session_dict["_id"] = str(result.inserted_id)
+        logger.info(
+            f"Session créée | id={session_id} | created_by={created_by!r}"
+        )
         return InterviewSession(**session_dict)
 
     @staticmethod
@@ -177,16 +299,6 @@ class InterviewSessionCRUD:
 
     @staticmethod
     def validate_session_access(session_id: str) -> tuple:
-        """
-        Valide l'accès à une session avant de démarrer l'entretien.
-
-        Règles de planification (si scheduled_at est défini) :
-          - Avant scheduled_at          → trop tôt, accès refusé
-          - Entre scheduled_at et +30mn → fenêtre autorisée ✅
-          - Après scheduled_at + 30mn   → retard dépassé, accès refusé
-
-        Retourne : (session, is_valid: bool, error_message: str)
-        """
         try:
             session = InterviewSessionCRUD.get_by_session_id(session_id)
         except HTTPException:
@@ -196,59 +308,41 @@ class InterviewSessionCRUD:
         scheduled_at = getattr(session, "scheduled_at", None)
         deadline     = getattr(session, "late_access_deadline", None)
 
-        # ── Statuts terminaux ─────────────────────────────────────────────────
         if session.status == "completed":
             return session, False, "✅ Cet entretien est déjà terminé."
         if session.status == "cancelled":
             return session, False, "🚫 Cette session a été annulée."
 
-        # ── Fenêtre de planification ──────────────────────────────────────────
         if scheduled_at:
             if now < scheduled_at:
                 delta_min = int((scheduled_at - now).total_seconds() / 60)
                 hrs, mins = divmod(delta_min, 60)
                 human = f"{hrs}h{mins:02d}" if hrs else f"{mins} min"
                 return session, False, (
-                    f"⏰ Entretien non encore disponible. "
-                    f"Il commence dans {human} "
+                    f"⏰ Entretien non encore disponible. Il commence dans {human} "
                     f"(prévu le {scheduled_at.strftime('%d/%m/%Y à %H:%M')} UTC)."
                 )
-
             if deadline and now > deadline:
                 delay_min = int((now - scheduled_at).total_seconds() / 60)
                 return session, False, (
                     f"⌛ Retard trop important ({delay_min} min). "
-                    f"Le délai maximum autorisé est de {LATE_ACCESS_MINUTES} minutes "
-                    f"après l'heure prévue ({scheduled_at.strftime('%d/%m/%Y à %H:%M')} UTC). "
-                    f"Veuillez contacter le recruteur pour reprogrammer."
+                    f"Délai max {LATE_ACCESS_MINUTES} min après "
+                    f"{scheduled_at.strftime('%d/%m/%Y à %H:%M')} UTC."
                 )
-
-        # ── Expiration globale (sessions sans planification) ──────────────────
         elif now > session.expires_at:
             delay = int((now - session.expires_at).total_seconds() / 60)
             return session, False, (
-                f"⏰ Session expirée depuis {delay} minutes. "
-                f"Les sessions sans planification expirent après {SESSION_EXPIRATION_MINUTES} minutes."
+                f"⏰ Session expirée depuis {delay} minutes."
             )
 
         return session, True, ""
 
-
     @staticmethod
     def reschedule(session_id: str, scheduled_at: datetime) -> InterviewSession:
-        """
-        Replanifie un entretien :
-        - scheduled_at          = nouvelle date/heure
-        - late_access_deadline  = scheduled_at + 30 min
-        - expires_at            = late_access_deadline
-        - status repassé à pending si cancelled
-        """
         session = InterviewSessionCRUD.get_by_session_id(session_id)
         if session.status == "completed":
             raise HTTPException(status_code=400, detail="Impossible de replanifier un entretien terminé.")
-
         late_access_deadline = scheduled_at + timedelta(minutes=LATE_ACCESS_MINUTES)
-
         fields: dict = {
             "scheduled_at":         scheduled_at,
             "late_access_deadline": late_access_deadline,
@@ -257,18 +351,23 @@ class InterviewSessionCRUD:
         }
         if session.status == "cancelled":
             fields["status"] = "pending"
-
-        db.interview_sessions.update_one(
-            {"session_id": session_id},
-            {"$set": fields},
-        )
+        db.interview_sessions.update_one({"session_id": session_id}, {"$set": fields})
         return InterviewSessionCRUD.get_by_session_id(session_id)
 
     @staticmethod
     def update_status(session_id: str, status: str) -> InterviewSession:
+        """
+        Met à jour le statut d'une session.
+
+        ★ Quand status == "completed" : insère automatiquement une notification
+          dans db.notifications pour le recruteur créateur (ou tous en fallback).
+        """
         valid_statuses = ["pending", "in_progress", "completed", "cancelled"]
         if status not in valid_statuses:
-            raise HTTPException(status_code=400, detail=f"Statut invalide : {', '.join(valid_statuses)}")
+            raise HTTPException(
+                status_code=400,
+                detail=f"Statut invalide : {', '.join(valid_statuses)}"
+            )
 
         update_data: dict = {"status": status, "updated_at": datetime.utcnow()}
         if status == "in_progress":
@@ -282,11 +381,16 @@ class InterviewSessionCRUD:
         )
         if result.matched_count == 0:
             raise HTTPException(status_code=404, detail="Session non trouvée")
+
+        # ── Notification automatique quand l'entretien se termine ─────────────
+        if status == "completed":
+            logger.info(f"🔔 Déclenchement notification (update_status completed) | {session_id}")
+            _send_completion_notification(session_id)
+
         return InterviewSessionCRUD.get_by_session_id(session_id)
 
     @staticmethod
     def add_answer(session_id: str, answer: Answer) -> InterviewSession:
-        """Ajoute une réponse (sans évaluation — celle-ci arrive en async)."""
         result = db.interview_sessions.update_one(
             {"session_id": session_id},
             {
@@ -304,12 +408,7 @@ class InterviewSessionCRUD:
         question_order: int,
         evaluation: AnswerEvaluationData,
     ) -> bool:
-        """
-        Persiste l'évaluation LLM dans answers[n].evaluation via l'opérateur
-        positionnel MongoDB ($) ciblé par answers.question_order.
-        """
         eval_dict = evaluation.model_dump()
-
         result = db.interview_sessions.update_one(
             {
                 "session_id":             session_id,
@@ -336,19 +435,14 @@ class InterviewSessionCRUD:
         followup_question: str | None = None,
         followup_transcript: str | None = None,
     ) -> bool:
-        """
-        Met à jour une réponse existante identifiée par question_order.
-        Seuls les champs fournis (non-None) sont modifiés.
-        """
         fields: dict = {"updated_at": datetime.utcnow()}
-
         if transcript is not None:
             fields["answers.$.transcript"] = transcript
         if evaluation is not None:
             eval_dict = evaluation.model_dump()
             if followup_question is not None:
-                eval_dict["followup_question"]  = followup_question
-                eval_dict["had_followup"]        = True
+                eval_dict["followup_question"] = followup_question
+                eval_dict["had_followup"]       = True
             if followup_transcript is not None:
                 eval_dict["followup_transcript"] = followup_transcript
             if initial_score is not None:
@@ -358,7 +452,6 @@ class InterviewSessionCRUD:
             fields["answers.$.evaluation"] = eval_dict
         if audio_followup_path is not None:
             fields["answers.$.audio_followup_path"] = audio_followup_path
-
         result = db.interview_sessions.update_one(
             {
                 "session_id":             session_id,
@@ -370,10 +463,6 @@ class InterviewSessionCRUD:
 
     @staticmethod
     def get_answers_with_evaluations(session_id: str) -> List[Answer]:
-        """
-        Retourne uniquement le tableau answers (projection légère),
-        y compris les champs evaluation s'ils existent.
-        """
         doc = db.interview_sessions.find_one(
             {"session_id": session_id},
             {"answers": 1, "_id": 0},
