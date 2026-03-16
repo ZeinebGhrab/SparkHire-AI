@@ -1,6 +1,7 @@
 """
 Stark Recruitment AI — Backend FastAPI
 Pipeline : Voix → Whisper → Llama 3 → Score / Feedback
+          Vidéo → MediaPipe + DeepFace → Métriques comportementales
 """
 
 from contextlib import asynccontextmanager
@@ -36,7 +37,7 @@ async def lifespan(app: FastAPI):
 
     from backend.websocket import interview_handler as ih
 
-    # ── ASR (Whisper) ─────────────────────────────────────────────
+    # ── ASR (Whisper) ─────────────────────────────────────────────────────────
     try:
         from backend.services import get_asr_service
         ih._asr_service = get_asr_service()
@@ -47,7 +48,7 @@ async def lifespan(app: FastAPI):
         logger.error(f" ASR : {e}")
         ih._asr_service = None
 
-    # ── TTS ───────────────────────────────────────────────────────
+    # ── TTS ───────────────────────────────────────────────────────────────────
     try:
         from backend.services import get_tts_service
         ih._tts_service = get_tts_service()
@@ -56,7 +57,7 @@ async def lifespan(app: FastAPI):
         logger.error(f" TTS : {e}")
         ih._tts_service = None
 
-    # ── Avatar ────────────────────────────────────────────────────
+    # ── Avatar ────────────────────────────────────────────────────────────────
     try:
         from backend.services import get_avatar_service
         ih._avatar_service = get_avatar_service()
@@ -65,7 +66,43 @@ async def lifespan(app: FastAPI):
         logger.error(f" Avatar : {e}")
         ih._avatar_service = None
 
-    # ── LLM / Ollama ──────────────────────────────────────────────
+    # ── Facial Analysis — warm-up au démarrage ────────────────────────────────
+    # Le warm-up est CRITIQUE : sans lui, DeepFace charge ses poids (~6 Mo)
+    # lors du premier appel en entretien → timeout de 15-20s sur Q1.
+    try:
+        from backend.services.facial_analysis_service import get_facial_service
+        facial_svc = get_facial_service()
+        status     = facial_svc.status
+
+        if status["mediapipe"]:
+            logger.info(" MediaPipe FaceMesh | 478 landmarks + iris | EAR + solvePnP")
+        else:
+            logger.warning(
+                " MediaPipe indisponible — mode dégradé (émotions DeepFace uniquement)\n"
+                "  Fix : pip install \"protobuf>=4.25.3,<5.0.0\""
+            )
+
+        if status["deepface"]:
+            warmup_ok = facial_svc.warmup_deepface()
+            if warmup_ok:
+                logger.info(" DeepFace warm-up OK — poids en mémoire")
+            else:
+                logger.warning(" DeepFace warm-up différé — chargement au 1er appel")
+        else:
+            logger.warning(
+                " DeepFace indisponible — fallback heuristiques FACS\n"
+                "  Fix : pip install deepface tf-keras"
+            )
+
+        mode = "full (MediaPipe + DeepFace)"      if status["full_pipeline"]  else \
+               "dégradé (DeepFace émotions only)" if status["deepface"]       else \
+               "minimal (FACS heuristiques)"
+        logger.info(f" Facial Analysis | mode={mode}")
+
+    except Exception as e:
+        logger.error(f" Facial Analysis : {e}")
+
+    # ── LLM / Ollama ──────────────────────────────────────────────────────────
     try:
         from backend.services.llm_service import get_llm_service
         llm = get_llm_service()
@@ -97,8 +134,9 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title=settings.API_TITLE,
     description=(
-        "API recrutement IA avec pipeline vocal : "
-        "Voix → Whisper ASR → Llama 3 Évaluation — Multilingue AR/FR/EN"
+        "API recrutement IA avec pipeline vocal+facial : "
+        "Voix → Whisper ASR → Llama 3 Évaluation — Multilingue AR/FR/EN\n"
+        "Vidéo → MediaPipe FaceMesh + DeepFace CNN → Métriques comportementales"
     ),
     version=settings.API_VERSION,
     docs_url="/docs",
@@ -142,10 +180,10 @@ async def websocket_interview(
 @app.get("/")
 async def root():
     return {
-        "message":            "Stark Recruitment AI API",
-        "version":            settings.API_VERSION,
+        "message":             "Stark Recruitment AI API",
+        "version":             settings.API_VERSION,
         "languages_supported": ["ar", "fr", "en"],
-        "documentation":      "/docs",
+        "documentation":       "/docs",
     }
 
 
@@ -165,6 +203,13 @@ async def health():
     except Exception:
         pass
 
+    facial_status = {}
+    try:
+        from backend.services.facial_analysis_service import get_facial_service
+        facial_status = get_facial_service().status
+    except Exception:
+        pass
+
     return {
         "status":      "ok",
         "api_version": settings.API_VERSION,
@@ -176,6 +221,7 @@ async def health():
             "avatar":     "ready" if ih._avatar_service else "unavailable",
             "llm_ollama": "ready" if llm_ok             else "unavailable",
             "llm_model":  settings.OLLAMA_MODEL,
+            "facial":     facial_status,
         },
     }
 
@@ -185,7 +231,7 @@ async def api_info():
     return {
         "api_name": settings.API_TITLE,
         "version":  settings.API_VERSION,
-        "pipeline": "Voice → Whisper ASR → Llama3 LLM → Score/Feedback",
+        "pipeline": "Voice → Whisper ASR → Llama3 LLM → Score/Feedback | Video → MediaPipe + DeepFace → Behavioral metrics",
         "endpoints": {
             "auth":          "/auth",
             "candidates":    "/candidates",
