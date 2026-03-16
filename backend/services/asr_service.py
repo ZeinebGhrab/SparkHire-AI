@@ -7,6 +7,16 @@ GPU auto-détecté avec fallback CPU si CUDA non disponible.
 import os
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
+# ── Fix cuDNN DLL path (Windows) ─────────────────────────────────────────────
+try:
+    import nvidia.cudnn
+    _cudnn_bin = os.path.join(os.path.dirname(nvidia.cudnn.__file__), "bin")
+    if os.path.exists(_cudnn_bin):
+        os.add_dll_directory(_cudnn_bin)
+        os.environ["PATH"] = _cudnn_bin + ";" + os.environ.get("PATH", "")
+except Exception:
+    pass
+
 import io
 import wave
 import json
