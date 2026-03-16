@@ -227,9 +227,14 @@ class CameraPreviewWidget(QWidget):
     # ── Analyse temps réel ────────────────────────────────────────────────────
 
     def _analyze_frame_rt(self, frame_bgr: np.ndarray) -> dict:
+        """
+        Analyse temps réel alignée avec facial_analysis_service v2.
+        Utilise EAR pour clignements et iris offset pour contact visuel.
+        """
         if not self._mp_ready or self._face_mesh is None:
             return {}
         try:
+            import math
             h, w = frame_bgr.shape[:2]
             if w > 320:
                 s = 320 / w
@@ -239,30 +244,68 @@ class CameraPreviewWidget(QWidget):
             if not result.multi_face_landmarks:
                 return {"face": False}
             lm = result.multi_face_landmarks[0].landmark
+
+            # EAR (Eye Aspect Ratio)
+            def ear(top, bot, outer, inner):
+                h_ = abs(lm[top].y - lm[bot].y)
+                w_ = abs(lm[outer].x - lm[inner].x) + 1e-6
+                return h_ / w_
+            ear_l  = ear(159, 145, 33, 133)
+            ear_r  = ear(386, 374, 263, 362)
+            is_blink = (ear_l + ear_r) / 2 < 0.20
+
+            # Iris offset (contact visuel précis)
+            def iris_offset(iris, outer, inner, top, bot):
+                cx = (lm[outer].x + lm[inner].x) / 2
+                cy = (lm[top].y   + lm[bot].y)   / 2
+                ew = abs(lm[outer].x - lm[inner].x) + 1e-6
+                return (lm[iris].x - cx) / ew, (lm[iris].y - cy) / ew
+            ox_l, oy_l = iris_offset(468, 33,  133, 159, 145)
+            ox_r, oy_r = iris_offset(473, 263, 362, 386, 374)
+            ox = (ox_l + ox_r) / 2
+            oy = (oy_l + oy_r) / 2
+            eye_contact = abs(ox) < 0.35 and abs(oy) < 0.28 and not is_blink
+
+            # Pose tête simplifiée (sans solvePnP pour la perf temps réel)
+            yaw_approx = abs(lm[454].x - lm[234].x - 0.5) * 60
+            stab = max(0.0, min(1.0, 1.0 - yaw_approx / 30))
+
+            # Émotion
             eye_dist   = abs(lm[33].x - lm[263].x) + 1e-6
-            eye_contact= abs(lm[4].x - 0.5) < 0.13 and abs(lm[4].y - 0.5) < 0.15
-            yaw        = abs(lm[454].x - lm[234].x)
-            pitch      = abs(lm[10].y  - lm[152].y)
-            stab       = max(0.0, min(1.0, 1.0 - (abs(yaw - 0.5) + abs(pitch - 0.6)) * 2))
-            corner_up  = -((lm[61].y + lm[291].y) / 2 - lm[17].y) / eye_dist
-            brow_frown = max(0.0, 0.3 - abs(lm[70].x - lm[300].x) / eye_dist)
-            mouth_open = abs(lm[13].y  - lm[14].y) / eye_dist
+            lip_mid_y  = (lm[13].y + lm[14].y) / 2
+            corner_avg = (lm[61].y + lm[291].y) / 2
+            corner_up  = max(0.0, (lip_mid_y - corner_avg) / eye_dist * 3)
+            brow_gap   = abs(lm[107].x - lm[336].x) / eye_dist
+            brow_frown = max(0.0, min(1.0, (0.55 - brow_gap) * 5))
+            brow_raise = max(0.0, min(1.0,
+                ((lm[159].y - lm[107].y) + (lm[386].y - lm[336].y)) / eye_dist * 2))
+            mar = abs(lm[13].y - lm[14].y) / (abs(lm[61].x - lm[291].x) + 1e-6)
 
-            if corner_up > 0.12:      emotion = "happy"
-            elif brow_frown > 0.18:   emotion = "angry"
-            elif mouth_open > 0.15:   emotion = "surprise"
-            else:                     emotion = "neutral"
+            if corner_up > 0.25:                emotion = "happy"
+            elif brow_frown > 0.30:             emotion = "angry"
+            elif brow_raise > 0.40 and mar > 0.25: emotion = "surprise"
+            elif brow_raise > 0.30:             emotion = "fear"
+            else:                               emotion = "neutral"
 
+            # Scores synthétiques
+            blink_factor = 1.0  # temps réel : pas assez de frames pour blink_rate
             confidence = min(10.0, max(0.0,
-                (1 if eye_contact else 0) * 4.0 + stab * 3.5 +
-                (1 if emotion == "happy" else 0) * 2.5))
+                (1 if eye_contact else 0) * 3.5 + stab * 2.5
+                + corner_up * 2.0 - brow_frown * 3.0))
             stress = min(10.0, max(0.0,
-                brow_frown * 20 + (1 - stab) * 5 +
-                (1 if emotion in ("angry", "fear") else 0) * 3))
+                brow_frown * 3.5 + (1 - stab) * 2.0
+                + (1 - (1 if eye_contact else 0)) * 2.0
+                - corner_up * 1.5))
+
             return {
-                "face": True, "eye_contact": eye_contact,
-                "stability": stab, "emotion": emotion,
-                "confidence": confidence, "stress": stress,
+                "face":        True,
+                "eye_contact": eye_contact,
+                "is_blink":    is_blink,
+                "stability":   stab,
+                "emotion":     emotion,
+                "confidence":  confidence,
+                "stress":      stress,
+                "brow_frown":  brow_frown,
             }
         except Exception:
             return {"face": False}
