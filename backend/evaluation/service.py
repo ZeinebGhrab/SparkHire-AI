@@ -3,9 +3,10 @@ Service d'évaluation — orchestre le pipeline
 Audio → Whisper (ASR) → Ollama/Llama3 (LLM) → Score + Feedback
 
 Moyenne pondérée :
-  weighted_avg = Σ(score_i × weight_i) / Σ(weight_i)
-  Le weight est copié depuis Question.weight dans chaque AnswerEvaluationData
-  et AnswerEvaluation afin d'être auto-portant dans MongoDB.
+  average_score = Σ(score_i × weight_i) / Σ(weight_i)
+
+Le weight est copié depuis Question.weight dans chaque AnswerEvaluation
+afin d'être auto-portant dans MongoDB (pas besoin de rejoindre job_positions).
 """
 
 import asyncio
@@ -102,8 +103,6 @@ class EvaluationService:
 
         lang    = language or session.get("language", "fr")
         answers = session.get("answers", [])
-
-        # Map order → question (avec weight)
         questions: dict[int, dict] = {
             q["order"]: q for q in position.get("questions", [])
         }
@@ -120,7 +119,6 @@ class EvaluationService:
             q_data  = questions.get(q_order, {})
             q_text  = ans.get("question_text") or self._get_question_text(q_data, lang)
             weight  = float(q_data.get("weight", 1.0))
-
             tasks.append(
                 self.evaluate_single_answer(
                     question_text=q_text,
@@ -137,7 +135,6 @@ class EvaluationService:
 
         # ── Moyenne pondérée ───────────────────────────────────────────────
         avg_score = _weighted_avg([(a.score, a.weight) for a in per_answer])
-
         logger.info(
             "Scores : "
             + ", ".join(f"Q{a.question_order}={a.score}/10 (×{a.weight})" for a in per_answer)
@@ -163,12 +160,11 @@ class EvaluationService:
             total_questions=len(position.get("questions", [])),
             answered_questions=len(answers),
             average_score=avg_score,
-            global_verdict=global_raw.get("global_verdict", ""),
-            recommendation=global_raw.get("recommendation", ""),
             decision=decision,
             decision_label=DECISION_LABELS.get(lang, DECISION_LABELS["fr"]).get(decision, decision),
             decision_color=DECISION_COLORS.get(decision, "#F59E0B"),
             decision_reason=global_raw.get("decision_reason", ""),
+            recommendation=global_raw.get("recommendation", ""),
             key_strengths=global_raw.get("key_strengths", []),
             key_improvements=global_raw.get("key_improvements", []),
             summary=global_raw.get("summary", ""),
@@ -180,8 +176,8 @@ class EvaluationService:
         self._save_evaluation(session_id, evaluation)
 
         logger.info(
-            f"Evaluation done {session_id} | "
-            f"weighted_avg={avg_score}/10 | "
+            f"✅ Évaluation terminée {session_id} | "
+            f"average_score={avg_score}/10 | "
             f"decision={evaluation.decision} | "
             f"recommendation={evaluation.recommendation!r}"
         )
@@ -195,11 +191,7 @@ class EvaluationService:
         per_answer: list[AnswerEvaluation],
         lang: str,
     ) -> GlobalEvaluation:
-        from backend.services.llm_service import OllamaLLMService
         score = ev.average_score
-
-        if not ev.global_verdict:
-            ev = ev.model_copy(update={"global_verdict": OllamaLLMService._score_to_verdict(score, lang)})
 
         if not ev.recommendation:
             if lang == "fr":
@@ -218,7 +210,7 @@ class EvaluationService:
                     f"Barème : ≥7 = Embaucher, 5–7 = En attente, <5 = Refuser."
                 )
             elif lang == "ar":
-                reason = f"متوسط مرجح {score}/10 على {n} سؤال."
+                reason = f"متوسط مرجح {score}/10 على {n} سؤال. المعايير : ≥7 = توظيف، 5-7 = انتظار، <5 = رفض."
             else:
                 reason = (
                     f"Weighted average {score}/10 across {n} question(s). "
@@ -253,7 +245,7 @@ class EvaluationService:
                     f"Recommandation : {ev.recommendation}."
                 )
             elif lang == "ar":
-                summary = f"مقابلة {len(per_answer)} سؤال — متوسط مرجح {score}/10. {scores_str}."
+                summary = f"مقابلة {len(per_answer)} سؤال — متوسط مرجح {score}/10. {scores_str}. التوصية : {ev.recommendation}."
             else:
                 summary = (
                     f"{len(per_answer)}-question interview — "
@@ -302,13 +294,16 @@ class EvaluationService:
                 {"session_id": session_id},
                 {"$set": {
                     "evaluation_score":           evaluation.average_score,
-                    "evaluation_verdict":         evaluation.global_verdict,
                     "evaluation_recommendation":  evaluation.recommendation,
                     "evaluation_decision":        evaluation.decision,
                     "evaluation_decision_label":  evaluation.decision_label,
                     "evaluation_decision_color":  evaluation.decision_color,
                     "evaluation_decision_reason": evaluation.decision_reason,
                 }},
+            )
+            logger.info(
+                f"💾 Évaluation persistée | session={session_id} | "
+                f"average_score={evaluation.average_score}/10 | decision={evaluation.decision}"
             )
         except Exception as e:
             logger.error(f"Erreur sauvegarde évaluation : {e}")

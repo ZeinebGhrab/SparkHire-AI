@@ -2,12 +2,6 @@
 Service LLM — Évaluation des réponses via Ollama + Llama 3
 Pipeline: Transcription → LLM → Score / Feedback multilingue
 + Génération de questions de suivi si la réponse est floue
-
-CORRECTIONS v2 :
-  - _parse_global_json() dédié au résumé global (champs différents des éval par réponse)
-  - generate_global_summary() utilise _parse_global_json au lieu de _parse_json
-  - Fallback automatique : calcul des champs manquants depuis les évaluations individuelles
-  - Prompt global plus court et plus fiable pour llama3.2
 """
 
 import json
@@ -163,7 +157,6 @@ Return ONLY this JSON with no extra text:
 _SYSTEM_PROMPT_FINAL = {
     "ar": """أنت محكّم صارم لمقابلات التوظيف. لديك السؤال الأصلي، الإجابة الأولى، وإجابة التوضيح.
 قيّم الإجابة الكاملة بصرامة. إذا كانت إجابة التوضيح أفضل، يمكن رفع الدرجة قليلاً، لكن لا تكن متساهلاً.
-المعيار: الدقة التقنية، الأمثلة الملموسة، والطلاقة.
 أعد JSON فقط:
 {
   "score": <رقم من 0 إلى 10>,
@@ -175,7 +168,6 @@ _SYSTEM_PROMPT_FINAL = {
 
     "fr": """Tu es un évaluateur sévère d'entretiens de recrutement. Tu as la question originale, la première réponse et la réponse de clarification.
 Évalue l'ensemble avec rigueur. Si la clarification améliore la réponse, tu peux légèrement rehausser le score, mais reste exigeant.
-Critères : précision technique, exemples concrets, fluidité et structure.
 Retourne UNIQUEMENT ce JSON :
 {
   "score": <nombre de 0 à 10>,
@@ -187,7 +179,6 @@ Retourne UNIQUEMENT ce JSON :
 
     "en": """You are a strict recruitment interview evaluator. You have the original question, first answer, and clarification answer.
 Evaluate the complete response with rigor. If the clarification improves the answer, you may slightly raise the score, but remain demanding.
-Criteria: technical accuracy, concrete examples, fluency and structure.
 Return ONLY this JSON:
 {
   "score": <number from 0 to 10>,
@@ -211,39 +202,21 @@ _USER_PROMPT_FINAL = {
 }
 
 _EMPTY_ANSWER_RESULT = {
-    "ar": {
-        "score": 0,
-        "verdict": "ضعيف",
-        "strengths": [],
-        "improvements": ["لم يتم تقديم أي إجابة"],
-        "feedback": "لم يقدم المرشح أي إجابة على هذا السؤال.",
-    },
-    "fr": {
-        "score": 0,
-        "verdict": "Insuffisant",
-        "strengths": [],
-        "improvements": ["Aucune réponse fournie"],
-        "feedback": "Le candidat n'a fourni aucune réponse à cette question.",
-    },
-    "en": {
-        "score": 0,
-        "verdict": "Poor",
-        "strengths": [],
-        "improvements": ["No answer provided"],
-        "feedback": "The candidate did not provide any answer to this question.",
-    },
+    "ar": {"score": 0, "verdict": "ضعيف", "strengths": [], "improvements": ["لم يتم تقديم أي إجابة"], "feedback": "لم يقدم المرشح أي إجابة على هذا السؤال."},
+    "fr": {"score": 0, "verdict": "Insuffisant", "strengths": [], "improvements": ["Aucune réponse fournie"], "feedback": "Le candidat n'a fourni aucune réponse à cette question."},
+    "en": {"score": 0, "verdict": "Poor", "strengths": [], "improvements": ["No answer provided"], "feedback": "The candidate did not provide any answer to this question."},
 }
 
-# ── Prompts résumé global ─────────────────────────────────────────────────────
-# NOTE : Prompt délibérément court et structuré pour llama3.2 qui tronque les
-#        longues sorties. Le JSON cible ne contient que les 7 champs nécessaires.
+# ── Prompt résumé global ──────────────────────────────────────────────────────
+# Compact et contraint pour éviter la troncature de llama3.2.
+# global_verdict supprimé — average_score + decision suffisent.
 
 _GLOBAL_SUMMARY_PROMPT = {
     "fr": """\
 Tu es un DRH expérimenté. Voici les résultats d'entretien :
 Candidat : {candidate_name}
 Poste    : {position_title}
-Score moyen LLM : {avg}/10
+Score moyen pondéré : {avg}/10
 
 Détail par question :
 {detail}
@@ -254,13 +227,13 @@ Règles de décision (OBLIGATOIRES) :
 - score < 5.0   → recommendation = "Refuser"
 
 Réponds UNIQUEMENT avec ce JSON (pas de markdown, pas de texte avant/après) :
-{{"global_score":{avg_f},"global_verdict":"{verdict}","recommendation":"<Embaucher|En attente|Refuser>","decision_reason":"<1 phrase justifiant la décision>","key_strengths":["<point fort 1>","<point fort 2>"],"key_improvements":["<axe 1>","<axe 2>"],"summary":"<résumé en 2-3 phrases>"}}""",
+{{"recommendation":"<Embaucher|En attente|Refuser>","decision_reason":"<1 phrase justifiant la décision>","key_strengths":["<point fort 1>","<point fort 2>"],"key_improvements":["<axe 1>","<axe 2>"],"summary":"<résumé en 2-3 phrases>"}}""",
 
     "en": """\
 You are an experienced HR director. Here are the interview results:
 Candidate : {candidate_name}
 Position  : {position_title}
-Average LLM score: {avg}/10
+Weighted average score: {avg}/10
 
 Per-question detail:
 {detail}
@@ -271,13 +244,13 @@ Decision rules (MANDATORY):
 - score < 5.0   → recommendation = "Reject"
 
 Reply ONLY with this JSON (no markdown, no text before/after):
-{{"global_score":{avg_f},"global_verdict":"{verdict}","recommendation":"<Hire|On Hold|Reject>","decision_reason":"<1 sentence justifying decision>","key_strengths":["<strength 1>","<strength 2>"],"key_improvements":["<improvement 1>","<improvement 2>"],"summary":"<2-3 sentence summary>"}}""",
+{{"recommendation":"<Hire|On Hold|Reject>","decision_reason":"<1 sentence justifying decision>","key_strengths":["<strength 1>","<strength 2>"],"key_improvements":["<improvement 1>","<improvement 2>"],"summary":"<2-3 sentence summary>"}}""",
 
     "ar": """\
 أنت مدير موارد بشرية خبير. إليك نتائج المقابلة:
 المرشح  : {candidate_name}
 المنصب  : {position_title}
-متوسط الدرجة : {avg}/10
+متوسط الدرجة المرجح : {avg}/10
 
 تفاصيل الأسئلة:
 {detail}
@@ -288,15 +261,12 @@ Reply ONLY with this JSON (no markdown, no text before/after):
 - score < 5.0   → recommendation = "رفض"
 
 أعد JSON فقط (بدون markdown، بدون نص قبله أو بعده):
-{{"global_score":{avg_f},"global_verdict":"{verdict}","recommendation":"<توظيف|قيد الانتظار|رفض>","decision_reason":"<جملة واحدة تبرر القرار>","key_strengths":["<نقطة قوة 1>","<نقطة قوة 2>"],"key_improvements":["<محور 1>","<محور 2>"],"summary":"<ملخص في 2-3 جمل>"}}""",
+{{"recommendation":"<توظيف|قيد الانتظار|رفض>","decision_reason":"<جملة واحدة تبرر القرار>","key_strengths":["<نقطة قوة 1>","<نقطة قوة 2>"],"key_improvements":["<محور 1>","<محور 2>"],"summary":"<ملخص في 2-3 جمل>"}}""",
 }
 
 
 class OllamaLLMService:
-    """
-    Service d'évaluation LLM via Ollama (Llama 3 local).
-    Compatible avec tout modèle disponible dans Ollama.
-    """
+    """Service d'évaluation LLM via Ollama (Llama 3 local)."""
 
     def __init__(
         self,
@@ -344,7 +314,7 @@ class OllamaLLMService:
         parsed = self._parse_json(raw, lang)
         parsed["llm_model"] = self.model
         parsed["evaluated"] = True
-        logger.info(f"Évaluation LLM [{lang}] | score={parsed['score']}/10 | verdict={parsed['verdict']}")
+        logger.info(f"Évaluation [{lang}] Q score={parsed['score']}/10 verdict={parsed['verdict']}")
         return parsed
 
     # ── Évaluation avec détection de suivi ────────────────────────────────────
@@ -371,9 +341,8 @@ class OllamaLLMService:
         parsed["llm_model"] = self.model
         parsed["evaluated"] = True
         logger.info(
-            f"Évaluation+Suivi LLM [{lang}] | score={parsed['score']}/10 "
-            f"| needs_followup={parsed['needs_followup']} "
-            f"| followup_q='{parsed.get('followup_question', '')[:60]}'"
+            f"Évaluation+Suivi [{lang}] score={parsed['score']}/10 "
+            f"needs_followup={parsed['needs_followup']}"
         )
         return parsed
 
@@ -403,7 +372,6 @@ class OllamaLLMService:
         parsed = self._parse_json(raw, lang)
         parsed["llm_model"] = self.model
         parsed["evaluated"] = True
-        logger.info(f"Évaluation Finale LLM [{lang}] | score={parsed['score']}/10 | verdict={parsed['verdict']}")
         return parsed
 
     # ── Résumé global ─────────────────────────────────────────────────────────
@@ -414,24 +382,20 @@ class OllamaLLMService:
         position_title: str,
         candidate_name: str,
         language: str = "fr",
-        weighted_avg: Optional[float] = None,   # moyenne pondérée calculée par EvaluationService
+        weighted_avg: Optional[float] = None,
     ) -> dict:
         """
-        Génère un résumé global structuré depuis les évaluations individuelles.
-
-        CORRECTION v2 :
-          - Utilise _parse_global_json (parser dédié, pas le parser par-réponse)
-          - Prompt court et contraint pour éviter la troncature de llama3.2
-          - Fallback automatique complet depuis les évaluations individuelles
-            si le LLM retourne un JSON incomplet ou invalide
+        Génère un résumé global depuis les évaluations individuelles.
+        Retourne : recommendation, decision_reason, key_strengths,
+                   key_improvements, summary.
+        global_verdict supprimé — redondant avec average_score.
         """
         lang = language if language in ("ar", "fr", "en") else "fr"
 
         if not answers_eval:
             return self._empty_summary(lang)
 
-        # Moyenne pondérée — utilise weighted_avg si fourni par EvaluationService,
-        # sinon recalcule depuis les champs weight stockés dans chaque réponse.
+        # Moyenne pondérée
         if weighted_avg is not None:
             avg = round(weighted_avg, 2)
         else:
@@ -439,40 +403,27 @@ class OllamaLLMService:
             total_w = sum(w for _, w in sw)
             avg = round(sum(s * w for s, w in sw) / total_w, 2) if total_w > 0 else 0.0
 
-        verdict_computed = self._score_to_verdict(avg, lang)
-
-        # ── Détail compact pour le prompt ────────────────────────────────────
+        # Détail compact
         detail_lines = []
         for i, a in enumerate(answers_eval, 1):
             feedback_short = (a.get("feedback") or "")[:80].replace("\n", " ")
             w = a.get("weight", 1.0)
-            detail_lines.append(
-                f"Q{i} (score={a.get('score', 0)}/10, poids={w}) : {feedback_short}"
-            )
+            detail_lines.append(f"Q{i} (score={a.get('score', 0)}/10, poids={w}) : {feedback_short}")
         detail = "\n".join(detail_lines)
 
-        # ── Prompt renforcé ───────────────────────────────────────────────────
         prompt_tpl = _GLOBAL_SUMMARY_PROMPT.get(lang, _GLOBAL_SUMMARY_PROMPT["fr"])
         prompt = prompt_tpl.format(
             candidate_name=candidate_name,
             position_title=position_title,
             avg=avg,
-            avg_f=avg,
-            verdict=verdict_computed,
             detail=detail,
         )
 
         raw    = await self._call_ollama("", prompt)
-        result = self._parse_global_json(raw, lang, avg_fallback=avg)
+        result = self._parse_global_json(raw, lang)
 
-        # ── Garantie : tous les champs sont présents et non vides ─────────────
+        # Garantie de complétude
         result = self._ensure_global_fields(result, answers_eval, avg, lang)
-
-        logger.info(
-            f"Résumé global [{lang}] | score={result['global_score']}/10 "
-            f"| verdict={result['global_verdict']} "
-            f"| recommendation={result['recommendation']}"
-        )
         return result
 
     # ── HTTP Ollama ───────────────────────────────────────────────────────────
@@ -483,17 +434,16 @@ class OllamaLLMService:
             messages.append({"role": "system", "content": system})
         messages.append({"role": "user", "content": user})
         payload = {
-            "model":   self.model,
+            "model":    self.model,
             "messages": messages,
-            "stream":  False,
-            "options": {"temperature": 0.1, "top_p": 0.85, "num_predict": 512},
+            "stream":   False,
+            "options":  {"temperature": 0.1, "top_p": 0.85, "num_predict": 512},
         }
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 resp = await client.post(f"{self.base_url}/api/chat", json=payload)
                 resp.raise_for_status()
-                data    = resp.json()
-                content = data.get("message", {}).get("content", "")
+                content = resp.json().get("message", {}).get("content", "")
                 logger.debug(f"Ollama raw: {content[:200]}")
                 return content
         except httpx.TimeoutException:
@@ -506,33 +456,22 @@ class OllamaLLMService:
     # ── Parsing par-réponse ───────────────────────────────────────────────────
 
     def _parse_json(self, raw: str, lang: str) -> dict:
-        """Extrait et valide le JSON d'une évaluation individuelle."""
-        for pattern in (
-            r"```json\s*([\s\S]+?)\s*```",
-            r"```\s*([\s\S]+?)\s*```",
-            r"(\{[\s\S]+\})",
-        ):
+        for pattern in (r"```json\s*([\s\S]+?)\s*```", r"```\s*([\s\S]+?)\s*```", r"(\{[\s\S]+\})"):
             m = re.search(pattern, raw)
             if m:
                 try:
-                    obj = json.loads(m.group(1))
-                    return self._normalize(obj, lang)
+                    return self._normalize(json.loads(m.group(1)), lang)
                 except json.JSONDecodeError:
                     continue
-        logger.warning(f"Impossible de parser la réponse LLM : {raw[:300]}")
+        logger.warning(f"Parse JSON échoué (per-answer) : {raw[:200]}")
         return self._fallback_result(lang)
 
     def _parse_followup_json(self, raw: str, lang: str) -> dict:
-        """Extrait et valide le JSON avec champs de suivi."""
-        for pattern in (
-            r"```json\s*([\s\S]+?)\s*```",
-            r"```\s*([\s\S]+?)\s*```",
-            r"(\{[\s\S]+\})",
-        ):
+        for pattern in (r"```json\s*([\s\S]+?)\s*```", r"```\s*([\s\S]+?)\s*```", r"(\{[\s\S]+\})"):
             m = re.search(pattern, raw)
             if m:
                 try:
-                    obj = json.loads(m.group(1))
+                    obj  = json.loads(m.group(1))
                     base = self._normalize(obj, lang)
                     base["needs_followup"]    = bool(obj.get("needs_followup", False))
                     base["followup_question"] = str(obj.get("followup_question", "")).strip()
@@ -542,95 +481,43 @@ class OllamaLLMService:
                     return base
                 except json.JSONDecodeError:
                     continue
-        logger.warning(f"Impossible de parser la réponse LLM (followup) : {raw[:300]}")
         result = self._fallback_result(lang)
         result["needs_followup"]    = False
         result["followup_question"] = ""
         return result
 
-    # ── Parsing résumé global (NOUVEAU) ──────────────────────────────────────
+    # ── Parsing résumé global ─────────────────────────────────────────────────
 
-    def _parse_global_json(self, raw: str, lang: str, avg_fallback: float = 0.0) -> dict:
+    def _parse_global_json(self, raw: str, lang: str) -> dict:
         """
         Parser dédié au résumé global.
-        Champs attendus : global_score, global_verdict, recommendation,
-                          decision_reason, key_strengths, key_improvements, summary
-
-        Contrairement à _parse_json (per-answer), ce parser ne normalise PAS
-        les champs vers {score, verdict, ...} — il conserve les noms globaux.
+        Champs attendus : recommendation, decision_reason,
+                          key_strengths, key_improvements, summary.
+        global_verdict absent — intentionnellement supprimé.
         """
-        for pattern in (
-            r"```json\s*([\s\S]+?)\s*```",
-            r"```\s*([\s\S]+?)\s*```",
-            r"(\{[\s\S]+\})",
-        ):
+        for pattern in (r"```json\s*([\s\S]+?)\s*```", r"```\s*([\s\S]+?)\s*```", r"(\{[\s\S]+\})"):
             m = re.search(pattern, raw)
             if m:
                 try:
-                    obj = json.loads(m.group(1))
-                    return self._normalize_global(obj, lang, avg_fallback)
+                    return self._normalize_global(json.loads(m.group(1)))
                 except json.JSONDecodeError:
                     continue
+        logger.warning(f"Parse JSON échoué (global) : {raw[:200]}")
+        return {"recommendation": "", "decision_reason": "", "key_strengths": [], "key_improvements": [], "summary": ""}
 
-        logger.warning(f"Impossible de parser le résumé global LLM : {raw[:300]}")
-        return self._empty_global(lang, avg_fallback)
-
-    def _normalize_global(self, obj: dict, lang: str, avg_fallback: float) -> dict:
-        """Normalise un objet JSON de résumé global."""
-        # global_score : peut être dans "global_score" ou "score"
-        raw_score = obj.get("global_score") or obj.get("score") or avg_fallback
-        try:
-            global_score = float(raw_score)
-            global_score = max(0.0, min(10.0, global_score))
-        except (TypeError, ValueError):
-            global_score = avg_fallback
-
-        # global_verdict
-        global_verdict = str(obj.get("global_verdict") or obj.get("verdict") or "").strip()
-        if not global_verdict:
-            global_verdict = self._score_to_verdict(global_score, lang)
-
-        # recommendation
-        recommendation = str(obj.get("recommendation") or "").strip()
-
-        # decision_reason
-        decision_reason = str(obj.get("decision_reason") or "").strip()
-
-        # key_strengths / key_improvements
+    def _normalize_global(self, obj: dict) -> dict:
         def _list(key):
             val = obj.get(key) or []
             if isinstance(val, list):
                 return [str(v) for v in val if v]
-            if isinstance(val, str) and val.strip():
-                return [val.strip()]
-            return []
-
-        key_strengths    = _list("key_strengths")
-        key_improvements = _list("key_improvements")
-
-        # summary
-        summary = str(obj.get("summary") or "").strip()
+            return [str(val).strip()] if isinstance(val, str) and val.strip() else []
 
         return {
-            "global_score":     round(global_score, 2),
-            "global_verdict":   global_verdict,
-            "recommendation":   recommendation,
-            "decision_reason":  decision_reason,
-            "key_strengths":    key_strengths,
-            "key_improvements": key_improvements,
-            "summary":          summary,
-        }
-
-    def _empty_global(self, lang: str, avg_fallback: float = 0.0) -> dict:
-        """Résumé global vide (base pour le fallback)."""
-        return {
-            "global_score":     avg_fallback,
-            "global_verdict":   self._score_to_verdict(avg_fallback, lang),
-            "recommendation":   "",
-            "decision_reason":  "",
-            "key_strengths":    [],
-            "key_improvements": [],
-            "summary":          "",
+            "recommendation":   str(obj.get("recommendation") or "").strip(),
+            "decision_reason":  str(obj.get("decision_reason") or "").strip(),
+            "key_strengths":    _list("key_strengths"),
+            "key_improvements": _list("key_improvements"),
+            "summary":          str(obj.get("summary") or "").strip(),
         }
 
     def _ensure_global_fields(
@@ -640,94 +527,65 @@ class OllamaLLMService:
         avg: float,
         lang: str,
     ) -> dict:
-        """
-        Garantit que tous les champs du résumé global sont remplis.
-        Si le LLM n'a pas retourné certains champs, les calcule depuis
-        les évaluations individuelles (fallback déterministe).
-        """
-        # ── global_score ──────────────────────────────────────────────────
-        if not result.get("global_score"):
-            result["global_score"] = avg
-
-        # ── global_verdict ────────────────────────────────────────────────
-        if not result.get("global_verdict"):
-            result["global_verdict"] = self._score_to_verdict(result["global_score"], lang)
-
-        # ── recommendation ────────────────────────────────────────────────
+        """Fallback déterministe pour tous les champs globaux vides."""
         if not result.get("recommendation"):
-            score = result["global_score"]
             if lang == "fr":
-                result["recommendation"] = "Embaucher" if score >= 7 else ("En attente" if score >= 5 else "Refuser")
+                result["recommendation"] = "Embaucher" if avg >= 7 else ("En attente" if avg >= 5 else "Refuser")
             elif lang == "ar":
-                result["recommendation"] = "توظيف" if score >= 7 else ("قيد الانتظار" if score >= 5 else "رفض")
+                result["recommendation"] = "توظيف" if avg >= 7 else ("قيد الانتظار" if avg >= 5 else "رفض")
             else:
-                result["recommendation"] = "Hire" if score >= 7 else ("On Hold" if score >= 5 else "Reject")
+                result["recommendation"] = "Hire" if avg >= 7 else ("On Hold" if avg >= 5 else "Reject")
 
-        # ── decision_reason ───────────────────────────────────────────────
         if not result.get("decision_reason"):
-            score = result["global_score"]
-            n     = len(answers_eval)
+            n = len(answers_eval)
             if lang == "fr":
                 result["decision_reason"] = (
-                    f"Score moyen de {score}/10 sur {n} question(s). "
-                    f"{result['recommendation']} — {result['global_verdict']}."
+                    f"Moyenne pondérée de {avg}/10 sur {n} question(s). "
+                    f"Barème : ≥7 = Embaucher, 5–7 = En attente, <5 = Refuser."
                 )
             elif lang == "ar":
-                result["decision_reason"] = (
-                    f"متوسط الدرجة {score}/10 على {n} سؤال(أسئلة). "
-                    f"{result['recommendation']} — {result['global_verdict']}."
-                )
+                result["decision_reason"] = f"متوسط مرجح {avg}/10 على {n} سؤال."
             else:
                 result["decision_reason"] = (
-                    f"Average score {score}/10 across {n} question(s). "
-                    f"{result['recommendation']} — {result['global_verdict']}."
+                    f"Weighted average {avg}/10 across {n} question(s). "
+                    f"Scale: ≥7 = Hire, 5–7 = On Hold, <5 = Reject."
                 )
 
-        # ── key_strengths — agrège les strengths individuelles ─────────────
         if not result.get("key_strengths"):
-            seen = set()
-            strengths = []
+            seen, items = set(), []
             for a in answers_eval:
                 for s in (a.get("strengths") or []):
                     if s and s not in seen:
-                        seen.add(s); strengths.append(s)
-            result["key_strengths"] = strengths[:4]  # max 4
+                        seen.add(s); items.append(s)
+            result["key_strengths"] = items[:4]
 
-        # ── key_improvements — agrège les improvements individuelles ───────
         if not result.get("key_improvements"):
-            seen = set()
-            improvements = []
+            seen, items = set(), []
             for a in answers_eval:
                 for imp in (a.get("improvements") or []):
                     if imp and imp not in seen:
-                        seen.add(imp); improvements.append(imp)
-            result["key_improvements"] = improvements[:4]  # max 4
+                        seen.add(imp); items.append(imp)
+            result["key_improvements"] = items[:4]
 
-        # ── summary ───────────────────────────────────────────────────────
         if not result.get("summary"):
-            score = result["global_score"]
-            reco  = result["recommendation"]
-            verdicts_str = ", ".join(
-                f"Q{a.get('question_order', i+1)}: {a.get('score', 0)}/10"
+            scores_str = ", ".join(
+                f"Q{a.get('question_order', i+1)}: {a.get('score', 0)}/10 (×{a.get('weight', 1.0)})"
                 for i, a in enumerate(answers_eval)
             )
+            reco = result["recommendation"]
             if lang == "fr":
                 result["summary"] = (
-                    f"L'entretien de {len(answers_eval)} question(s) a donné un score moyen de {score}/10. "
-                    f"Détail : {verdicts_str}. "
-                    f"Décision : {reco}."
+                    f"Entretien de {len(answers_eval)} question(s) — "
+                    f"moyenne pondérée {avg}/10. {scores_str}. "
+                    f"Recommandation : {reco}."
                 )
             elif lang == "ar":
-                result["summary"] = (
-                    f"أسفر الاختبار عن متوسط {score}/10 على {len(answers_eval)} سؤال. "
-                    f"التفاصيل : {verdicts_str}. "
-                    f"القرار : {reco}."
-                )
+                result["summary"] = f"مقابلة {len(answers_eval)} سؤال — متوسط {avg}/10. {scores_str}. التوصية : {reco}."
             else:
                 result["summary"] = (
-                    f"The {len(answers_eval)}-question interview yielded an average score of {score}/10. "
-                    f"Detail: {verdicts_str}. "
-                    f"Decision: {reco}."
+                    f"{len(answers_eval)}-question interview — "
+                    f"weighted average {avg}/10. {scores_str}. "
+                    f"Recommendation: {reco}."
                 )
 
         return result
@@ -736,8 +594,7 @@ class OllamaLLMService:
 
     def _normalize(self, obj: dict, lang: str) -> dict:
         try:
-            score = float(obj.get("score", 5))
-            score = max(0.0, min(10.0, score))
+            score = max(0.0, min(10.0, float(obj.get("score", 5))))
         except (TypeError, ValueError):
             score = 5.0
         return {
@@ -749,41 +606,18 @@ class OllamaLLMService:
         }
 
     def _fallback_result(self, lang: str) -> dict:
-        msgs = {
-            "fr": "Évaluation non disponible (erreur LLM).",
-            "en": "Evaluation unavailable (LLM error).",
-            "ar": "التقييم غير متاح (خطأ في النموذج).",
-        }
-        return {
-            "score":        5.0,
-            "verdict":      self._score_to_verdict(5.0, lang),
-            "strengths":    [],
-            "improvements": [],
-            "feedback":     msgs.get(lang, msgs["fr"]),
-        }
+        msgs = {"fr": "Évaluation non disponible (erreur LLM).", "en": "Evaluation unavailable (LLM error).", "ar": "التقييم غير متاح."}
+        return {"score": 5.0, "verdict": self._score_to_verdict(5.0, lang), "strengths": [], "improvements": [], "feedback": msgs.get(lang, msgs["fr"])}
 
     def _empty_summary(self, lang: str) -> dict:
-        msgs = {"fr": "Aucune réponse à évaluer.", "en": "No answers to evaluate.", "ar": "لا توجد إجابات للتقييم."}
-        return {
-            "global_score":     0.0,
-            "global_verdict":   self._score_to_verdict(0.0, lang),
-            "recommendation":   "",
-            "decision_reason":  "",
-            "key_strengths":    [],
-            "key_improvements": [],
-            "summary":          msgs.get(lang, msgs["fr"]),
-        }
+        return {"recommendation": "", "decision_reason": "", "key_strengths": [], "key_improvements": [], "summary": ""}
 
     @staticmethod
     def _score_to_verdict(score: float, lang: str) -> str:
         verdicts = {
-            "fr": ["Insuffisant", "Insuffisant", "Insuffisant", "Acceptable",
-                   "Acceptable", "Bien", "Bien", "Très bien", "Très bien",
-                   "Excellent", "Excellent"],
-            "en": ["Poor", "Poor", "Poor", "Acceptable", "Acceptable",
-                   "Good", "Good", "Very Good", "Very Good", "Excellent", "Excellent"],
-            "ar": ["ضعيف", "ضعيف", "ضعيف", "مقبول", "مقبول",
-                   "جيد", "جيد", "جيد جداً", "جيد جداً", "ممتاز", "ممتاز"],
+            "fr": ["Insuffisant","Insuffisant","Insuffisant","Acceptable","Acceptable","Bien","Bien","Très bien","Très bien","Excellent","Excellent"],
+            "en": ["Poor","Poor","Poor","Acceptable","Acceptable","Good","Good","Very Good","Very Good","Excellent","Excellent"],
+            "ar": ["ضعيف","ضعيف","ضعيف","مقبول","مقبول","جيد","جيد","جيد جداً","جيد جداً","ممتاز","ممتاز"],
         }
         idx = min(10, max(0, round(score)))
         return verdicts.get(lang, verdicts["fr"])[idx]

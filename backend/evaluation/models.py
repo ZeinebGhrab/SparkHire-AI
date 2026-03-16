@@ -79,13 +79,15 @@ class GlobalEvaluation(BaseModel):
     language: str = "fr"
     total_questions: int
     answered_questions: int
-    average_score: float = 0.0          # moyenne pondérée des scores /10
-    global_verdict: str = ""
-    recommendation: str = ""
-    decision: str = DECISION_PENDING
-    decision_label: str = ""
-    decision_color: str = ""
-    decision_reason: str = ""
+    # ── Score ───────────────────────────────────────────────────────────────
+    average_score: float = 0.0          # Σ(score × weight) / Σ(weight)
+    # ── Décision ────────────────────────────────────────────────────────────
+    decision: str = DECISION_PENDING    # "accepted" | "pending" | "rejected"
+    decision_label: str = ""            # libellé localisé
+    decision_color: str = ""            # couleur hex
+    decision_reason: str = ""           # justification en une phrase
+    # ── Contenu LLM ─────────────────────────────────────────────────────────
+    recommendation: str = ""            # "Embaucher" / "En attente" / "Refuser"
     key_strengths: List[str] = []
     key_improvements: List[str] = []
     summary: str = ""
@@ -95,6 +97,7 @@ class GlobalEvaluation(BaseModel):
 
     @property
     def score_100(self) -> float:
+        """Score normalisé sur 100 pour affichage graphique."""
         return round(self.average_score * 10, 1)
 
     @property
@@ -108,10 +111,10 @@ class EvaluationRequest(BaseModel):
 
 
 class EvaluationSummaryResponse(BaseModel):
+    """Réponse allégée pour le listing."""
     session_id: str
     candidate_name: str
     position_title: str
     average_score: float
-    global_verdict: str
     recommendation: str
     evaluated_at: datetime

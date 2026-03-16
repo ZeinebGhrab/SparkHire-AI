@@ -206,7 +206,7 @@ class InterviewHandler:
         try:
             if not await self._load_session():
                 return
-            logger.info(f"🌍 Langue: {self.lang!r} | Candidat: {self.candidate_full_name}")
+            logger.info(f"Langue: {self.lang!r} | Candidat: {self.candidate_full_name}")
             await asyncio.sleep(0.2)
             self._check_connected()
             await self._send_welcome()
@@ -217,53 +217,36 @@ class InterviewHandler:
 
             while self.session.status == "in_progress":
                 self._check_connected()
-
-                # ── Envoyer la question courante ──────────────────────────────
                 await self._send_current_question()
                 await self._wait_for_audio_finished(60)
                 self._check_connected()
 
-                # ── Pré-générer TTS question suivante en parallèle ────────────
                 next_idx      = self.session.current_question_index + 1
                 next_tts_task = None
                 if next_idx < len(self.position.questions):
                     next_q    = self.position.questions[next_idx]
                     next_text = next_q.get_text(self.lang)
-                    next_tts_task = asyncio.create_task(
-                        self._synthesize_bytes(next_text)
-                    )
-                    logger.info(f"🔊 Prefetch TTS Q{next_idx + 1} lancé")
+                    next_tts_task = asyncio.create_task(self._synthesize_bytes(next_text))
+                    logger.info(f"Prefetch TTS Q{next_idx + 1} lancé")
 
-                # ── Attendre et traiter la réponse (SYNCHRONE — gère le suivi) ─
                 await self._wait_for_answer()
 
                 is_last = (self.session.current_question_index + 1 >= len(self.position.questions))
-                logger.info(
-                    f"🔍 current_index={self.session.current_question_index} | "
-                    f"total={len(self.position.questions)} | is_last={is_last}"
-                )
 
                 if is_last:
                     if next_tts_task and not next_tts_task.done():
                         next_tts_task.cancel()
                     self._check_connected()
-                    logger.info("🏁 Dernière question — appel _complete_interview()")
                     await self._complete_interview()
                     break
                 else:
-                    # Récupérer le TTS prefetché
                     if next_tts_task:
                         try:
                             prefetched = await asyncio.wait_for(next_tts_task, timeout=30.0)
                             self._prefetched_audio = prefetched
-                            logger.info(
-                                f"⚡ TTS Q{next_idx + 1} prêt "
-                                f"({len(prefetched) if prefetched else 0} bytes)"
-                            )
                         except (asyncio.TimeoutError, asyncio.CancelledError, Exception) as e:
                             logger.warning(f"Prefetch TTS échoué: {e}")
                             self._prefetched_audio = None
-
                     self.session = InterviewSessionCRUD.increment_question_index(self.session_id)
                     await asyncio.sleep(0.1)
 
@@ -278,7 +261,6 @@ class InterviewHandler:
                     pass
         finally:
             manager.disconnect(self.session_id)
-            logger.info(f"🔒 Handler fermé: {self.session_id}")
 
     # ── Session ───────────────────────────────────────────────────────────────
 
@@ -293,7 +275,6 @@ class InterviewHandler:
                 except Exception:
                     pass
                 return False
-
             self.session  = session
             self.position = JobPositionCRUD.get_by_id(self.session.job_position_id)
             try:
@@ -303,15 +284,12 @@ class InterviewHandler:
             except Exception as e:
                 logger.warning(f"Chargement candidat: {e}")
                 self.candidate = None
-
             logger.info(
                 f"Session OK: {self.position.title} | "
-                f"{len(self.position.questions)} questions | "
-                f"lang={self.lang!r} | candidat={self.candidate_full_name!r} | "
-                f"created_by={getattr(self.session, 'created_by', '?')!r}"
+                f"{len(self.position.questions)} questions | lang={self.lang!r} | "
+                f"candidat={self.candidate_full_name!r}"
             )
             return True
-
         except WebSocketDisconnect:
             raise
         except Exception as e:
@@ -341,7 +319,6 @@ class InterviewHandler:
 
     async def _start_interview(self):
         self.session = InterviewSessionCRUD.update_status(self.session_id, "in_progress")
-        logger.info(f"Entretien démarré [{self.lang}] pour {self.candidate_full_name}")
 
     async def _send_current_question(self):
         idx = self.session.current_question_index
@@ -357,22 +334,16 @@ class InterviewHandler:
             self.session_id,
             {"type": "question_loading", "data": {"progress": progress}},
         )
-
         audio = self._prefetched_audio
         self._prefetched_audio = None
-
-        if audio:
-            logger.info(f"⚡ Q{idx + 1} : TTS prefetché utilisé")
-        else:
-            logger.info(f"🔊 Q{idx + 1} : génération TTS à la demande…")
+        if not audio:
             audio = await self._synthesize_bytes(question.get_text(self.lang))
-
         if not audio:
             await self._send_error("Impossible de générer l'audio")
             return
-
         await self._send_audio_chunked(audio, "question", {
             "order":        question.order,
+            "weight":       question.weight,
             "max_duration": question.max_duration_seconds,
             "progress":     progress,
             "vocal_only":   True,
@@ -404,7 +375,6 @@ class InterviewHandler:
             raise
         except Exception as e:
             raise WebSocketDisconnect(code=1006, reason=str(e)[:100]) from e
-
         if self.audio_buffer:
             await self._process_answer(answer_start_time)
 
@@ -423,7 +393,7 @@ class InterviewHandler:
         audio_path.write_bytes(wav)
 
         transcript = await self._transcribe_audio(wav)
-        logger.info(f"📝 Transcription [{self.lang}] Q{question.order}: '{transcript[:80]}'")
+        logger.info(f"Transcription [{self.lang}] Q{question.order}: '{transcript[:80]}'")
 
         if manager.is_connected(self.session_id):
             await manager.send_json(self.session_id, {
@@ -443,7 +413,6 @@ class InterviewHandler:
             if not await llm.is_available():
                 raise RuntimeError("LLM non disponible")
 
-            # ── Évaluation SYNCHRONE avec détection suivi ─────────────────
             initial_eval = await llm.evaluate_with_followup(
                 question=question_text, answer=transcript,
                 language=self.lang, position_title=self.position.title,
@@ -465,6 +434,7 @@ class InterviewHandler:
                     "type": "answer_evaluated",
                     "data": {
                         "question_order":    question.order,
+                        "weight":            question.weight,
                         "score":             initial_eval.get("score"),
                         "verdict":           initial_eval.get("verdict", ""),
                         "feedback":          initial_eval.get("feedback", ""),
@@ -476,13 +446,7 @@ class InterviewHandler:
                     },
                 })
 
-            # ── Question de suivi si score < 8 ────────────────────────────
             if needs_followup and followup_question and manager.is_connected(self.session_id):
-                logger.info(
-                    f"🔁 Suivi Q{question.order} | "
-                    f"score={initial_eval.get('score')}/10 | "
-                    f"q='{followup_question[:60]}'"
-                )
                 await self._conduct_followup(
                     question=question, question_text=question_text,
                     initial_transcript=transcript, initial_eval=initial_eval,
@@ -494,7 +458,6 @@ class InterviewHandler:
         except Exception as e:
             logger.error(f"Évaluation LLM Q{question.order} : {e}", exc_info=True)
 
-        # Fallback sans évaluation
         InterviewSessionCRUD.add_answer(
             self.session_id,
             Answer(
@@ -525,7 +488,6 @@ class InterviewHandler:
         )
         if not fq_audio:
             return
-
         await self._send_audio_chunked(fq_audio, "followup_question", {
             "question_order": question.order,
             "followup_text":  followup_question,
@@ -592,6 +554,7 @@ class InterviewHandler:
                 "type": "answer_followup_completed",
                 "data": {
                     "question_order":      question.order,
+                    "weight":              question.weight,
                     "initial_score":       initial_score,
                     "initial_verdict":     initial_verdict,
                     "initial_feedback":    initial_eval.get("feedback", ""),
@@ -641,7 +604,6 @@ class InterviewHandler:
 
         if not self.audio_buffer:
             return None, 0.0
-
         duration = (datetime.utcnow() - start_time).total_seconds() if start_time else 0.0
         wav      = self._buffer_to_wav(bytes(self.audio_buffer))
         self.audio_buffer.clear()
@@ -656,6 +618,7 @@ class InterviewHandler:
             improvements=eval_result.get("improvements", []),
             llm_model=eval_result.get("llm_model", ""),
             evaluated_at=datetime.utcnow(),
+            weight=question.weight,
         )
         InterviewSessionCRUD.add_answer(
             self.session_id,
@@ -687,21 +650,8 @@ class InterviewHandler:
     # ── Fin d'entretien ───────────────────────────────────────────────────────
 
     async def _complete_interview(self):
-        """
-        ★ update_status("completed") déclenche UNE SEULE FOIS la notification
-          via _send_completion_notification() dans crud.py.
-          NE PAS appeler _send_completion_notification() ici.
-        """
-        logger.info(f"🏁 _complete_interview() DÉBUT | session={self.session_id}")
-
-        # 1. Statut → completed (notification déclenchée automatiquement dans le CRUD)
         self.session = InterviewSessionCRUD.update_status(self.session_id, "completed")
-        logger.info(
-            f"✅ update_status(completed) OK | "
-            f"answers={len(self.session.answers)} | session={self.session_id}"
-        )
 
-        # 2. Audio de clôture
         text  = _get_text("completed", self.lang, name=self.candidate_first_name)
         audio = await self._synthesize_bytes(text)
         extra = {
@@ -717,9 +667,6 @@ class InterviewHandler:
                 self.session_id, {"type": "interview_completed", "data": extra}
             )
 
-        logger.info(f"🏁 _complete_interview() FIN | session={self.session_id}")
-
-        # 3. Évaluation globale LLM — non bloquante
         asyncio.create_task(self._run_global_evaluation())
 
     async def _run_global_evaluation(self):
@@ -735,17 +682,20 @@ class InterviewHandler:
                 await manager.send_json(self.session_id, {
                     "type": "global_evaluation",
                     "data": {
-                        "global_score":       result.global_score,
-                        "global_score_100":   result.score_100,
-                        "global_verdict":     result.global_verdict,
+                        # Score
+                        "average_score":      result.average_score,
+                        "average_score_100":  result.score_100,
+                        # Décision
                         "decision":           result.decision,
                         "decision_label":     result.decision_label,
                         "decision_color":     result.decision_color,
                         "decision_reason":    result.decision_reason,
+                        # Contenu
                         "recommendation":     result.recommendation,
                         "key_strengths":      result.key_strengths,
                         "key_improvements":   result.key_improvements,
                         "summary":            result.summary,
+                        # Contexte
                         "candidate_name":     self.candidate_full_name,
                         "position_title":     self.position.title,
                         "total_questions":    result.total_questions,
@@ -753,8 +703,8 @@ class InterviewHandler:
                     },
                 })
                 logger.info(
-                    f"📊 Évaluation globale {self.session_id} | "
-                    f"score={result.global_score}/10 | decision={result.decision}"
+                    f"Évaluation globale {self.session_id} | "
+                    f"average_score={result.average_score}/10 | decision={result.decision}"
                 )
         except Exception as e:
             logger.error(f"Évaluation globale : {e}", exc_info=True)
