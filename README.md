@@ -2,7 +2,7 @@
 
 Complete recruitment platform with automated voice interviews via AI avatar.
 
-> **Pipeline:** Candidate speaks → Whisper ASR (GPU CUDA) → Llama 3.2 LLM (GPU) → Score + Real-time Feedback
+> **Pipeline:** Candidate speaks → Whisper ASR (GPU CUDA) → Llama 3.2 LLM (GPU) → Weighted Score + Real-time Feedback
 
 ---
 
@@ -10,12 +10,16 @@ Complete recruitment platform with automated voice interviews via AI avatar.
 
 - 🎙️ **Automated voice interviews** with animated HR avatar
 - 🌍 **Trilingual** support: Arabic / French / English
-- 🧠 **AI transcription** via Whisper (faster-whisper) — GPU-accelerated ~1-3s per answer
+- 🧠 **AI transcription** via Whisper (faster-whisper) — GPU-accelerated ~1–3 s per answer
+- ⚖️ **Weighted questions** — each question carries a configurable weight for a fair weighted average score
 - 📝 **Strict AI evaluation** via Ollama + Llama 3.2 (score 0–10, rigorous grading scale)
 - 🔁 **Intelligent follow-up questions** if the answer is insufficient (score < 8) — synchronous pipeline
 - 📊 **Global interview report** with final hiring decision (Accepted / On Hold / Rejected)
 - 🔔 **Automatic recruiter notification** — one notification per completed interview
 - 🗓️ **Interview scheduling** with 30-minute late access window
+- 🔄 **Welcome back on reconnection** — session resumes at the current question if `in_progress`
+- 🎛️ **Auto-start recording** — recording begins automatically after each question audio ends; candidate stops when ready
+- ⏱️ **Per-question response timer** — configurable max duration (default 1 min 30 s) with countdown and auto-stop
 - 🔊 **Text-to-speech** via Edge-TTS (Microsoft) — primary engine, instant
 - 🔁 **Automatic TTS fallback** via gTTS (Google) if Edge-TTS is unavailable
 - ⚡ **Real-time WebSocket** (chunked PCM audio)
@@ -74,8 +78,6 @@ source .venv/bin/activate
 
 ### 3. GPU support — PyTorch CUDA (recommended)
 
-If you have an NVIDIA GPU, install PyTorch with CUDA support **before** running `pip install -r requirements.txt`:
-
 ```bash
 # Check your CUDA version first
 nvidia-smi
@@ -93,22 +95,6 @@ pip install torch --index-url https://download.pytorch.org/whl/cu118
 pip install -r requirements.txt
 ```
 
-> ✅ `requirements.txt` includes `nvidia-cudnn-cu12==8.9.7.29` which automatically
-> provides the `cudnn_ops_infer64_8.dll` required by ctranslate2 on Windows.
-> No manual cuDNN installation needed.
-
-> ⚠️ **Windows — PyAudio:** if `pip install` fails on PyAudio:
-> ```bash
-> pip install pipwin
-> pipwin install pyaudio
-> ```
-
-> ⚠️ **Linux — PyAudio:** if PortAudio error:
-> ```bash
-> sudo apt install portaudio19-dev python3-dev
-> pip install pyaudio
-> ```
-
 ### 5. Client dependencies
 
 ```bash
@@ -122,19 +108,11 @@ python -c "import torch; print('CUDA:', torch.cuda.is_available(), '| Version:',
 python -c "import ctranslate2; print('cuDNN compute types:', ctranslate2.get_supported_compute_types('cuda'))"
 ```
 
-Expected output:
-```
-CUDA: True | Version: 12.x
-cuDNN compute types: ['int8', 'int8_float16', 'float16', 'bfloat16', 'float32']
-```
-
 ### 7. Configure `.env`
 
 ```bash
 cp .env.example .env
 ```
-
-Edit `.env` with your settings (see [Configuration](#%EF%B8%8F-configuration) below).
 
 ### 8. Download the Whisper model
 
@@ -150,34 +128,17 @@ python scripts/download_whisper.py medium
 | **medium** | **1.5 GB** | ✅ **recommended** |
 | large-v3 | 3.1 GB | GPU only (6 GB+ VRAM) |
 
-The model is saved automatically in `models/whisper/`.
-
 ### 9. Ollama LLM model
 
 ```bash
-# Start the Ollama server (separate terminal)
 ollama serve
-
-# Download Llama 3.2 (recommended — 2.8 GB)
 ollama pull llama3.2
-
-# Alternative if RAM < 8 GB
-ollama pull llama3:8b-instruct-q4_0   # 2.3 GB
 ```
-
-> Verify Ollama is using GPU:
-> ```bash
-> ollama ps
-> # Should show: 100% GPU
-> ```
 
 ### 10. Database setup
 
 ```bash
-# Create the admin recruiter account
 python scripts/create_admin.py
-
-# Insert demo positions and questions
 python scripts/seed_job_positions.py
 ```
 
@@ -191,18 +152,6 @@ python scripts/seed_job_positions.py
 uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-**Expected startup logs (GPU mode):**
-```
-GPU détecté : NVIDIA GeForce RTX XXXX | VRAM=X.X GB
-Whisper 'medium' prêt sur CUDA
-TTS Service prêt | primaire=EdgeEngine | fallback=GoogleEngine
-LLM Ollama disponible | modèle=llama3.2
-```
-
-- API: [http://localhost:8000](http://localhost:8000)
-- Swagger docs: [http://localhost:8000/docs](http://localhost:8000/docs)
-- Health check: [http://localhost:8000/health](http://localhost:8000/health)
-
 ### PySide6 Client
 
 ```bash
@@ -215,131 +164,184 @@ python -m client.main
 
 | Component | CPU mode | GPU mode |
 |---|---|---|
-| Whisper ASR (medium) | 5–10s | **~1–3s** |
-| Ollama LLM (llama3.2) | 15–30s | **~2–8s** |
-| Edge-TTS | ~1s | ~1s (network) |
-| **Total per question** | **25–45s** | **~5–12s** |
+| Whisper ASR (medium) | 5–10 s | **~1–3 s** |
+| Ollama LLM (llama3.2) | 15–30 s | **~2–8 s** |
+| Edge-TTS | ~1 s | ~1 s (network) |
+| **Total per question** | **25–45 s** | **~5–12 s** |
 
-**VRAM usage:**
-- Whisper medium (float16): ~1.5 GB
-- llama3.2: ~2.8 GB
-- Total: ~4.3 GB / 6.4 GB
+---
+
+## ⚖️ Weighted Scoring
+
+Each question carries a configurable `weight` (default `1.0`, range `0.1–10.0`).
+
+The final `average_score` is the **weighted average**:
+
+```
+average_score = Σ(score_i × weight_i) / Σ(weight_i)
+```
+
+The weight is defined per question when creating a job position and is stored in each answer evaluation for full auditability.
+
+**Example with 3 questions (weights 1, 2, 3) :**
+
+| Question | Score | Weight | Contribution |
+|---|---|---|---|
+| Q1 — Presentation | 8/10 | 1.0 | 8 |
+| Q2 — ML tools | 6/10 | 2.0 | 12 |
+| Q3 — Missing data | 7/10 | 3.0 | 21 |
+| **Total** | | **6.0** | **41** |
+| **Weighted avg** | | | **41/6 = 6.83** |
+
+---
+
+## ⏱️ Response Timer
+
+Each question has a configurable `max_duration_seconds` (default **90 seconds = 1 min 30 s**).
+
+- Recording **starts automatically** when the question audio finishes
+- A countdown is displayed during recording (grey → orange ≤ 30 s → red ≤ 10 s)
+- Recording **stops automatically** at 0 s
+- The candidate can **stop manually at any time** by clicking the stop button
+- The duration badge is shown only when a question is active (hidden during welcome / welcome back)
 
 ---
 
 ## 📝 Usage
 
-### 1. Create an interview (API)
+### 1. Create a job position with weighted questions (API)
 
 ```bash
-# Login → get JWT token
 curl -X POST http://localhost:8000/auth/login \
   -d "username=rh@stark.tn&password=admin123"
 
-# Create a candidate (all 6 fields required)
-curl -X POST http://localhost:8000/candidates/ \
+curl -X POST http://localhost:8000/interviews/positions \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{
-    "first_name": "Ahmed",
-    "last_name": "Ben Ali",
-    "contact": { "email": "ahmed@example.com", "phone": "+216 55 000 000" },
-    "technical_skills": [{ "name": "Python", "level": "Advanced" }],
-    "experiences":  [{ "title": "Data Scientist", "company": "TechCorp" }],
-    "education":    [{ "degree": "Engineer", "field": "Data Engineering", "institution": "ENETCOM" }],
-    "languages":    [{ "name": "French", "level": "C1" }],
-    "soft_skills":  [{ "name": "Teamwork" }],
-    "certifications": [{ "name": "AWS Developer", "issuer": "Amazon" }]
+    "title": "Data Scientist",
+    "department": "Tech",
+    "location": "Sfax",
+    "is_active": true,
+    "questions": [
+      {
+        "order": 1,
+        "weight": 1.0,
+        "max_duration_seconds": 90,
+        "question_fr": "Parlez-moi de vous et de votre expérience en data science.",
+        "question_en": "Tell me about yourself and your data science experience.",
+        "question_ar": "أخبرني عن نفسك وعن تجربتك في علم البيانات.",
+        "evaluation_criteria": ["clarté", "expérience", "motivation"]
+      },
+      {
+        "order": 2,
+        "weight": 2.0,
+        "max_duration_seconds": 90,
+        "question_fr": "Quels outils ML avez-vous utilisés ? Donnez un exemple concret.",
+        "question_en": "What ML tools have you used? Give a concrete example.",
+        "question_ar": "ما هي أدوات تعلم الآلة التي استخدمتها؟",
+        "evaluation_criteria": ["maîtrise technique", "exemples concrets"]
+      },
+      {
+        "order": 3,
+        "weight": 3.0,
+        "max_duration_seconds": 90,
+        "question_fr": "Comment gérez-vous les données manquantes ?",
+        "question_en": "How do you handle missing data?",
+        "question_ar": "كيف تتعامل مع البيانات المفقودة؟",
+        "evaluation_criteria": ["méthodes", "justification"]
+      }
+    ]
   }'
+```
 
-# Create an interview session
-# The recruiter email (from JWT) is automatically stored in created_by
-# → one notification will be sent to this email when the interview ends
+### 2. Create a session
+
+```bash
 curl -X POST http://localhost:8000/interviews/sessions \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{
     "candidate_id": "<id>",
     "job_position_id": "<id>",
-    "language": "fr",
-    "scheduled_at": "2026-03-20T10:00:00Z"
+    "language": "fr"
   }'
 ```
 
-### 2. Take the interview (Client)
+### 3. Take the interview (Client)
 
 1. `python -m client.main`
-2. Select the interview language
-3. Enter the `session_id` (format: `session_xxxxxxxxxxxxxxxx`)
+2. Select interview language
+3. Enter the `session_id`
 4. Click **Start Interview**
-5. Listen to the avatar ask questions
-6. Click **Record** → speak → **Stop**
-7. Score and feedback appear in real time after each answer
+5. Listen to the avatar — recording starts automatically when the question ends
+6. Answer — click **Stop** when done (or let the 90 s timer stop automatically)
+7. Score, verdict and feedback appear in real time
 8. If score < 8 → a follow-up question is automatically asked
-9. A global report with hiring decision is displayed at the end
+9. Global report with hiring decision displayed at the end
 
-### 3. View results & notifications
-
-```bash
-# Recruiter notifications (unread badge)
-GET http://localhost:8000/notifications/unread-count
-
-# List all unread notifications
-GET http://localhost:8000/notifications/?unread_only=true
-
-# Mark a notification as read
-PATCH http://localhost:8000/notifications/<notification_id>
-      Body: { "read": true }
-
-# Full session details
-GET http://localhost:8000/interviews/sessions/<session_id>
-
-# LLM evaluation + hiring decision
-GET http://localhost:8000/evaluations/<session_id>
-
-# Test notification system
-python scripts/test_notification.py
-```
+> **Reconnection:** if the connection drops mid-interview, reconnect with the same `session_id`. The platform resumes at the current question with a "Welcome back" message.
 
 ---
 
-## 🔔 Recruiter Notification System
+## 📊 Evaluation Document
 
-When a candidate completes an interview, the platform automatically notifies the recruiter who created the session — **exactly one notification** per completed interview.
-
-### How it works
-
+```json
+{
+  "session_id": "session_xxx",
+  "candidate_name": "Ahmed Ben Ali",
+  "position_title": "Data Scientist",
+  "language": "fr",
+  "total_questions": 3,
+  "answered_questions": 3,
+  "average_score": 6.83,
+  "decision": "pending",
+  "decision_label": "En attente",
+  "decision_color": "#F59E0B",
+  "decision_reason": "Moyenne pondérée de 6.83/10 sur 3 question(s).",
+  "recommendation": "En attente",
+  "key_strengths": ["..."],
+  "key_improvements": ["..."],
+  "summary": "...",
+  "per_answer": [
+    {
+      "question_order": 1,
+      "score": 8.0,
+      "weight": 1.0,
+      "verdict": "Très bien",
+      "feedback": "...",
+      "had_followup": false
+    }
+  ]
+}
 ```
-Interview ends (last answer + follow-up if score < 8)
-        │
-        ▼
- InterviewSessionCRUD.update_status("completed")
-        │
-        └── _send_completion_notification(session_id)  ← inside CRUD
-                ├── Reads created_by (recruiter email stored at session creation)
-                ├── Fallback: notifies ALL recruiters if created_by is empty
-                ├── Loads candidate name + position title from MongoDB
-                └── INSERT into db.notifications:
-                      {
-                        "type": "interview_completed",
-                        "title": "Entretien complété",
-                        "message": "Le candidat Ahmed Ben Ali a complété son
-                                    entretien pour le poste Data Scientist.
-                                    Veuillez le consulter.",
-                        "priority": "high",
-                        "read": false
-                      }
-```
 
-### Notification API endpoints
+> **Note:** `global_verdict` has been removed — `average_score` + `decision` + `decision_label` carry all necessary information without redundancy.
 
-| Endpoint | Description |
-|---|---|
-| `GET /notifications/unread-count` | Badge counter for the recruiter UI |
-| `GET /notifications/` | List all notifications (supports `?unread_only=true`) |
-| `PATCH /notifications/{id}` | Mark a single notification as read |
-| `POST /notifications/mark-all-read` | Mark all notifications as read |
-| `DELETE /notifications/{id}` | Delete a notification |
+---
+
+## 📊 Evaluation Grading Scale
+
+| Score | Verdict | Meaning |
+|---|---|---|
+| 9–10 | Excellent | Exceptional answer, precise, with concrete examples |
+| 7–8 | Very Good | Good answer but lacking depth or specific examples |
+| 5–6 | Acceptable | Superficial or vague, notable inaccuracies |
+| 3–4 | Poor | Weak answer, errors or partial understanding |
+| 0–2 | Insufficient | Incorrect, off-topic, or empty |
+
+> A score below **8** automatically triggers a follow-up question (synchronous pipeline).
+> The follow-up "Let's move to the next question" message is **not played after the last question**.
+
+---
+
+## ✅ Hiring Decision
+
+| Score /10 | Decision | Color |
+|---|---|---|
+| ≥ 7.0 | ✅ Accepted | Green `#10B981` |
+| 5.0 – 6.9 | 🟡 On Hold | Amber `#F59E0B` |
+| < 5.0 | ❌ Rejected | Red `#EF4444` |
 
 ---
 
@@ -355,21 +357,23 @@ sparkhire-ai/
 │   ├── auth/
 │   ├── candidates/
 │   ├── interviews/
-│   │   ├── crud.py            ← _send_completion_notification() ici
-│   │   ├── models.py
-│   │   └── routes.py          ← created_by auto-filled from JWT
+│   │   ├── crud.py            ← _send_completion_notification()
+│   │   ├── models.py          ← Question.weight + max_duration_seconds=90
+│   │   └── routes.py
 │   ├── evaluation/
+│   │   ├── models.py          ← GlobalEvaluation (no global_verdict)
+│   │   ├── service.py         ← weighted average + guaranteed fields
+│   │   └── routes.py
 │   ├── services/
-│   │   ├── asr_service.py     ← Whisper GPU + cuDNN path fix
+│   │   ├── asr_service.py
 │   │   ├── tts_service.py
 │   │   ├── edge_tts_engine.py
-│   │   ├── llm_service.py
-│   │   └── avatar_service.py
+│   │   ├── llm_service.py     ← generate_global_summary (weighted, no global_verdict)
+│   │   └── avatar_service.py  ← simple | did only (wav2lip/liveportrait removed)
 │   ├── websocket/
 │   │   ├── connection_manager.py
-│   │   └── interview_handler.py  ← pipeline synchrone + follow-up + prefetch TTS
+│   │   └── interview_handler.py  ← welcome_back + no followup_thanks on last Q
 │   ├── notifications/
-│   ├── media/
 │   ├── analytics/
 │   └── export/
 │
@@ -378,15 +382,11 @@ sparkhire-ai/
 │   ├── main.py
 │   ├── core/
 │   └── ui/
+│       ├── main_window.py         ← pre_init pygame + welcome_back handling
+│       ├── interview_widget.py    ← auto-start recording + countdown 90 s
+│       └── video_player_widget.py ← no bare pygame.init()
 │
 ├── scripts/
-│   ├── create_admin.py
-│   ├── seed_job_positions.py
-│   ├── download_whisper.py
-│   ├── test_interview.py
-│   ├── test_notification.py     ← test automatique du système de notification
-│   └── debug_notification.py   ← diagnostic MongoDB
-│
 ├── models/
 ├── uploads/
 ├── assets/videos/
@@ -401,40 +401,35 @@ sparkhire-ai/
 ## ⚙️ Configuration
 
 ```bash
-# ── MongoDB ───────────────────────────────
+# ── MongoDB ───────────────────────────────────────────────
 MONGODB_URL=mongodb://localhost:27017
 MONGODB_DB_NAME=sparkhire_ai
 SECRET_KEY=<python -c "import secrets; print(secrets.token_hex(32))">
 
-# ── ASR ───────────────────────────────────
+# ── ASR ───────────────────────────────────────────────────
 ASR_ENGINE=faster-whisper
 WHISPER_MODEL_SIZE=medium
-
-# GPU (NVIDIA CUDA) — recommandé
 WHISPER_DEVICE=cuda
 WHISPER_COMPUTE_TYPE=float16
 
-# CPU fallback
-# WHISPER_DEVICE=cpu
-# WHISPER_COMPUTE_TYPE=int8
-
-# ── TTS ───────────────────────────────────
+# ── TTS ───────────────────────────────────────────────────
 TTS_ENGINE=edge-tts
 TTS_LANGUAGE=fr
 
-# ── LLM ───────────────────────────────────
+# ── LLM ───────────────────────────────────────────────────
 OLLAMA_URL=http://localhost:11434
 OLLAMA_MODEL=llama3.2
 OLLAMA_TIMEOUT=120.0
 
-# ── Avatar ────────────────────────────────
+# ── Avatar ────────────────────────────────────────────────
+# Valeurs valides : simple | did
 AVATAR_PROVIDER=simple
 
-# ── Client ────────────────────────────────
+# ── Client ────────────────────────────────────────────────
 WEBSOCKET_URL=ws://localhost:8000
 API_BASE_URL=http://localhost:8000
 
-# ── Windows only ──────────────────────────
+# ── Windows only ──────────────────────────────────────────
 KMP_DUPLICATE_LIB_OK=TRUE
 ```
 
@@ -446,7 +441,7 @@ KMP_DUPLICATE_LIB_OK=TRUE
 |---|---|---|
 | Backend | FastAPI 0.115 + Uvicorn | REST API + WebSocket ASGI |
 | Database | MongoDB 7 / PyMongo 4.10 | Data persistence |
-| ASR | faster-whisper 1.0.3 + ctranslate2 4.4.0 | GPU transcription (~1-3s) |
+| ASR | faster-whisper 1.0.3 + ctranslate2 4.4.0 | GPU transcription (~1–3 s) |
 | cuDNN | nvidia-cudnn-cu12 8.9.7.29 | cuDNN 8 DLLs for Windows GPU |
 | TTS | Edge-TTS 6.1 | Microsoft TTS — primary engine |
 | TTS | gTTS 2.5.3 | Google TTS — automatic fallback |
@@ -458,37 +453,13 @@ KMP_DUPLICATE_LIB_OK=TRUE
 
 ---
 
-## 📊 Evaluation Grading Scale
-
-| Score | Verdict | Meaning |
-|---|---|---|
-| 9–10 | Excellent | Exceptional answer, precise, with concrete examples |
-| 7–8 | Very Good | Good answer but lacking depth or specific examples |
-| 5–6 | Acceptable | Superficial or vague, notable inaccuracies |
-| 3–4 | Poor | Weak answer, errors or partial understanding |
-| 0–2 | Insufficient | Incorrect, off-topic, or empty |
-
-> A score below **8** automatically triggers a follow-up question (synchronous pipeline).
-
----
-
-## ✅ Hiring Decision
-
-| Score /10 | Decision | Color |
-|---|---|---|
-| ≥ 7.0 | ✅ Accepted | Green |
-| 5.0 – 6.9 | 🟡 On Hold | Amber |
-| < 5.0 | ❌ Rejected | Red |
-
----
-
 ## 📤 Available Exports
 
 | Endpoint | Format | Content |
 |---|---|---|
 | `GET /export/candidates/csv` | CSV | All candidates with skills, languages, certifications |
-| `GET /export/interviews/csv` | CSV | All sessions with average score |
-| `GET /export/interviews/{id}/json` | JSON | Full details of one interview |
+| `GET /export/interviews/csv` | CSV | All sessions with weighted average score |
+| `GET /export/interviews/{id}/json` | JSON | Full details of one interview (includes weights) |
 | `GET /export/evaluations/csv` | CSV | All LLM evaluations per question |
 
 ---
@@ -507,35 +478,49 @@ KMP_DUPLICATE_LIB_OK=TRUE
 
 ---
 
+## 🔔 Recruiter Notification System
+
+When a candidate completes an interview, the platform automatically notifies the recruiter who created the session — **exactly one notification** per completed interview.
+
+| Endpoint | Description |
+|---|---|
+| `GET /notifications/unread-count` | Badge counter for the recruiter UI |
+| `GET /notifications/` | List all notifications |
+| `PATCH /notifications/{id}` | Mark a single notification as read |
+| `POST /notifications/mark-all-read` | Mark all notifications as read |
+| `DELETE /notifications/{id}` | Delete a notification |
+
+---
+
 ## 🐛 Common Issues
 
 | Error | Cause | Fix |
 |---|---|---|
-| `Could not locate cudnn_ops_infer64_8.dll` | cuDNN 8 manquant | Inclus dans `requirements.txt` via `nvidia-cudnn-cu12==8.9.7.29` |
-| `float16 compute type not supported` | CPU avec `float16` | `WHISPER_COMPUTE_TYPE=int8` sur CPU |
-| `Extra inputs are not permitted` | Variable inconnue dans `.env` | `extra = "ignore"` déjà dans `Settings.Config` |
-| `OMP: Error #15` | Conflit OpenMP | `KMP_DUPLICATE_LIB_OK=TRUE` dans `.env` |
-| `torch.cuda.is_available() = False` | PyTorch sans CUDA | `pip install torch --index-url https://download.pytorch.org/whl/cu121` |
-| `PyAudio: No module found` | PortAudio manquant | Windows: `pipwin install pyaudio` |
-| `ffmpeg not found` | FFmpeg absent | Windows: extraire dans `models/ffmpeg-*/` |
-| `Connection refused :11434` | Ollama arrêté | `ollama serve` dans un terminal séparé |
-| `MongoDB timeout` | Service arrêté | Windows: `net start MongoDB` |
-| `Empty transcription` | Audio trop court | Parler clairement ≥ 1 seconde |
-| `Notification not created` | `created_by` vide (anciennes sessions) | Fallback actif — tous les recruteurs notifiés |
-| `LLM JSON parse warning` | llama3.2 tronque sa réponse | `OLLAMA_TIMEOUT=120.0` dans `.env` |
+| `# channels not specified` | Double pygame mixer init | Fixed via `pygame.mixer.pre_init()` at module level in `main_window.py` |
+| `Could not locate cudnn_ops_infer64_8.dll` | cuDNN 8 missing | Included via `nvidia-cudnn-cu12==8.9.7.29` in `requirements.txt` |
+| `float16 compute type not supported` | CPU with `float16` | Set `WHISPER_COMPUTE_TYPE=int8` for CPU |
+| `OMP: Error #15` | OpenMP conflict | Set `KMP_DUPLICATE_LIB_OK=TRUE` in `.env` |
+| `torch.cuda.is_available() = False` | PyTorch without CUDA | `pip install torch --index-url https://download.pytorch.org/whl/cu121` |
+| `PyAudio: No module found` | PortAudio missing | Windows: `pipwin install pyaudio` |
+| `ffmpeg not found` | FFmpeg absent | Windows: extract to `models/ffmpeg-*/` |
+| `Connection refused :11434` | Ollama stopped | Run `ollama serve` in a separate terminal |
+| `MongoDB timeout` | Service stopped | Windows: `net start MongoDB` |
+| `Empty transcription` | Audio too short | Speak clearly for at least 1 second |
+| `Notification not created` | `created_by` empty (old sessions) | Fallback active — all recruiters notified |
+| `LLM JSON parse warning` | llama3.2 truncates response | Set `OLLAMA_TIMEOUT=120.0` in `.env` |
 
 ---
 
 ## 🧪 Tests
 
 ```bash
-# Test du flow complet
+# Full flow test
 python scripts/test_interview.py
 
-# Test du système de notification uniquement
+# Notification system test
 python scripts/test_notification.py
 
-# Diagnostic MongoDB (connexion, collections, sessions)
+# MongoDB diagnostic
 python scripts/debug_notification.py
 ```
 
@@ -547,7 +532,7 @@ This project was developed as a **Final Year Project** for the **2nd year of an 
 
 - **Data Engineering** — real-time audio pipeline, MongoDB data modeling, REST API design with FastAPI
 - **AI** — speech recognition (Whisper GPU), large language model evaluation (Llama 3.2 via Ollama GPU), text-to-speech synthesis (Edge-TTS)
-- **Decisional Systems** — automated scoring engine, follow-up question generation, global hiring decision (Accepted / On Hold / Rejected)
+- **Decisional Systems** — weighted scoring engine, follow-up question generation, global hiring decision
 - **Software Engineering** — WebSocket communication, TTS prefetch, synchronous follow-up pipeline, JWT authentication, automatic recruiter notifications
 
 ---
