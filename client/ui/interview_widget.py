@@ -414,13 +414,15 @@ class InterviewWidget(QWidget):
 
     def enable_recording(self, enabled: bool):
         """
-        Active ou désactive le bouton d'enregistrement.
-        enabled=True → audio terminé, candidat peut répondre.
-        enabled=False → en attente / pendant lecture.
+        enabled=True  → audio terminé : démarrage automatique de l'enregistrement.
+        enabled=False → en attente / pendant lecture : bouton désactivé.
         """
-        self.record_btn.setEnabled(enabled)
         if enabled:
-            self.set_ready_to_answer()
+            # Démarrage automatique — le candidat peut arrêter quand il veut
+            self.record_btn.setEnabled(True)
+            self._start_rec()
         else:
-            if not self.is_recording:
-                self._set_status("waiting")
+            if self.is_recording:
+                self._stop_rec(auto=False)
+            self.record_btn.setEnabled(False)
+            self._set_status("waiting")
