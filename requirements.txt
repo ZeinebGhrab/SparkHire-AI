@@ -26,26 +26,22 @@ python-dotenv==1.0.1
 websockets==13.0.1
 
 # ── ASR — Whisper GPU ────────────────────────────────────────────
-# CTranslate2 avec support CUDA (nécessaire pour Whisper sur GPU)
-# Si NVIDIA GPU + CUDA 12.x :
-#   pip install ctranslate2==4.4.0
-# Si NVIDIA GPU + CUDA 11.x :
-#   pip install ctranslate2==3.24.0
-# Si CPU uniquement :
-#   pip install ctranslate2
 ctranslate2==4.4.0
 faster-whisper==1.0.3
+
+# ── cuDNN 8 — REQUIS pour Whisper GPU sur Windows ────────────────
+# Fournit cudnn_ops_infer64_8.dll requis par ctranslate2==4.4.0
+# Installer avec : pip install nvidia-cudnn-cu12==8.9.7.29
+nvidia-cudnn-cu12==8.9.7.29
 
 # ── ASR — Vosk (fallback hors-ligne) ─────────────────────────────
 vosk==0.3.45
 
-# ── GPU — PyTorch CUDA (pour Whisper GPU + détection GPU) ────────
+# ── GPU — PyTorch CUDA ───────────────────────────────────────────
 # IMPORTANT : installer manuellement avec la bonne version CUDA :
-#   CUDA 12.1 → pip install torch --index-url https://download.pytorch.org/whl/cu121
-#   CUDA 11.8 → pip install torch --index-url https://download.pytorch.org/whl/cu118
+#   CUDA 12.x → pip install torch --index-url https://download.pytorch.org/whl/cu121
+#   CUDA 11.x → pip install torch --index-url https://download.pytorch.org/whl/cu118
 #   CPU only  → pip install torch
-# torch est listé ici pour référence — ne pas installer via pip install -r
-# si vous avez besoin du support CUDA (la version PyPI est CPU-only)
 torch
 
 # ── TTS — Edge-TTS (Microsoft, moteur principal) ─────────────────
@@ -69,24 +65,20 @@ pillow==10.4.0
 python-dateutil==2.9.0
 pytz==2024.2
 
-# ── Tests (optionnel) ────────────────────────────────────────────
-# pytest==8.3.0
-# pytest-asyncio==0.24.0
-
 # ═══════════════════════════════════════════════════════════════
-# INSTALLATION GPU COMPLÈTE (dans l'ordre) :
+# INSTALLATION COMPLÈTE (dans l'ordre recommandé) :
 #
 #   1. pip install torch --index-url https://download.pytorch.org/whl/cu121
-#   2. pip install ctranslate2==4.4.0 faster-whisper==1.0.3
-#   3. pip install -r requirements.txt
+#   2. pip install -r requirements.txt
 #
 # VÉRIFICATION GPU :
 #   python -c "import torch; print(torch.cuda.is_available())"
 #   python -c "import ctranslate2; print(ctranslate2.get_supported_compute_types('cuda'))"
 #
-# .env GPU :
+# .env GPU (recommandé RTX 4050+) :
 #   WHISPER_DEVICE=cuda
 #   WHISPER_COMPUTE_TYPE=float16
+#   OLLAMA_TIMEOUT=120.0
 #
 # .env CPU :
 #   WHISPER_DEVICE=cpu
