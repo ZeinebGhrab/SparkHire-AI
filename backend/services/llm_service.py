@@ -2,6 +2,7 @@
 Service LLM — Évaluation des réponses via Ollama + Llama 3
 Pipeline: Transcription → LLM → Score / Feedback multilingue
 + Génération de questions de suivi si la réponse est floue
++ Intégration des données du langage corporel facial (DeepFace + MediaPipe)
 """
 
 import json
@@ -208,8 +209,6 @@ _EMPTY_ANSWER_RESULT = {
 }
 
 # ── Prompt résumé global ──────────────────────────────────────────────────────
-# Compact et contraint pour éviter la troncature de llama3.2.
-# global_verdict supprimé — average_score + decision suffisent.
 
 _GLOBAL_SUMMARY_PROMPT = {
     "fr": """\
@@ -264,6 +263,143 @@ Reply ONLY with this JSON (no markdown, no text before/after):
 {{"recommendation":"<توظيف|قيد الانتظار|رفض>","decision_reason":"<جملة واحدة تبرر القرار>","key_strengths":["<نقطة قوة 1>","<نقطة قوة 2>"],"key_improvements":["<محور 1>","<محور 2>"],"summary":"<ملخص في 2-3 جمل>"}}""",
 }
 
+# ═════════════════════════════════════════════════════════════════════════════
+# ANALYSE FACIALE — Contexte injecté dans le prompt LLM
+# ═════════════════════════════════════════════════════════════════════════════
+
+_FACIAL_CONTEXT_PROMPT = {
+    "fr": """\
+
+Données du langage corporel observées pendant la réponse (analyse automatique caméra) :
+  • Émotion dominante       : {dominant_emotion}
+  • Confiance visuelle      : {confidence_score}/10
+  • Stress apparent         : {stress_score}/10
+  • Engagement              : {engagement_score}/10
+  • Contact visuel caméra   : {eye_contact_pct}%
+  • Stabilité de posture    : {stability_label}
+  • Sourire détecté         : {smile_pct}% du temps
+  • Qualité capture         : {frames_with_face}/{frames_total} frames avec visage détecté
+
+Instructions pour l'intégration de ces données :
+  - Ces données ENRICHISSENT ton évaluation mais ne la remplacent pas.
+  - Le contenu de la réponse pèse 80%, le comportement non-verbal 20%.
+  - Si le contact visuel est < 30%, mentionne-le dans les axes d'amélioration.
+  - Si le stress apparent est > 7/10, sois légèrement plus bienveillant dans le feedback.
+  - Si la qualité de capture est < 30%, ignore entièrement les données faciales.
+""",
+    "en": """\
+
+Body language data observed during the answer (automated camera analysis):
+  • Dominant emotion        : {dominant_emotion}
+  • Visual confidence       : {confidence_score}/10
+  • Apparent stress         : {stress_score}/10
+  • Engagement              : {engagement_score}/10
+  • Eye contact with camera : {eye_contact_pct}%
+  • Posture stability       : {stability_label}
+  • Smile detected          : {smile_pct}% of the time
+  • Capture quality         : {frames_with_face}/{frames_total} frames with face detected
+
+Integration instructions:
+  - These data ENRICH your evaluation but do not replace it.
+  - Answer content weighs 80%, non-verbal behavior 20%.
+  - If eye contact < 30%, mention it in improvement areas.
+  - If apparent stress > 7/10, be slightly more supportive in feedback.
+  - If capture quality < 30%, ignore facial data entirely.
+""",
+    "ar": """\
+
+بيانات لغة الجسد الملاحظة أثناء الإجابة (تحليل تلقائي بالكاميرا) :
+  • المشاعر السائدة          : {dominant_emotion}
+  • الثقة البصرية            : {confidence_score}/10
+  • الضغط الظاهر             : {stress_score}/10
+  • مستوى التفاعل            : {engagement_score}/10
+  • التواصل البصري مع الكاميرا : {eye_contact_pct}%
+  • ثبات الوضعية             : {stability_label}
+  • الابتسام                 : {smile_pct}% من الوقت
+  • جودة الالتقاط            : {frames_with_face}/{frames_total} إطار مع وجه مكتشف
+
+تعليمات التكامل :
+  - هذه البيانات تُثري تقييمك ولا تحل محله.
+  - محتوى الإجابة يمثل 80% والسلوك غير اللفظي 20%.
+  - إذا كان التواصل البصري < 30%، اذكره في نقاط التحسين.
+  - إذا كان الضغط الظاهر > 7/10، كن أكثر لطفاً في التغذية الراجعة.
+  - إذا كانت جودة الالتقاط < 30%، تجاهل البيانات الوجهية كلياً.
+""",
+}
+
+_STABILITY_LABELS = {
+    "fr": {True: "Bonne (posture stable)",      False: "À améliorer (mouvements fréquents)"},
+    "en": {True: "Good (stable posture)",        False: "To improve (frequent movements)"},
+    "ar": {True: "جيد (وضعية ثابتة)",           False: "يحتاج تحسين (حركات متكررة)"},
+}
+
+_EMOTION_LABELS = {
+    "fr": {
+        "neutral":  "Neutre",     "happy":    "Joyeux",    "sad":      "Triste",
+        "angry":    "En colère",  "fear":     "Craintif",  "surprise": "Surpris",
+        "disgust":  "Dégoûté",
+    },
+    "en": {
+        "neutral":  "Neutral",    "happy":    "Happy",     "sad":      "Sad",
+        "angry":    "Angry",      "fear":     "Fearful",   "surprise": "Surprised",
+        "disgust":  "Disgusted",
+    },
+    "ar": {
+        "neutral":  "محايد",      "happy":    "سعيد",      "sad":      "حزين",
+        "angry":    "غاضب",       "fear":     "خائف",      "surprise": "مندهش",
+        "disgust":  "مشمئز",
+    },
+}
+
+
+def _build_facial_context(facial_metrics, language: str) -> str:
+    """
+    Construit le bloc de contexte facial à injecter dans le prompt LLM.
+
+    Retourne une chaîne vide si :
+      - facial_metrics est None
+      - face_detection_rate < 0.3 (données trop peu fiables)
+      - frames_analyzed == 0
+
+    Ce bloc est simplement concaténé à la fin du system prompt —
+    le LLM l'intègre naturellement sans instruction supplémentaire.
+    """
+    if facial_metrics is None:
+        return ""
+
+    detection_rate = getattr(facial_metrics, "face_detection_rate", 0.0)
+    frames_total   = getattr(facial_metrics, "frames_analyzed", 0)
+
+    if detection_rate < 0.3 or frames_total == 0:
+        return ""   # Qualité insuffisante — ne pas biaiser le LLM
+
+    lang = language if language in ("ar", "fr", "en") else "fr"
+    tpl  = _FACIAL_CONTEXT_PROMPT.get(lang, _FACIAL_CONTEXT_PROMPT["fr"])
+
+    # Stabilité : head_stability > 0.6 = bonne posture
+    stable   = getattr(facial_metrics, "head_stability", 1.0) > 0.6
+    stab_lbl = _STABILITY_LABELS.get(lang, _STABILITY_LABELS["fr"])[stable]
+
+    # Émotion dominante traduite
+    dom_raw = getattr(facial_metrics, "dominant_emotion", "neutral")
+    dom_lbl = _EMOTION_LABELS.get(lang, _EMOTION_LABELS["fr"]).get(dom_raw, dom_raw)
+
+    return tpl.format(
+        dominant_emotion  = dom_lbl,
+        confidence_score  = getattr(facial_metrics, "confidence_score",  5.0),
+        stress_score      = getattr(facial_metrics, "stress_score",       5.0),
+        engagement_score  = getattr(facial_metrics, "engagement_score",   5.0),
+        eye_contact_pct   = int(getattr(facial_metrics, "eye_contact_ratio", 0.0) * 100),
+        stability_label   = stab_lbl,
+        smile_pct         = int(getattr(facial_metrics, "smile_ratio", 0.0) * 100),
+        frames_with_face  = getattr(facial_metrics, "frames_with_face", 0),
+        frames_total      = frames_total,
+    )
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+#  SERVICE LLM PRINCIPAL
+# ═════════════════════════════════════════════════════════════════════════════
 
 class OllamaLLMService:
     """Service d'évaluation LLM via Ollama (Llama 3 local)."""
@@ -275,8 +411,8 @@ class OllamaLLMService:
         timeout: float = 60.0,
     ):
         self.base_url = base_url.rstrip("/")
-        self.model = model
-        self.timeout = timeout
+        self.model    = model
+        self.timeout  = timeout
         logger.info(f"LLM Service initialisé | modèle={model} | url={base_url}")
 
     # ── Santé ─────────────────────────────────────────────────────────────────
@@ -308,13 +444,17 @@ class OllamaLLMService:
         system = _SYSTEM_PROMPT[lang]
         user   = _USER_PROMPT[lang].format(question=question, answer=answer)
         if position_title:
-            suffix = {"ar": f"\n\nالمنصب: {position_title}", "fr": f"\n\nPoste : {position_title}", "en": f"\n\nPosition: {position_title}"}
+            suffix = {
+                "ar": f"\n\nالمنصب: {position_title}",
+                "fr": f"\n\nPoste : {position_title}",
+                "en": f"\n\nPosition: {position_title}",
+            }
             user += suffix[lang]
         raw    = await self._call_ollama(system, user)
         parsed = self._parse_json(raw, lang)
         parsed["llm_model"] = self.model
         parsed["evaluated"] = True
-        logger.info(f"Évaluation [{lang}] Q score={parsed['score']}/10 verdict={parsed['verdict']}")
+        logger.info(f"Évaluation [{lang}] score={parsed['score']}/10 verdict={parsed['verdict']}")
         return parsed
 
     # ── Évaluation avec détection de suivi ────────────────────────────────────
@@ -329,12 +469,19 @@ class OllamaLLMService:
         lang = language if language in ("ar", "fr", "en") else "fr"
         if not answer or len(answer.strip()) < 5:
             result = dict(_EMPTY_ANSWER_RESULT[lang])
-            result.update({"llm_model": self.model, "evaluated": True, "needs_followup": False, "followup_question": ""})
+            result.update({
+                "llm_model": self.model, "evaluated": True,
+                "needs_followup": False, "followup_question": "",
+            })
             return result
         system = _SYSTEM_PROMPT_FOLLOWUP[lang]
         user   = _USER_PROMPT[lang].format(question=question, answer=answer)
         if position_title:
-            suffix = {"ar": f"\n\nالمنصب: {position_title}", "fr": f"\n\nPoste : {position_title}", "en": f"\n\nPosition: {position_title}"}
+            suffix = {
+                "ar": f"\n\nالمنصب: {position_title}",
+                "fr": f"\n\nPoste : {position_title}",
+                "en": f"\n\nPosition: {position_title}",
+            }
             user += suffix[lang]
         raw    = await self._call_ollama(system, user)
         parsed = self._parse_followup_json(raw, lang)
@@ -366,12 +513,95 @@ class OllamaLLMService:
             followup_q=followup_question, followup_a=followup_answer,
         )
         if position_title:
-            suffix = {"ar": f"\n\nالمنصب: {position_title}", "fr": f"\n\nPoste : {position_title}", "en": f"\n\nPosition: {position_title}"}
+            suffix = {
+                "ar": f"\n\nالمنصب: {position_title}",
+                "fr": f"\n\nPoste : {position_title}",
+                "en": f"\n\nPosition: {position_title}",
+            }
             user += suffix[lang]
         raw    = await self._call_ollama(system, user)
         parsed = self._parse_json(raw, lang)
         parsed["llm_model"] = self.model
         parsed["evaluated"] = True
+        return parsed
+
+    # ── NOUVEAU — Évaluation enrichie avec langage corporel ───────────────────
+
+    async def evaluate_with_facial(
+        self,
+        question: str,
+        answer: str,
+        language: str = "fr",
+        position_title: str = "",
+        facial_metrics=None,
+    ) -> dict:
+        """
+        Évalue une réponse en intégrant les données du langage corporel facial.
+
+        Le contenu de la réponse reste prioritaire (80%).
+        Les données faciales enrichissent le feedback et les axes d'amélioration (20%).
+
+        Si facial_metrics est None ou de qualité insuffisante (face_detection_rate < 0.3),
+        cette méthode se comporte exactement comme evaluate_with_followup().
+
+        Paramètres :
+            facial_metrics : FacialMetrics | None
+                Instance de backend.services.facial_analysis_service.FacialMetrics
+                Contient : dominant_emotion, confidence_score, stress_score,
+                           engagement_score, eye_contact_ratio, head_stability,
+                           smile_ratio, frames_analyzed, frames_with_face,
+                           face_detection_rate
+        """
+        lang = language if language in ("ar", "fr", "en") else "fr"
+
+        if not answer or len(answer.strip()) < 5:
+            result = dict(_EMPTY_ANSWER_RESULT[lang])
+            result.update({
+                "llm_model":       self.model,
+                "evaluated":       True,
+                "needs_followup":  False,
+                "followup_question": "",
+            })
+            return result
+
+        # Construire le contexte facial (chaîne vide si données insuffisantes)
+        facial_context = _build_facial_context(facial_metrics, lang)
+
+        # Injecter le contexte facial à la fin du system prompt
+        system = _SYSTEM_PROMPT_FOLLOWUP[lang] + facial_context
+
+        user = _USER_PROMPT[lang].format(question=question, answer=answer)
+        if position_title:
+            suffix = {
+                "ar": f"\n\nالمنصب: {position_title}",
+                "fr": f"\n\nPoste : {position_title}",
+                "en": f"\n\nPosition: {position_title}",
+            }
+            user += suffix[lang]
+
+        raw    = await self._call_ollama(system, user)
+        parsed = self._parse_followup_json(raw, lang)
+        parsed["llm_model"] = self.model
+        parsed["evaluated"] = True
+
+        # Log enrichi si données faciales disponibles
+        if facial_metrics and getattr(facial_metrics, "frames_with_face", 0) > 0:
+            logger.info(
+                f"Évaluation+Facial [{lang}] | "
+                f"score={parsed['score']}/10 | "
+                f"needs_followup={parsed['needs_followup']} | "
+                f"émotion={getattr(facial_metrics, 'dominant_emotion', 'n/a')} | "
+                f"confiance={getattr(facial_metrics, 'confidence_score', 0)}/10 | "
+                f"stress={getattr(facial_metrics, 'stress_score', 0)}/10 | "
+                f"contact={int(getattr(facial_metrics, 'eye_contact_ratio', 0)*100)}%"
+            )
+        else:
+            logger.info(
+                f"Évaluation+Facial [{lang}] | "
+                f"score={parsed['score']}/10 | "
+                f"données faciales: absentes ou qualité insuffisante"
+            )
+
         return parsed
 
     # ── Résumé global ─────────────────────────────────────────────────────────
@@ -399,16 +629,29 @@ class OllamaLLMService:
         if weighted_avg is not None:
             avg = round(weighted_avg, 2)
         else:
-            sw = [(float(a.get("score", 0)), float(a.get("weight", 1.0))) for a in answers_eval]
+            sw      = [(float(a.get("score", 0)), float(a.get("weight", 1.0))) for a in answers_eval]
             total_w = sum(w for _, w in sw)
-            avg = round(sum(s * w for s, w in sw) / total_w, 2) if total_w > 0 else 0.0
+            avg     = round(sum(s * w for s, w in sw) / total_w, 2) if total_w > 0 else 0.0
 
-        # Détail compact
+        # Détail compact (avec données faciales si disponibles)
         detail_lines = []
         for i, a in enumerate(answers_eval, 1):
             feedback_short = (a.get("feedback") or "")[:80].replace("\n", " ")
             w = a.get("weight", 1.0)
-            detail_lines.append(f"Q{i} (score={a.get('score', 0)}/10, poids={w}) : {feedback_short}")
+
+            # Ajouter un résumé facial s'il existe
+            facial = a.get("facial_analysis") or {}
+            if facial and facial.get("frames_with_face", 0) > 0:
+                facial_summary = (
+                    f" [confiance={facial.get('confidence_score', '?')}/10 "
+                    f"stress={facial.get('stress_score', '?')}/10]"
+                )
+            else:
+                facial_summary = ""
+
+            detail_lines.append(
+                f"Q{i} (score={a.get('score', 0)}/10, poids={w}){facial_summary} : {feedback_short}"
+            )
         detail = "\n".join(detail_lines)
 
         prompt_tpl = _GLOBAL_SUMMARY_PROMPT.get(lang, _GLOBAL_SUMMARY_PROMPT["fr"])
@@ -421,8 +664,6 @@ class OllamaLLMService:
 
         raw    = await self._call_ollama("", prompt)
         result = self._parse_global_json(raw, lang)
-
-        # Garantie de complétude
         result = self._ensure_global_fields(result, answers_eval, avg, lang)
         return result
 
@@ -456,7 +697,11 @@ class OllamaLLMService:
     # ── Parsing par-réponse ───────────────────────────────────────────────────
 
     def _parse_json(self, raw: str, lang: str) -> dict:
-        for pattern in (r"```json\s*([\s\S]+?)\s*```", r"```\s*([\s\S]+?)\s*```", r"(\{[\s\S]+\})"):
+        for pattern in (
+            r"```json\s*([\s\S]+?)\s*```",
+            r"```\s*([\s\S]+?)\s*```",
+            r"(\{[\s\S]+\})",
+        ):
             m = re.search(pattern, raw)
             if m:
                 try:
@@ -467,7 +712,11 @@ class OllamaLLMService:
         return self._fallback_result(lang)
 
     def _parse_followup_json(self, raw: str, lang: str) -> dict:
-        for pattern in (r"```json\s*([\s\S]+?)\s*```", r"```\s*([\s\S]+?)\s*```", r"(\{[\s\S]+\})"):
+        for pattern in (
+            r"```json\s*([\s\S]+?)\s*```",
+            r"```\s*([\s\S]+?)\s*```",
+            r"(\{[\s\S]+\})",
+        ):
             m = re.search(pattern, raw)
             if m:
                 try:
@@ -475,6 +724,7 @@ class OllamaLLMService:
                     base = self._normalize(obj, lang)
                     base["needs_followup"]    = bool(obj.get("needs_followup", False))
                     base["followup_question"] = str(obj.get("followup_question", "")).strip()
+                    # Score >= 8 → pas de suivi (règle métier)
                     if base["score"] >= 8:
                         base["needs_followup"]    = False
                         base["followup_question"] = ""
@@ -489,13 +739,11 @@ class OllamaLLMService:
     # ── Parsing résumé global ─────────────────────────────────────────────────
 
     def _parse_global_json(self, raw: str, lang: str) -> dict:
-        """
-        Parser dédié au résumé global.
-        Champs attendus : recommendation, decision_reason,
-                          key_strengths, key_improvements, summary.
-        global_verdict absent — intentionnellement supprimé.
-        """
-        for pattern in (r"```json\s*([\s\S]+?)\s*```", r"```\s*([\s\S]+?)\s*```", r"(\{[\s\S]+\})"):
+        for pattern in (
+            r"```json\s*([\s\S]+?)\s*```",
+            r"```\s*([\s\S]+?)\s*```",
+            r"(\{[\s\S]+\})",
+        ):
             m = re.search(pattern, raw)
             if m:
                 try:
@@ -503,7 +751,10 @@ class OllamaLLMService:
                 except json.JSONDecodeError:
                     continue
         logger.warning(f"Parse JSON échoué (global) : {raw[:200]}")
-        return {"recommendation": "", "decision_reason": "", "key_strengths": [], "key_improvements": [], "summary": ""}
+        return {
+            "recommendation": "", "decision_reason": "",
+            "key_strengths": [], "key_improvements": [], "summary": "",
+        }
 
     def _normalize_global(self, obj: dict) -> dict:
         def _list(key):
@@ -513,11 +764,11 @@ class OllamaLLMService:
             return [str(val).strip()] if isinstance(val, str) and val.strip() else []
 
         return {
-            "recommendation":   str(obj.get("recommendation") or "").strip(),
-            "decision_reason":  str(obj.get("decision_reason") or "").strip(),
+            "recommendation":   str(obj.get("recommendation")  or "").strip(),
+            "decision_reason":  str(obj.get("decision_reason")  or "").strip(),
             "key_strengths":    _list("key_strengths"),
             "key_improvements": _list("key_improvements"),
-            "summary":          str(obj.get("summary") or "").strip(),
+            "summary":          str(obj.get("summary")          or "").strip(),
         }
 
     def _ensure_global_fields(
@@ -530,11 +781,17 @@ class OllamaLLMService:
         """Fallback déterministe pour tous les champs globaux vides."""
         if not result.get("recommendation"):
             if lang == "fr":
-                result["recommendation"] = "Embaucher" if avg >= 7 else ("En attente" if avg >= 5 else "Refuser")
+                result["recommendation"] = (
+                    "Embaucher" if avg >= 7 else ("En attente" if avg >= 5 else "Refuser")
+                )
             elif lang == "ar":
-                result["recommendation"] = "توظيف" if avg >= 7 else ("قيد الانتظار" if avg >= 5 else "رفض")
+                result["recommendation"] = (
+                    "توظيف" if avg >= 7 else ("قيد الانتظار" if avg >= 5 else "رفض")
+                )
             else:
-                result["recommendation"] = "Hire" if avg >= 7 else ("On Hold" if avg >= 5 else "Reject")
+                result["recommendation"] = (
+                    "Hire" if avg >= 7 else ("On Hold" if avg >= 5 else "Reject")
+                )
 
         if not result.get("decision_reason"):
             n = len(answers_eval)
@@ -544,7 +801,9 @@ class OllamaLLMService:
                     f"Barème : ≥7 = Embaucher, 5–7 = En attente, <5 = Refuser."
                 )
             elif lang == "ar":
-                result["decision_reason"] = f"متوسط مرجح {avg}/10 على {n} سؤال."
+                result["decision_reason"] = (
+                    f"متوسط مرجح {avg}/10 على {n} سؤال. المعايير : ≥7 = توظيف، 5-7 = انتظار، <5 = رفض."
+                )
             else:
                 result["decision_reason"] = (
                     f"Weighted average {avg}/10 across {n} question(s). "
@@ -569,7 +828,8 @@ class OllamaLLMService:
 
         if not result.get("summary"):
             scores_str = ", ".join(
-                f"Q{a.get('question_order', i+1)}: {a.get('score', 0)}/10 (×{a.get('weight', 1.0)})"
+                f"Q{a.get('question_order', i+1)}: {a.get('score', 0)}/10 "
+                f"(×{a.get('weight', 1.0)})"
                 for i, a in enumerate(answers_eval)
             )
             reco = result["recommendation"]
@@ -580,7 +840,10 @@ class OllamaLLMService:
                     f"Recommandation : {reco}."
                 )
             elif lang == "ar":
-                result["summary"] = f"مقابلة {len(answers_eval)} سؤال — متوسط {avg}/10. {scores_str}. التوصية : {reco}."
+                result["summary"] = (
+                    f"مقابلة {len(answers_eval)} سؤال — متوسط مرجح {avg}/10. "
+                    f"{scores_str}. التوصية : {reco}."
+                )
             else:
                 result["summary"] = (
                     f"{len(answers_eval)}-question interview — "
@@ -600,24 +863,55 @@ class OllamaLLMService:
         return {
             "score":        round(score, 1),
             "verdict":      str(obj.get("verdict", self._score_to_verdict(score, lang))),
-            "strengths":    list(obj.get("strengths", [])),
+            "strengths":    list(obj.get("strengths",    [])),
             "improvements": list(obj.get("improvements", [])),
             "feedback":     str(obj.get("feedback", "")),
         }
 
     def _fallback_result(self, lang: str) -> dict:
-        msgs = {"fr": "Évaluation non disponible (erreur LLM).", "en": "Evaluation unavailable (LLM error).", "ar": "التقييم غير متاح."}
-        return {"score": 5.0, "verdict": self._score_to_verdict(5.0, lang), "strengths": [], "improvements": [], "feedback": msgs.get(lang, msgs["fr"])}
+        msgs = {
+            "fr": "Évaluation non disponible (erreur LLM).",
+            "en": "Evaluation unavailable (LLM error).",
+            "ar": "التقييم غير متاح.",
+        }
+        return {
+            "score":        5.0,
+            "verdict":      self._score_to_verdict(5.0, lang),
+            "strengths":    [],
+            "improvements": [],
+            "feedback":     msgs.get(lang, msgs["fr"]),
+        }
 
     def _empty_summary(self, lang: str) -> dict:
-        return {"recommendation": "", "decision_reason": "", "key_strengths": [], "key_improvements": [], "summary": ""}
+        return {
+            "recommendation": "", "decision_reason": "",
+            "key_strengths": [], "key_improvements": [], "summary": "",
+        }
 
     @staticmethod
     def _score_to_verdict(score: float, lang: str) -> str:
         verdicts = {
-            "fr": ["Insuffisant","Insuffisant","Insuffisant","Acceptable","Acceptable","Bien","Bien","Très bien","Très bien","Excellent","Excellent"],
-            "en": ["Poor","Poor","Poor","Acceptable","Acceptable","Good","Good","Very Good","Very Good","Excellent","Excellent"],
-            "ar": ["ضعيف","ضعيف","ضعيف","مقبول","مقبول","جيد","جيد","جيد جداً","جيد جداً","ممتاز","ممتاز"],
+            "fr": [
+                "Insuffisant", "Insuffisant", "Insuffisant",
+                "Acceptable",  "Acceptable",
+                "Bien",        "Bien",
+                "Très bien",   "Très bien",
+                "Excellent",   "Excellent",
+            ],
+            "en": [
+                "Poor",        "Poor",        "Poor",
+                "Acceptable",  "Acceptable",
+                "Good",        "Good",
+                "Very Good",   "Very Good",
+                "Excellent",   "Excellent",
+            ],
+            "ar": [
+                "ضعيف",   "ضعيف",   "ضعيف",
+                "مقبول",  "مقبول",
+                "جيد",    "جيد",
+                "جيد جداً", "جيد جداً",
+                "ممتاز",  "ممتاز",
+            ],
         }
         idx = min(10, max(0, round(score)))
         return verdicts.get(lang, verdicts["fr"])[idx]
@@ -633,8 +927,8 @@ def get_llm_service() -> OllamaLLMService:
     if _llm_instance is None:
         from backend.config import settings
         _llm_instance = OllamaLLMService(
-            base_url=getattr(settings, "OLLAMA_URL",    "http://localhost:11434"),
-            model=getattr(settings, "OLLAMA_MODEL",     "llama3"),
-            timeout=getattr(settings, "OLLAMA_TIMEOUT", 60.0),
+            base_url=getattr(settings, "OLLAMA_URL",     "http://localhost:11434"),
+            model=getattr(settings,    "OLLAMA_MODEL",   "llama3"),
+            timeout=getattr(settings,  "OLLAMA_TIMEOUT", 60.0),
         )
     return _llm_instance

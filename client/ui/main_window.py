@@ -2,8 +2,15 @@
 Main Window — Professional Light UI
 Design · QSS complet · Palette slate/cyan/amber
 
-CORRECTION : initialisation pygame via pre_init() avant display.init(),
-             et _ensure_audio_format() protégée contre les valeurs invalides.
+MODIFICATIONS v5 (Analyse faciale) :
+  + Import VideoFrameCollector
+  + Démarrage capture caméra en parallèle de l'enregistrement audio
+  + Envoi des frames JPEG via WebSocket (type: video_frame)
+  + Affichage des métriques faciales dans la status bar après évaluation
+  + Indicateur caméra dans le header (🎥 / ⚠️)
+  + Gestion gracieuse si caméra indisponible (entretien continue sans analyse)
+
+CORRECTION : initialisation pygame via pre_init() avant display.init()
 """
 
 from PySide6.QtWidgets import (
@@ -24,18 +31,16 @@ from client.ui.video_player_widget import VideoPlayerWidget
 from client.ui.interview_widget import InterviewWidget
 from client.core.websocket_client import WebSocketClient
 from client.core.audio_recorder import AudioRecorder
+from client.core.video_recorder import VideoFrameCollector   # ← NOUVEAU
 from client.config import settings
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# ── Initialisation pygame — UNE SEULE FOIS au niveau module ──────────────────
-# pre_init() doit être appelé AVANT tout pygame.init() ou display.init().
-# Cela garantit que le mixer utilise les bons paramètres même si
-# video_player_widget.py appelle display.init() plus tard.
+# ── pygame pre_init ───────────────────────────────────────────────────────────
 _MIXER_FREQUENCY = 22050
-_MIXER_SIZE      = -16     # 16 bits signed
-_MIXER_CHANNELS  = 2       # stéréo (pygame mixer joue mal en mono sur certains Windows)
+_MIXER_SIZE      = -16
+_MIXER_CHANNELS  = 2
 _MIXER_BUFFER    = 4096
 
 pygame.mixer.pre_init(
@@ -65,6 +70,8 @@ UI_TEXTS = {
         "format_error": "الصيغة المطلوبة: session_xxxxxxxxxxxxx",
         "error_title": "خطأ", "end_title": "إنهاء", "back_btn": "رجوع", "confirm_btn": "تأكيد",
         "welcome_back_status": "مرحباً بعودتك — نستأنف المقابلة",
+        "camera_ok": "الكاميرا جاهزة", "camera_off": "الكاميرا غير متوفرة",
+        "facial_score": "الثقة: {c}/10 | التوتر: {s}/10 | التواصل: {e}%",
     },
     "fr": {
         "app_title": "STARK RECRUITMENT AI", "app_subtitle": "Entretien vocal intelligent",
@@ -82,6 +89,8 @@ UI_TEXTS = {
         "format_error": "Format attendu : session_xxxxxxxxxxxxx",
         "error_title": "Erreur", "end_title": "Terminer", "back_btn": "Retour", "confirm_btn": "Confirmer",
         "welcome_back_status": "Bon retour — reprise de l'entretien",
+        "camera_ok": "Caméra active 🎥", "camera_off": "Caméra non disponible ⚠️",
+        "facial_score": "Confiance: {c}/10 | Stress: {s}/10 | Contact: {e}%",
     },
     "en": {
         "app_title": "STARK RECRUITMENT AI", "app_subtitle": "AI-powered voice interview",
@@ -99,6 +108,8 @@ UI_TEXTS = {
         "format_error": "Expected: session_xxxxxxxxxxxxx",
         "error_title": "Error", "end_title": "End Interview", "back_btn": "Back", "confirm_btn": "Confirm",
         "welcome_back_status": "Welcome back — resuming interview",
+        "camera_ok": "Camera active 🎥", "camera_off": "Camera unavailable ⚠️",
+        "facial_score": "Confidence: {c}/10 | Stress: {s}/10 | Contact: {e}%",
     },
 }
 
@@ -109,9 +120,7 @@ LANGUAGES = [
 ]
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-#  HELPERS
-# ─────────────────────────────────────────────────────────────────────────────
+# ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _shadow(blur=20, dy=4, alpha=30, r=100, g=116, b=139):
     s = QGraphicsDropShadowEffect()
@@ -145,9 +154,11 @@ def _icon_badge(emoji, size=56, bg0=T.CYAN_100, bg1=T.BLUE_100, border=T.CYAN_20
     cont.setGraphicsEffect(_shadow(16, 4, 20, 6, 182, 212)); return cont
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-#  LANGUAGE CARD
-# ─────────────────────────────────────────────────────────────────────────────
+def _hex_to_rgb(h):
+    h = h.lstrip("#"); return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+
+
+# ── Language Card ─────────────────────────────────────────────────────────────
 
 class LanguageCard(QFrame):
     def __init__(self, data, on_select, parent=None):
@@ -181,13 +192,7 @@ class LanguageCard(QFrame):
     def mousePressEvent(self, e): self._on_select(self._data["code"]); super().mousePressEvent(e)
 
 
-def _hex_to_rgb(h):
-    h = h.lstrip("#"); return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-#  STATUS CHIP
-# ─────────────────────────────────────────────────────────────────────────────
+# ── Status Chip ───────────────────────────────────────────────────────────────
 
 class StatusChip(QFrame):
     STATES = {
@@ -215,9 +220,9 @@ class StatusChip(QFrame):
         self.setStyleSheet(f"QFrame {{ background: {bg}; border: 1px solid {border}; border-radius: {T.R_FULL}px; }}")
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ═════════════════════════════════════════════════════════════════════════════
 #  MAIN WINDOW
-# ─────────────────────────────────────────────────────────────────────────────
+# ═════════════════════════════════════════════════════════════════════════════
 
 class MainWindow(QMainWindow):
 
@@ -244,15 +249,19 @@ class MainWindow(QMainWindow):
         self._audio_chunks: list = []
         self._audio_total_chunks = 0
 
-        # Vérifier que pygame mixer est bien initialisé (via pre_init au niveau module)
+        # ── NOUVEAU — Capture vidéo ───────────────────────────────────────────
+        self._video_collector: VideoFrameCollector | None = None
+        self._facial_enabled: bool = getattr(settings, "FACIAL_ANALYSIS_ENABLED", True)
+        self._camera_available: bool = False
+        self._camera_lbl: QLabel | None = None   # indicateur dans le header
+
+        # Vérification pygame mixer
         if not pygame.mixer.get_init():
             logger.warning("pygame mixer non initialisé — tentative de ré-initialisation")
             try:
                 pygame.mixer.init(
-                    frequency=_MIXER_FREQUENCY,
-                    size=_MIXER_SIZE,
-                    channels=_MIXER_CHANNELS,
-                    buffer=_MIXER_BUFFER,
+                    frequency=_MIXER_FREQUENCY, size=_MIXER_SIZE,
+                    channels=_MIXER_CHANNELS, buffer=_MIXER_BUFFER,
                 )
             except Exception as e:
                 logger.error(f"pygame mixer init échoué : {e}")
@@ -261,9 +270,81 @@ class MainWindow(QMainWindow):
             logger.info(f"pygame mixer OK | frequency={freq} size={size} channels={ch}")
 
         self._setup_ui()
+        self._init_video_collector()   # ← NOUVEAU
 
-    def t(self, key):
-        return UI_TEXTS.get(self._language, UI_TEXTS["fr"]).get(key, key)
+    # ── Init VideoFrameCollector ──────────────────────────────────────────────
+
+    def _init_video_collector(self):
+        """Crée le collecteur vidéo et teste la disponibilité de la caméra."""
+        if not self._facial_enabled:
+            logger.info("Analyse faciale désactivée (FACIAL_ANALYSIS_ENABLED=false)")
+            self._update_camera_indicator(available=False)
+            return
+
+        fps = getattr(settings, "FACIAL_CAPTURE_FPS", 2.0)
+        self._video_collector = VideoFrameCollector(
+            camera_index=0,
+            target_fps=fps,
+            jpeg_quality=70,
+            max_width=640,
+        )
+        self._video_collector.frame_captured.connect(self._on_video_frame)
+        self._video_collector.camera_ready.connect(self._on_camera_ready)
+        self._video_collector.camera_error.connect(self._on_camera_error)
+
+        # Tester disponibilité caméra sans la bloquer
+        available = self._video_collector.is_camera_available(0)
+        self._camera_available = available
+        self._update_camera_indicator(available)
+        logger.info(f"Caméra index=0 : {'disponible ✓' if available else 'non disponible ✗'}")
+
+    def _update_camera_indicator(self, available: bool):
+        """Met à jour l'indicateur caméra dans le header."""
+        if self._camera_lbl is None:
+            return
+        if not self._facial_enabled:
+            self._camera_lbl.setText("")
+            self._camera_lbl.setVisible(False)
+            return
+        if available:
+            self._camera_lbl.setText("🎥")
+            self._camera_lbl.setToolTip(self.t("camera_ok"))
+            self._camera_lbl.setStyleSheet("color: #16A34A; background: transparent; font-size: 16px;")
+        else:
+            self._camera_lbl.setText("⚠️")
+            self._camera_lbl.setToolTip(self.t("camera_off"))
+            self._camera_lbl.setStyleSheet("color: #DC2626; background: transparent; font-size: 16px;")
+
+    def _on_camera_ready(self, ok: bool):
+        self._camera_available = ok
+        self._update_camera_indicator(ok)
+
+    def _on_camera_error(self, msg: str):
+        logger.warning(f"Caméra : {msg}")
+        self._camera_available = False
+        self._update_camera_indicator(False)
+
+    # ── Frame vidéo → WebSocket ───────────────────────────────────────────────
+
+    def _on_video_frame(self, jpeg_bytes: bytes):
+        """
+        Appelé par VideoFrameCollector chaque fois qu'un frame est capturé.
+        Encode en base64 et envoie via WebSocket au serveur.
+        """
+        if not self.websocket_client:
+            return
+        try:
+            b64 = base64.b64encode(jpeg_bytes).decode()
+            self.websocket_client.send_message({
+                "type": "video_frame",
+                "data": {"frame": b64},
+            })
+        except Exception as e:
+            logger.debug(f"Envoi frame vidéo: {e}")
+
+    def t(self, key, **kwargs):
+        tpl = UI_TEXTS.get(self._language, UI_TEXTS["fr"]).get(key, key)
+        return tpl.format(**kwargs) if kwargs else tpl
 
     # ═══════════════════════════════════════════════════════════════════════
     #  UI BUILD
@@ -316,6 +397,16 @@ class MainWindow(QMainWindow):
 
         left = QHBoxLayout(); left.setSpacing(14); left.addWidget(badge); left.addLayout(title_col)
         lay.addLayout(left); lay.addStretch()
+
+        # ── NOUVEAU — indicateur caméra ───────────────────────────────────────
+        self._camera_lbl = QLabel("")
+        self._camera_lbl.setFont(QFont("Segoe UI Emoji", 16))
+        self._camera_lbl.setStyleSheet("background: transparent;")
+        self._camera_lbl.setToolTip(self.t("camera_off"))
+        self._camera_lbl.setVisible(self._facial_enabled)
+        lay.addWidget(self._camera_lbl)
+        lay.addSpacing(12)
+
         self.status_chip = StatusChip(); lay.addWidget(self.status_chip)
         return hdr
 
@@ -372,6 +463,7 @@ class MainWindow(QMainWindow):
         if hasattr(self, "interview_widget"): self.interview_widget.set_language(self._language)
         self.statusBar().showMessage(self.t("vocal_mode_label"))
         self._refresh_pill()
+        self._update_camera_indicator(self._camera_available)
 
     def _build_session_screen(self):
         outer = QWidget(); outer_lay = QVBoxLayout(outer)
@@ -449,43 +541,29 @@ class MainWindow(QMainWindow):
     # ═══════════════════════════════════════════════════════════════════════
 
     def _ensure_audio_format(self, sr, ch, bits):
-        """
-        Réinitialise le mixer si les paramètres audio changent.
-        Protège contre les valeurs invalides (0, négatif) qui causaient
-        l'erreur '# channels not specified'.
-        """
-        # Valeurs par défaut si invalides
         sr   = sr   if sr   > 0 else _MIXER_FREQUENCY
         ch   = ch   if ch   > 0 else _MIXER_CHANNELS
         bits = bits if bits > 0 else 16
-
         if sr == self._audio_sample_rate and ch == self._audio_channels and bits == self._audio_bits:
             return
         try:
-            pygame.mixer.music.stop()
-            pygame.mixer.music.unload()
+            pygame.mixer.music.stop(); pygame.mixer.music.unload()
         except Exception:
             pass
         try:
             pygame.mixer.quit()
             pygame.mixer.init(frequency=sr, size=-bits, channels=ch, buffer=4096)
             self._audio_sample_rate, self._audio_channels, self._audio_bits = sr, ch, bits
-            logger.info(f"Mixer réinitialisé | {sr}Hz {ch}ch {bits}bit")
         except Exception as e:
-            logger.error(f"pygame mixer réinit échoué ({sr}Hz {ch}ch {bits}bit) : {e}")
-            # Fallback : réinitialiser avec les paramètres par défaut
+            logger.error(f"pygame mixer réinit : {e}")
             try:
-                pygame.mixer.init(
-                    frequency=_MIXER_FREQUENCY,
-                    size=_MIXER_SIZE,
-                    channels=_MIXER_CHANNELS,
-                    buffer=_MIXER_BUFFER,
-                )
+                pygame.mixer.init(frequency=_MIXER_FREQUENCY, size=_MIXER_SIZE,
+                                  channels=_MIXER_CHANNELS, buffer=_MIXER_BUFFER)
                 self._audio_sample_rate = _MIXER_FREQUENCY
                 self._audio_channels    = _MIXER_CHANNELS
                 self._audio_bits        = 16
             except Exception as e2:
-                logger.error(f"pygame mixer fallback échoué : {e2}")
+                logger.error(f"pygame mixer fallback : {e2}")
 
     def _reset_audio_state(self):
         if self.audio_check_timer:
@@ -505,6 +583,10 @@ class MainWindow(QMainWindow):
             self._tmp_audio_path = None
 
     def _reset_ui_for_new_session(self):
+        # ── NOUVEAU — arrêter la capture vidéo ───────────────────────────────
+        if self._video_collector and self._video_collector.is_capturing:
+            self._video_collector.stop_capture()
+
         self.stacked.setVisible(True); self.stacked.setCurrentIndex(0)
         self.interview_container.setVisible(False)
         self._connect_btn.setEnabled(True); self._connect_btn.setText(self.t("start_btn"))
@@ -599,7 +681,6 @@ class MainWindow(QMainWindow):
                 ch   = md.get("channels", _MIXER_CHANNELS)
                 bits = md.get("bits_per_sample", 16)
                 self._ensure_audio_format(sr, ch, bits)
-                # Mettre à jour la durée max dès réception du header de la question
                 if mt == "question":
                     max_dur = md.get("max_duration", 90)
                     self.interview_widget.set_max_recording_seconds(max_dur)
@@ -622,13 +703,25 @@ class MainWindow(QMainWindow):
 
         if mt == "answer_saved":
             self.statusBar().showMessage(self.t("answer_saved"))
-            self.video_player.set_idle(); self.status_chip.set_state("connected")
+            self.video_player.set_idle(); self.status_chip.set_state("connected"); return
+
+        # ── NOUVEAU — affichage métriques faciales ────────────────────────────
+        if mt == "answer_evaluated":
+            facial = md.get("facial")
+            if facial and facial.get("frames_with_face", 0) > 0:
+                msg = self.t(
+                    "facial_score",
+                    c=facial.get("confidence_score", 0),
+                    s=facial.get("stress_score", 0),
+                    e=int(facial.get("eye_contact_ratio", 0) * 100),
+                )
+                self.statusBar().showMessage(f"✓ {self.t('answer_saved')} | {msg}")
+            return
 
     def _finalize_msg(self, mt, md):
         if mt == "welcome":
             self._on_session_started(md)
         elif mt == "welcome_back":
-            # Reconnexion : session déjà in_progress
             self.is_connecting = False
             self.status_chip.lbl_main.setText(self.t("status_connected"))
             self.status_chip.lbl_detail.setText(self.t("vocal_mode_active"))
@@ -637,13 +730,11 @@ class MainWindow(QMainWindow):
             if not self.audio_recorder:
                 self.audio_recorder = AudioRecorder()
                 self.audio_recorder.audio_chunk_ready.connect(self._on_audio_chunk)
-            # Mettre à jour la barre de progression avec la question courante
             idx = md.get("current_question_index", 0)
             total = md.get("total_questions", 0)
             if total > 0:
                 self.interview_widget.update_question({
-                    "current":    idx + 1,
-                    "total":      total,
+                    "current": idx + 1, "total": total,
                     "percentage": int((idx + 1) / total * 100),
                 })
             self.video_player.set_speaking()
@@ -656,12 +747,14 @@ class MainWindow(QMainWindow):
             self.video_player.set_speaking()
             self.statusBar().showMessage(self.t("question_status"))
         elif mt == "interview_completed":
+            # ── Arrêter la capture vidéo à la fin de l'entretien ─────────────
+            if self._video_collector and self._video_collector.is_capturing:
+                self._video_collector.stop_capture()
             self._show_info(self.t("interview_complete"), self.t("thanks_message"))
             self.statusBar().showMessage("✓ Terminé")
             self._reset_audio_state(); self._reset_ui_for_new_session()
 
     def _on_session_started(self, md):
-        """Initialise l'UI lors de la première connexion (welcome)."""
         self.is_connecting = False
         self.status_chip.lbl_main.setText(self.t("status_connected"))
         self.status_chip.lbl_detail.setText(self.t("vocal_mode_active"))
@@ -681,15 +774,12 @@ class MainWindow(QMainWindow):
             self._cleanup_tmp_file()
             tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
             self._tmp_audio_path = tmp.name; tmp.close()
-
             sr   = self._audio_sample_rate if self._audio_sample_rate > 0 else _MIXER_FREQUENCY
             ch   = self._audio_channels    if self._audio_channels    > 0 else _MIXER_CHANNELS
             bits = self._audio_bits        if self._audio_bits        > 0 else 16
-
             with wave.open(self._tmp_audio_path, "wb") as wf:
                 wf.setnchannels(ch); wf.setsampwidth(bits // 8)
                 wf.setframerate(sr); wf.writeframes(pcm)
-
             bps = sr * ch * (bits // 8)
             self._audio_min_duration = max((len(pcm) / bps * 1000) if bps > 0 else 3000, 800) * 0.9
             self._audio_play_start   = time.monotonic() * 1000
@@ -726,16 +816,49 @@ class MainWindow(QMainWindow):
                 self._play_pcm(audio[di + 8:]); return
         self._play_pcm(audio)
 
+    # ── Enregistrement audio + capture vidéo ─────────────────────────────────
+
     def _on_start_recording(self):
+        """
+        Déclenché quand le candidat commence à répondre.
+        Lance l'enregistrement audio ET la capture vidéo simultanément.
+        """
         if self.audio_recorder:
-            self.audio_recorder.start_recording(); self.video_player.set_listening()
+            self.audio_recorder.start_recording()
+            self.video_player.set_listening()
             self.statusBar().showMessage("● Enregistrement…")
 
+        # ── NOUVEAU — démarrer la capture caméra ──────────────────────────────
+        if (
+            self._video_collector
+            and self._facial_enabled
+            and self._camera_available
+            and not self._video_collector.is_capturing
+        ):
+            ok = self._video_collector.start_capture()
+            if ok:
+                logger.info("Capture vidéo démarrée pour analyse faciale")
+            else:
+                logger.warning("Impossible de démarrer la capture vidéo")
+
     def _on_stop_recording(self):
+        """
+        Déclenché quand le candidat arrête de répondre.
+        Arrête l'enregistrement audio ET la capture vidéo.
+        Le serveur analysera les frames collectés après réception de answer_complete.
+        """
         if self.audio_recorder:
             self.audio_recorder.stop_recording()
-            if self.websocket_client: self.websocket_client.send_message({"type": "answer_complete"})
-            self.video_player.set_idle(); self.interview_widget.enable_recording(False)
+
+        # ── NOUVEAU — arrêter la capture vidéo ───────────────────────────────
+        if self._video_collector and self._video_collector.is_capturing:
+            self._video_collector.stop_capture()
+            logger.info("Capture vidéo arrêtée")
+
+        if self.websocket_client:
+            self.websocket_client.send_message({"type": "answer_complete"})
+        self.video_player.set_idle()
+        self.interview_widget.enable_recording(False)
 
     def _on_audio_chunk(self, audio_data: bytes):
         if self.websocket_client:
@@ -748,6 +871,9 @@ class MainWindow(QMainWindow):
         r = QMessageBox.question(self, self.t("end_title"), self.t("end_confirm"),
                                  QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
         if r == QMessageBox.StandardButton.Yes and self.websocket_client:
+            # Arrêter la caméra avant de terminer
+            if self._video_collector and self._video_collector.is_capturing:
+                self._video_collector.stop_capture()
             self.websocket_client.send_message({"type": "end_interview"})
 
     def _handle_conn_failure(self, msg: str):
@@ -777,6 +903,10 @@ class MainWindow(QMainWindow):
         b.setWindowTitle(title); b.setText(msg); b.exec()
 
     def closeEvent(self, event):
+        # ── NOUVEAU — nettoyage VideoFrameCollector ───────────────────────────
+        if self._video_collector:
+            self._video_collector.cleanup()
+
         if self.websocket_client:
             try:
                 self.websocket_client.disconnected.disconnect()

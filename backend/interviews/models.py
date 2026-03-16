@@ -5,7 +5,6 @@ from datetime import datetime, timedelta
 # ============ Question Models ============
 
 class Question(BaseModel):
-    """Modèle pour une question d'entretien"""
     order: int
     question_ar: str
     question_en: str
@@ -52,6 +51,65 @@ class JobPosition(JobPositionBase):
 
     model_config = {"populate_by_name": True}
 
+# ════════════════════════════════════════════════════════════════
+# NOUVEAU — Analyse faciale embarquée dans chaque évaluation
+# ════════════════════════════════════════════════════════════════
+
+class FacialAnalysisData(BaseModel):
+    """
+    Métriques du langage corporel facial pour une réponse.
+    Persistées dans MongoDB : answers[n].evaluation.facial_analysis
+
+    Collecte : client envoie les frames JPEG pendant l'enregistrement
+    Analyse  : serveur DeepFace (GPU) + MediaPipe (CPU) après answer_complete
+    """
+
+    # ── Émotions ────────────────────────────────────────────────────────────
+    dominant_emotion: str = "neutral"
+    # 7 émotions FACS — valeurs 0–100 (moyennées sur tous les frames)
+    emotion_scores: dict = Field(
+        default_factory=dict,
+        description="Clés : angry|disgust|fear|happy|sad|surprise|neutral"
+    )
+
+    # ── Comportement non-verbal ──────────────────────────────────────────────
+    eye_contact_ratio: float = Field(
+        default=0.0, ge=0.0, le=1.0,
+        description="% du temps regard vers la caméra (0–1)"
+    )
+    head_stability: float = Field(
+        default=1.0, ge=0.0, le=1.0,
+        description="Stabilité de la posture (1=immobile, 0=très agité)"
+    )
+    smile_ratio: float = Field(
+        default=0.0, ge=0.0, le=1.0,
+        description="% du temps souriant (0–1)"
+    )
+
+    # ── Scores synthétiques (/10) ────────────────────────────────────────────
+    confidence_score: float = Field(
+        default=5.0, ge=0.0, le=10.0,
+        description="Score de confiance visuelle calculé /10"
+    )
+    stress_score: float = Field(
+        default=5.0, ge=0.0, le=10.0,
+        description="Score de stress apparent /10"
+    )
+    engagement_score: float = Field(
+        default=5.0, ge=0.0, le=10.0,
+        description="Score d'engagement (contact visuel + expressivité) /10"
+    )
+
+    # ── Méta ────────────────────────────────────────────────────────────────
+    frames_analyzed: int = 0
+    frames_with_face: int = 0
+    face_detection_rate: float = Field(
+        default=0.0, ge=0.0, le=1.0,
+        description="Taux de frames avec visage détecté (qualité de la capture)"
+    )
+
+# ════════════════════════════════════════════════════════════════
+
 # ============ Answer Evaluation (embedded in Answer) ============
 
 class AnswerEvaluationData(BaseModel):
@@ -84,6 +142,10 @@ class AnswerEvaluationData(BaseModel):
     initial_verdict: Optional[str] = None
     followup_question: Optional[str] = None
     followup_transcript: Optional[str] = None
+
+    # ── NOUVEAU — Analyse faciale ──────────────────────────────────────────
+    facial_analysis: Optional[FacialAnalysisData] = None
+    # None si l'analyse faciale est désactivée ou si la caméra était inaccessible
 
 # ============ Answer Models ============
 
@@ -154,6 +216,8 @@ class AnswerWithEvalResponse(BaseModel):
     initial_verdict: Optional[str] = None
     followup_question: Optional[str] = None
     followup_transcript: Optional[str] = None
+    # NOUVEAU
+    facial_analysis: Optional[FacialAnalysisData] = None
 
     @classmethod
     def from_answer(cls, answer: Answer) -> "AnswerWithEvalResponse":
@@ -178,13 +242,14 @@ class AnswerWithEvalResponse(BaseModel):
             initial_verdict=ev.initial_verdict if ev else None,
             followup_question=ev.followup_question if ev else None,
             followup_transcript=ev.followup_transcript if ev else None,
+            facial_analysis=ev.facial_analysis if ev else None,
         )
 
 class AnswersSummaryResponse(BaseModel):
     session_id: str
     total_answers: int
     evaluated_count: int
-    average_score: Optional[float] = None          # moyenne pondérée
+    average_score: Optional[float] = None
     answers: List[AnswerWithEvalResponse] = []
 
 # ============ WebSocket Messages ============

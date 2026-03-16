@@ -1,6 +1,6 @@
 # ═══════════════════════════════════════════════════════════════
-# SPARKHIRE AI — requirements.txt (Backend)
-# Python 3.10 or 3.11 | pip install -r requirements.txt
+# SPARKHIRE AI — requirements.txt (Backend stable)
+# Python 3.10 / 3.11
 # ═══════════════════════════════════════════════════════════════
 
 # ── API Framework ────────────────────────────────────────────────
@@ -10,7 +10,7 @@ pydantic==2.9.0
 pydantic-settings==2.6.0
 python-multipart==0.0.9
 httpx==0.27.2
-aiofiles==24.1.0
+aiofiles==23.2.1
 
 # ── Auth ─────────────────────────────────────────────────────────
 python-jose[cryptography]==3.3.0
@@ -25,62 +25,31 @@ python-dotenv==1.0.1
 # ── WebSocket ────────────────────────────────────────────────────
 websockets==13.0.1
 
-# ── ASR — Whisper GPU ────────────────────────────────────────────
+# ── ASR Whisper GPU ──────────────────────────────────────────────
 ctranslate2==4.4.0
 faster-whisper==1.0.3
-
-# ── cuDNN 8 — REQUIS pour Whisper GPU sur Windows ────────────────
-# Fournit cudnn_ops_infer64_8.dll requis par ctranslate2==4.4.0
-# Installer avec : pip install nvidia-cudnn-cu12==8.9.7.29
 nvidia-cudnn-cu12==8.9.7.29
 
-# ── ASR — Vosk (fallback hors-ligne) ─────────────────────────────
+# ── ASR fallback ─────────────────────────────────────────────────
 vosk==0.3.45
 
-# ── GPU — PyTorch CUDA ───────────────────────────────────────────
-# IMPORTANT : installer manuellement avec la bonne version CUDA :
-#   CUDA 12.x → pip install torch --index-url https://download.pytorch.org/whl/cu121
-#   CUDA 11.x → pip install torch --index-url https://download.pytorch.org/whl/cu118
-#   CPU only  → pip install torch
+# ── GPU PyTorch ──────────────────────────────────────────────────
 torch
 
-# ── TTS — Edge-TTS (Microsoft, moteur principal) ─────────────────
+# ── TTS ──────────────────────────────────────────────────────────
 edge-tts==6.1.12
-
-# ── TTS — gTTS (Google, fallback automatique) ────────────────────
 gTTS==2.5.3
 
-# ── Audio Processing ─────────────────────────────────────────────
-pyaudio==0.2.14
+# ── Audio ────────────────────────────────────────────────────────
 soundfile==0.12.1
 scipy==1.14.1
 numpy==1.26.4
 pydub==0.25.1
 
-# ── Video / Avatar ────────────────────────────────────────────────
+# ── Video ────────────────────────────────────────────────────────
 opencv-python==4.10.0.84
-pillow==10.4.0
+pillow==10.2.0
 
-# ── Utilitaires ──────────────────────────────────────────────────
+# ── Utils ────────────────────────────────────────────────────────
 python-dateutil==2.9.0
 pytz==2024.2
-
-# ═══════════════════════════════════════════════════════════════
-# INSTALLATION COMPLÈTE (dans l'ordre recommandé) :
-#
-#   1. pip install torch --index-url https://download.pytorch.org/whl/cu121
-#   2. pip install -r requirements.txt
-#
-# VÉRIFICATION GPU :
-#   python -c "import torch; print(torch.cuda.is_available())"
-#   python -c "import ctranslate2; print(ctranslate2.get_supported_compute_types('cuda'))"
-#
-# .env GPU (recommandé RTX 4050+) :
-#   WHISPER_DEVICE=cuda
-#   WHISPER_COMPUTE_TYPE=float16
-#   OLLAMA_TIMEOUT=120.0
-#
-# .env CPU :
-#   WHISPER_DEVICE=cpu
-#   WHISPER_COMPUTE_TYPE=int8
-# ═══════════════════════════════════════════════════════════════

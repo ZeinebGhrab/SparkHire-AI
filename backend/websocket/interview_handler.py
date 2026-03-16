@@ -1,8 +1,16 @@
 """
 Handler WebSocket — AUDIO PCM PUR EN CHUNKS — MULTILINGUE AR/FR/EN
-Pipeline : Voix → Whisper (ASR) → Llama 3 (LLM) → Score / Feedback
-          → Question de suivi si score < 8
-          → Notification recruteur UNE SEULE FOIS via crud.update_status()
++ ANALYSE LANGAGE CORPOREL FACIAL (DeepFace GPU + MediaPipe)
+
+Pipeline enrichi :
+  Voix → Whisper (ASR) → Llama 3 (LLM) → Score / Feedback
+  Vidéo → DeepFace (GPU) + MediaPipe → FacialMetrics → injectées dans LLM
+
+Nouveaux messages WebSocket (client → serveur) :
+  {"type": "video_frame", "data": {"frame": "<base64 JPEG>", "question_order": N}}
+
+Nouveaux messages WebSocket (serveur → client) :
+  answer_evaluated.data.facial : {...} si analyse faciale disponible
 """
 
 import logging, base64, io, wave, struct, asyncio
@@ -14,7 +22,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 from backend.config import settings
 from backend.database import db as mongo_db
 from backend.interviews.crud import InterviewSessionCRUD, JobPositionCRUD
-from backend.interviews.models import Answer, AnswerEvaluationData
+from backend.interviews.models import Answer, AnswerEvaluationData, FacialAnalysisData
 from backend.websocket.connection_manager import manager
 
 logger = logging.getLogger(__name__)
@@ -23,9 +31,10 @@ _asr_service    = None
 _tts_service    = None
 _avatar_service = None
 
-_tts_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="tts-worker")
-_llm_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="llm-worker")
-_asr_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="asr-worker")
+_tts_executor    = ThreadPoolExecutor(max_workers=1, thread_name_prefix="tts-worker")
+_llm_executor    = ThreadPoolExecutor(max_workers=2, thread_name_prefix="llm-worker")
+_asr_executor    = ThreadPoolExecutor(max_workers=2, thread_name_prefix="asr-worker")
+_facial_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="facial-worker")
 
 _WS_CLOSE_REASON_MAX_BYTES = 123
 AUDIO_CHUNK_SIZE = 64 * 1024
@@ -95,6 +104,12 @@ class InterviewHandler:
             preferred_language if preferred_language in SUPPORTED_LANGUAGES else ""
         )
         self._prefetched_audio: Optional[bytes] = None
+
+        # ── Analyse faciale ───────────────────────────────────────────────────
+        # Frames collectés pendant l'enregistrement de la question courante
+        # Liste de chaînes base64 (JPEG) → analysées après answer_complete
+        self._facial_frames: list[str] = []
+        self._facial_enabled: bool = getattr(settings, "FACIAL_ANALYSIS_ENABLED", True)
 
     @property
     def lang(self) -> str:
@@ -215,12 +230,11 @@ class InterviewHandler:
             await asyncio.sleep(0.2)
             self._check_connected()
 
-            # ── Reconnexion (session déjà en cours) vs premier accès ──────────
             is_reconnection = (self.session.status == "in_progress")
 
             if is_reconnection:
                 logger.info(
-                    f"Reconnexion détectée | Q{self.session.current_question_index + 1}"
+                    f"Reconnexion | Q{self.session.current_question_index + 1}"
                     f"/{len(self.position.questions)} | session={self.session_id}"
                 )
                 await self._send_welcome_back()
@@ -244,7 +258,6 @@ class InterviewHandler:
                     next_q    = self.position.questions[next_idx]
                     next_text = next_q.get_text(self.lang)
                     next_tts_task = asyncio.create_task(self._synthesize_bytes(next_text))
-                    logger.info(f"Prefetch TTS Q{next_idx + 1} lancé")
 
                 await self._wait_for_answer()
 
@@ -261,7 +274,7 @@ class InterviewHandler:
                         try:
                             prefetched = await asyncio.wait_for(next_tts_task, timeout=30.0)
                             self._prefetched_audio = prefetched
-                        except (asyncio.TimeoutError, asyncio.CancelledError, Exception) as e:
+                        except Exception as e:
                             logger.warning(f"Prefetch TTS échoué: {e}")
                             self._prefetched_audio = None
                     self.session = InterviewSessionCRUD.increment_question_index(self.session_id)
@@ -301,11 +314,6 @@ class InterviewHandler:
             except Exception as e:
                 logger.warning(f"Chargement candidat: {e}")
                 self.candidate = None
-            logger.info(
-                f"Session OK: {self.position.title} | "
-                f"{len(self.position.questions)} questions | lang={self.lang!r} | "
-                f"candidat={self.candidate_full_name!r}"
-            )
             return True
         except WebSocketDisconnect:
             raise
@@ -316,11 +324,6 @@ class InterviewHandler:
             return False
 
     async def _send_welcome_back(self):
-        """
-        Message de reprise pour une session déjà in_progress (reconnexion).
-        Indique au candidat à quelle question on reprend, puis enchaîne
-        directement sur la question courante sans attendre audio_finished.
-        """
         idx  = self.session.current_question_index
         text = _get_text(
             "welcome_back", self.lang,
@@ -338,6 +341,7 @@ class InterviewHandler:
             "vocal_only":             True,
             "language":               self.lang,
             "is_reconnection":        True,
+            "facial_analysis_enabled": self._facial_enabled,
         }
         if audio:
             await self._send_audio_chunked(audio, "welcome_back", extra)
@@ -358,6 +362,7 @@ class InterviewHandler:
             "expires_at":      self.session.expires_at.isoformat(),
             "vocal_only":      True,
             "language":        self.lang,
+            "facial_analysis_enabled": self._facial_enabled,
         }
         if audio:
             await self._send_audio_chunked(audio, "welcome", extra)
@@ -397,10 +402,11 @@ class InterviewHandler:
             "language":     self.lang,
         })
 
-    # ── Réponse ───────────────────────────────────────────────────────────────
+    # ── Réponse + collecte vidéo ──────────────────────────────────────────────
 
     async def _wait_for_answer(self):
         self.audio_buffer.clear()
+        self._facial_frames.clear()          # ← NOUVEAU : reset frames par question
         self.is_recording = False
         answer_start_time = None
         self._check_connected()
@@ -408,22 +414,34 @@ class InterviewHandler:
             while True:
                 data = await self.websocket.receive_json()
                 t    = data.get("type")
+
                 if t == "audio_chunk":
                     if not self.is_recording:
                         self.is_recording = True
                         answer_start_time = datetime.utcnow()
                     self.audio_buffer.extend(base64.b64decode(data.get("audio_data", "")))
+
+                elif t == "video_frame":                   # ← NOUVEAU
+                    # Frame JPEG base64 envoyé pendant l'enregistrement
+                    frame_b64 = data.get("data", {}).get("frame", "")
+                    if frame_b64 and self._facial_enabled:
+                        self._facial_frames.append(frame_b64)
+
                 elif t == "answer_complete":
                     break
                 elif t == "end_interview":
                     await self._cancel_interview()
                     raise WebSocketDisconnect(code=1000, reason="Terminé")
+
         except WebSocketDisconnect:
             raise
         except Exception as e:
             raise WebSocketDisconnect(code=1006, reason=str(e)[:100]) from e
+
         if self.audio_buffer:
             await self._process_answer(answer_start_time)
+
+    # ── Traitement de la réponse (audio + facial) ─────────────────────────────
 
     async def _process_answer(self, start_time):
         idx           = self.session.current_question_index
@@ -431,6 +449,7 @@ class InterviewHandler:
         question_text = question.get_text(self.lang)
         duration      = (datetime.utcnow() - start_time).total_seconds() if start_time else 0.0
 
+        # Sauvegarde audio
         audio_path = (
             settings.UPLOAD_DIR / "interviews"
             / f"answer_{self.session_id}_{question.order}.wav"
@@ -439,8 +458,18 @@ class InterviewHandler:
         wav = self._buffer_to_wav(bytes(self.audio_buffer))
         audio_path.write_bytes(wav)
 
-        transcript = await self._transcribe_audio(wav)
-        logger.info(f"Transcription [{self.lang}] Q{question.order}: '{transcript[:80]}'")
+        # ── Transcription (ASR) et analyse faciale en PARALLÈLE ──────────────
+        frames_snapshot = list(self._facial_frames)   # copie pour thread-safety
+
+        asr_coro    = self._transcribe_audio(wav)
+        facial_coro = self._analyze_facial_frames(frames_snapshot)
+
+        transcript, facial_metrics = await asyncio.gather(asr_coro, facial_coro)
+
+        logger.info(
+            f"Transcription [{self.lang}] Q{question.order}: '{transcript[:80]}' | "
+            f"frames={len(frames_snapshot)} facial={'OK' if facial_metrics else 'n/a'}"
+        )
 
         if manager.is_connected(self.session_id):
             await manager.send_json(self.session_id, {
@@ -460,20 +489,49 @@ class InterviewHandler:
             if not await llm.is_available():
                 raise RuntimeError("LLM non disponible")
 
-            initial_eval = await llm.evaluate_with_followup(
-                question=question_text, answer=transcript,
-                language=self.lang, position_title=self.position.title,
-            )
+            # ── Évaluation LLM enrichie avec données faciales ─────────────────
+            if hasattr(llm, "evaluate_with_facial"):
+                initial_eval = await llm.evaluate_with_facial(
+                    question=question_text,
+                    answer=transcript,
+                    language=self.lang,
+                    position_title=self.position.title,
+                    facial_metrics=facial_metrics,
+                )
+            else:
+                # Fallback si la méthode n'est pas encore disponible
+                initial_eval = await llm.evaluate_with_followup(
+                    question=question_text, answer=transcript,
+                    language=self.lang, position_title=self.position.title,
+                )
+
             initial_eval["llm_model"] = llm.model
             initial_eval["evaluated"] = True
 
             needs_followup    = initial_eval.get("needs_followup", False)
             followup_question = initial_eval.get("followup_question", "").strip()
 
+            # Construire FacialAnalysisData pour la persistance MongoDB
+            facial_data: Optional[FacialAnalysisData] = None
+            if facial_metrics and facial_metrics.frames_with_face > 0:
+                facial_data = FacialAnalysisData(
+                    dominant_emotion   = facial_metrics.dominant_emotion,
+                    emotion_scores     = facial_metrics.emotion_scores,
+                    eye_contact_ratio  = facial_metrics.eye_contact_ratio,
+                    head_stability     = facial_metrics.head_stability,
+                    smile_ratio        = facial_metrics.smile_ratio,
+                    confidence_score   = facial_metrics.confidence_score,
+                    stress_score       = facial_metrics.stress_score,
+                    engagement_score   = facial_metrics.engagement_score,
+                    frames_analyzed    = facial_metrics.frames_analyzed,
+                    frames_with_face   = facial_metrics.frames_with_face,
+                    face_detection_rate= facial_metrics.face_detection_rate,
+                )
+
             await self._save_answer_to_db(
                 question=question, transcript=transcript,
                 audio_path=str(audio_path), duration=duration,
-                eval_result=initial_eval,
+                eval_result=initial_eval, facial_data=facial_data,
             )
 
             if manager.is_connected(self.session_id):
@@ -490,6 +548,8 @@ class InterviewHandler:
                         "had_followup":      False,
                         "followup_question": "",
                         "is_initial":        True,
+                        # ── NOUVEAU — données faciales pour l'UI ──────────────
+                        "facial": facial_data.model_dump() if facial_data else None,
                     },
                 })
 
@@ -498,7 +558,8 @@ class InterviewHandler:
                     question=question, question_text=question_text,
                     initial_transcript=transcript, initial_eval=initial_eval,
                     followup_question=followup_question,
-                    audio_path=str(audio_path), duration=duration, llm=llm,
+                    audio_path=str(audio_path), duration=duration,
+                    llm=llm, facial_data=facial_data,
                 )
             return
 
@@ -514,11 +575,71 @@ class InterviewHandler:
             ),
         )
 
+    # ── Analyse faciale asynchrone ────────────────────────────────────────────
+
+    async def _analyze_facial_frames(self, frames_b64: list[str]):
+        """
+        Analyse les frames JPEG collectés pendant l'enregistrement.
+        Tourne dans _facial_executor pour ne pas bloquer le thread asyncio.
+        Retourne FacialMetrics ou None si analyse désactivée / insuffisante.
+        """
+        if not self._facial_enabled or not frames_b64:
+            return None
+
+        loop = asyncio.get_event_loop()
+        try:
+            return await asyncio.wait_for(
+                loop.run_in_executor(
+                    _facial_executor,
+                    lambda: self._run_facial_sync(frames_b64),
+                ),
+                timeout=20.0,   # max 20s pour l'analyse (RTX 4050 : ~5s pour 10 frames)
+            )
+        except asyncio.TimeoutError:
+            logger.warning(f"Analyse faciale timeout ({len(frames_b64)} frames)")
+            return None
+        except Exception as e:
+            logger.error(f"Analyse faciale : {e}")
+            return None
+
+    @staticmethod
+    def _run_facial_sync(frames_b64: list[str]):
+        """
+        Synchrone — exécuté dans ThreadPoolExecutor.
+        Décode les frames JPEG et les passe à FacialAnalysisService.
+        """
+        import numpy as np
+        import cv2
+
+        try:
+            from backend.services.facial_analysis_service import get_facial_service
+            svc = get_facial_service()
+
+            if not svc.is_available:
+                return None
+
+            frame_results = []
+            for b64 in frames_b64:
+                try:
+                    buf   = np.frombuffer(base64.b64decode(b64), np.uint8)
+                    frame = cv2.imdecode(buf, cv2.IMREAD_COLOR)
+                    if frame is not None:
+                        frame_results.append(svc.analyze_frame(frame))
+                except Exception as e:
+                    logger.debug(f"Décodage frame: {e}")
+
+            return svc.compute_metrics(frame_results)
+
+        except Exception as e:
+            logger.error(f"_run_facial_sync: {e}")
+            return None
+
     # ── Question de suivi ─────────────────────────────────────────────────────
 
     async def _conduct_followup(
         self, question, question_text, initial_transcript,
-        initial_eval, followup_question, audio_path, duration, llm,
+        initial_eval, followup_question, audio_path, duration,
+        llm, facial_data=None,
     ):
         if manager.is_connected(self.session_id):
             await manager.send_json(self.session_id, {
@@ -553,7 +674,6 @@ class InterviewHandler:
         fq_audio_path.write_bytes(followup_wav)
         followup_transcript = await self._transcribe_audio(followup_wav)
 
-        # "Passons à la question suivante" — uniquement si ce n'est PAS la dernière question
         is_last_question = (
             self.session.current_question_index + 1 >= len(self.position.questions)
         )
@@ -588,6 +708,7 @@ class InterviewHandler:
             had_followup=True,
             initial_score=initial_score, initial_verdict=initial_verdict,
             followup_question=followup_question, followup_transcript=followup_transcript,
+            facial_analysis=facial_data,    # ← conservation des données faciales
         )
 
         InterviewSessionCRUD.update_answer(
@@ -617,6 +738,7 @@ class InterviewHandler:
                     "followup_transcript": followup_transcript,
                     "had_followup":        True,
                     "score_delta":         round(final_score - initial_score, 1),
+                    "facial":              facial_data.model_dump() if facial_data else None,
                 },
             })
 
@@ -643,6 +765,8 @@ class InterviewHandler:
                         self.is_recording = True
                         start_time        = datetime.utcnow()
                     self.audio_buffer.extend(base64.b64decode(data.get("audio_data", "")))
+                elif t == "video_frame":
+                    pass   # frames de suivi non analysés (déjà assez de données)
                 elif t == "answer_complete":
                     break
                 elif t == "end_interview":
@@ -661,7 +785,10 @@ class InterviewHandler:
         self.audio_buffer.clear()
         return wav, duration
 
-    async def _save_answer_to_db(self, question, transcript, audio_path, duration, eval_result):
+    async def _save_answer_to_db(
+        self, question, transcript, audio_path, duration,
+        eval_result, facial_data: Optional[FacialAnalysisData] = None,
+    ):
         ev = AnswerEvaluationData(
             score=eval_result.get("score", 0.0),
             verdict=eval_result.get("verdict", ""),
@@ -671,6 +798,7 @@ class InterviewHandler:
             llm_model=eval_result.get("llm_model", ""),
             evaluated_at=datetime.utcnow(),
             weight=question.weight,
+            facial_analysis=facial_data,    # ← NOUVEAU
         )
         InterviewSessionCRUD.add_answer(
             self.session_id,
@@ -734,30 +862,22 @@ class InterviewHandler:
                 await manager.send_json(self.session_id, {
                     "type": "global_evaluation",
                     "data": {
-                        # Score
                         "average_score":      result.average_score,
                         "average_score_100":  result.score_100,
-                        # Décision
                         "decision":           result.decision,
                         "decision_label":     result.decision_label,
                         "decision_color":     result.decision_color,
                         "decision_reason":    result.decision_reason,
-                        # Contenu
                         "recommendation":     result.recommendation,
                         "key_strengths":      result.key_strengths,
                         "key_improvements":   result.key_improvements,
                         "summary":            result.summary,
-                        # Contexte
                         "candidate_name":     self.candidate_full_name,
                         "position_title":     self.position.title,
                         "total_questions":    result.total_questions,
                         "answered_questions": result.answered_questions,
                     },
                 })
-                logger.info(
-                    f"Évaluation globale {self.session_id} | "
-                    f"average_score={result.average_score}/10 | decision={result.decision}"
-                )
         except Exception as e:
             logger.error(f"Évaluation globale : {e}", exc_info=True)
 
