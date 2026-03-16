@@ -1,16 +1,12 @@
 """
 Interview Widget — Professional Light UI
-
-Nouvelles fonctionnalités :
-  - Bouton désactivé pendant la lecture audio (activé uniquement quand la question est finie)
-  - Durée max de réponse configurable (défaut 90 s = 1 min 30 s) avec arrêt automatique
-  - Compte à rebours visible pendant l'enregistrement
-  - Info "Durée max : 1 min 30 s" affichée dès le début de l'entretien
+Avec panneau d'analyse faciale post-évaluation.
 """
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QLabel, QProgressBar, QFrame, QGraphicsDropShadowEffect,
+    QScrollArea,
 )
 from PySide6.QtCore import Qt, Signal, QTimer
 from PySide6.QtGui import QFont, QColor, QPainter, QBrush
@@ -19,7 +15,6 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from client.ui.stark_theme import StarkTheme, T
-
 
 # ── i18n ─────────────────────────────────────────────────────────────────────
 
@@ -38,13 +33,20 @@ TEXTS = {
         "end":           "إنهاء المقابلة",
         "recording_left":"{s} ث متبقية",
         "time_up":       "انتهى الوقت — توقف التسجيل تلقائياً",
+        "facial_title":  "تحليل السلوك",
+        "confidence":    "الثقة",
+        "stress":        "التوتر",
+        "contact":       "التواصل",
+        "stability":     "الثبات",
+        "score":         "النتيجة",
+        "verdict":       "الحكم",
     },
     "fr": {
         "section":       "MODE VOCAL",
         "progress":      "Question {c} / {t}",
         "listen_title":  "Écoutez attentivement",
         "listen_sub":    "Les questions sont posées uniquement en audio.\nÉcoutez l'avatar, puis répondez clairement.",
-        "max_duration":  "Durée max de réponse : {m} min {s:02d} s",
+        "max_duration":  "Durée max : {m} min {s:02d} s",
         "waiting":       "En attente de la question…",
         "playing":       "Lecture en cours",
         "ready":         "Prêt à répondre",
@@ -53,6 +55,13 @@ TEXTS = {
         "end":           "Terminer l'entretien",
         "recording_left":"{s} s restantes",
         "time_up":       "Temps écoulé — enregistrement arrêté automatiquement",
+        "facial_title":  "Analyse comportementale",
+        "confidence":    "Confiance",
+        "stress":        "Stress",
+        "contact":       "Contact visuel",
+        "stability":     "Stabilité",
+        "score":         "Score",
+        "verdict":       "Verdict",
     },
     "en": {
         "section":       "VOCAL MODE",
@@ -68,14 +77,39 @@ TEXTS = {
         "end":           "End interview",
         "recording_left":"{s} s left",
         "time_up":       "Time's up — recording stopped automatically",
+        "facial_title":  "Behavioral analysis",
+        "confidence":    "Confidence",
+        "stress":        "Stress",
+        "contact":       "Eye contact",
+        "stability":     "Stability",
+        "score":         "Score",
+        "verdict":       "Verdict",
     },
 }
 
-# Durée max d'enregistrement par défaut (secondes)
 DEFAULT_MAX_RECORDING_SECONDS = 90
 
+_EMOTION_FR = {
+    "happy":   "Détendu",  "neutral": "Neutre",   "surprise": "Surpris",
+    "sad":     "Triste",   "angry":   "Stressé",  "fear":     "Nerveux",
+    "disgust": "Inconfort",
+}
+_EMOTION_EN = {
+    "happy":   "Relaxed",  "neutral": "Neutral",  "surprise": "Surprised",
+    "sad":     "Sad",      "angry":   "Stressed", "fear":     "Nervous",
+    "disgust": "Discomfort",
+}
+_EMOTION_AR = {
+    "happy": "مرتاح", "neutral": "محايد", "surprise": "مندهش",
+    "sad": "حزين", "angry": "متوتر", "fear": "خائف", "disgust": "غير مرتاح",
+}
+_EMOJI = {
+    "happy": "😊", "neutral": "😐", "surprise": "😮",
+    "sad": "😟", "angry": "😠", "fear": "😨", "disgust": "🤢",
+}
 
-# ── Widgets utilitaires ───────────────────────────────────────────────────────
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
 
 class _Dot(QWidget):
     def __init__(self, color: str = T.CYAN_500, parent=None):
@@ -115,7 +149,20 @@ def _sep():
     s.setStyleSheet(f"background: {T.BORDER}; border: none;"); return s
 
 
-# ── InterviewWidget ───────────────────────────────────────────────────────────
+def _mini_bar(color: str) -> QProgressBar:
+    b = QProgressBar()
+    b.setRange(0, 100); b.setValue(0)
+    b.setTextVisible(False); b.setFixedHeight(6)
+    b.setStyleSheet(f"""
+        QProgressBar {{ background: {T.BG_PAGE}; border-radius: 3px; border: none; }}
+        QProgressBar::chunk {{ background: {color}; border-radius: 3px; }}
+    """)
+    return b
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+#  INTERVIEW WIDGET
+# ═════════════════════════════════════════════════════════════════════════════
 
 class InterviewWidget(QWidget):
     start_recording = Signal()
@@ -124,11 +171,11 @@ class InterviewWidget(QWidget):
 
     def __init__(self, language: str = "fr", parent=None):
         super().__init__(parent)
-        self._lang                = language
-        self.is_recording         = False
-        self._max_recording_secs  = DEFAULT_MAX_RECORDING_SECONDS
-        self._remaining_secs      = DEFAULT_MAX_RECORDING_SECONDS
-        self._countdown_timer     = QTimer(self)
+        self._lang               = language
+        self.is_recording        = False
+        self._max_recording_secs = DEFAULT_MAX_RECORDING_SECONDS
+        self._remaining_secs     = DEFAULT_MAX_RECORDING_SECONDS
+        self._countdown_timer    = QTimer(self)
         self._countdown_timer.setInterval(1000)
         self._countdown_timer.timeout.connect(self._on_countdown_tick)
 
@@ -142,6 +189,7 @@ class InterviewWidget(QWidget):
         root.addWidget(self._make_header_badge())
         root.addWidget(self._make_progress_card())
         root.addWidget(self._make_instruction_card())
+        root.addWidget(self._make_facial_card())
         root.addStretch()
         self.record_btn = self._make_record_btn()
         root.addWidget(self.record_btn)
@@ -164,6 +212,7 @@ class InterviewWidget(QWidget):
         self._update_max_duration_label()
         self.record_btn.setText(self.t("stop") if self.is_recording else self.t("start"))
         self.end_btn.setText(self.t("end"))
+        self._facial_title_lbl.setText(self.t("facial_title"))
         self._set_status("waiting")
         ltr = Qt.LayoutDirection.RightToLeft if self._lang == "ar" else Qt.LayoutDirection.LeftToRight
         self.setLayoutDirection(ltr)
@@ -173,7 +222,7 @@ class InterviewWidget(QWidget):
         s = self._max_recording_secs % 60
         self._max_dur_lbl.setText(self.t("max_duration", m=m, s=s))
 
-    # ── Build : header badge ──────────────────────────────────────────────────
+    # ── Build header badge ────────────────────────────────────────────────────
 
     def _make_header_badge(self):
         w = QWidget(); h = QHBoxLayout(w)
@@ -183,7 +232,7 @@ class InterviewWidget(QWidget):
         self._sect_lbl.setStyleSheet(f"color: {T.CYAN_600}; letter-spacing: 2px; background: transparent;")
         h.addWidget(self._sect_lbl); h.addStretch(); return w
 
-    # ── Build : progress card ─────────────────────────────────────────────────
+    # ── Build progress card ───────────────────────────────────────────────────
 
     def _make_progress_card(self):
         card = QFrame()
@@ -203,7 +252,7 @@ class InterviewWidget(QWidget):
         self.progress_bar.setStyleSheet(StarkTheme.progress_style())
         lay.addWidget(self.progress_bar); return card
 
-    # ── Build : instruction + status card ────────────────────────────────────
+    # ── Build instruction card ────────────────────────────────────────────────
 
     def _make_instruction_card(self):
         card = QFrame()
@@ -211,7 +260,6 @@ class InterviewWidget(QWidget):
         card.setGraphicsEffect(_sh(20, 4))
         lay = QVBoxLayout(card); lay.setContentsMargins(T.SP_5, T.SP_5, T.SP_5, T.SP_5); lay.setSpacing(T.SP_3)
 
-        # Mic badge
         mic_cont = QFrame(); mic_cont.setFixedSize(50, 50)
         mic_cont.setStyleSheet(f"QFrame {{ background: qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 {T.CYAN_50},stop:1 {T.BLUE_50}); border: 1px solid {T.CYAN_200}; border-radius: 12px; }}")
         mic_inner = QVBoxLayout(mic_cont); mic_inner.setContentsMargins(0,0,0,0); mic_inner.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -227,7 +275,7 @@ class InterviewWidget(QWidget):
         self._inst_sub.setAlignment(Qt.AlignmentFlag.AlignCenter); self._inst_sub.setWordWrap(True)
         lay.addWidget(self._inst_sub)
 
-        # ── Info durée max ────────────────────────────────────────────────────
+        # Badge durée max
         dur_row = QHBoxLayout(); dur_row.setAlignment(Qt.AlignmentFlag.AlignCenter)
         dur_badge = QFrame(); dur_badge.setFixedHeight(28)
         db_lay = QHBoxLayout(dur_badge); db_lay.setContentsMargins(12, 0, 12, 0); db_lay.setSpacing(6)
@@ -239,7 +287,7 @@ class InterviewWidget(QWidget):
         db_lay.addWidget(self._max_dur_lbl)
         dur_badge.setStyleSheet(f"QFrame {{ background: {T.AMBER_50}; border: 1px solid {T.AMBER_100}; border-radius: {T.R_FULL}px; }}")
         dur_row.addWidget(dur_badge); lay.addLayout(dur_row)
-        dur_badge.setVisible(False)   # caché jusqu'à la première question
+        dur_badge.setVisible(False)
         self._dur_badge = dur_badge
 
         lay.addSpacing(T.SP_2)
@@ -252,11 +300,111 @@ class InterviewWidget(QWidget):
         self._pill_lbl = _lbl("", T.FS_SM, bold=True, color=T.TEXT_600)
         p_lay.addWidget(self._pill_lbl); pill_row.addWidget(self._pill); lay.addLayout(pill_row)
 
-        # Compte à rebours (caché par défaut)
+        # Compte à rebours
         self._countdown_lbl = _lbl("", T.FS_SM, bold=True, color=T.RED_600)
         self._countdown_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._countdown_lbl.setVisible(False); lay.addWidget(self._countdown_lbl)
 
+        return card
+
+    # ── Build facial card ─────────────────────────────────────────────────────
+
+    def _make_facial_card(self):
+        """Panneau d'analyse comportementale — affiché après chaque évaluation."""
+        card = QFrame(); card.setObjectName("facialCard")
+        card.setStyleSheet(f"""
+            #facialCard {{
+                background: {T.BG_CARD};
+                border: 1px solid {T.BORDER};
+                border-radius: {T.R_LG}px;
+            }}
+        """)
+        card.setGraphicsEffect(_sh(16, 3))
+        lay = QVBoxLayout(card); lay.setContentsMargins(T.SP_4, T.SP_4, T.SP_4, T.SP_4); lay.setSpacing(T.SP_3)
+
+        # Header
+        hdr = QHBoxLayout()
+        cam_icon = QLabel("📷"); cam_icon.setFont(QFont("Segoe UI Emoji", 14))
+        cam_icon.setStyleSheet("background: transparent;"); hdr.addWidget(cam_icon)
+        self._facial_title_lbl = _lbl("Analyse comportementale", T.FS_SM, bold=True, color=T.TEXT_600)
+        hdr.addWidget(self._facial_title_lbl); hdr.addStretch()
+        self._facial_emotion_lbl = QLabel(""); self._facial_emotion_lbl.setFont(QFont("Segoe UI Emoji", 18))
+        self._facial_emotion_lbl.setStyleSheet("background: transparent;"); hdr.addWidget(self._facial_emotion_lbl)
+        lay.addLayout(hdr)
+
+        lay.addWidget(_sep())
+
+        # Grille 2×2 métriques
+        grid = QHBoxLayout(); grid.setSpacing(T.SP_4)
+
+        left_col = QVBoxLayout(); left_col.setSpacing(T.SP_2)
+        right_col = QVBoxLayout(); right_col.setSpacing(T.SP_2)
+
+        # Confiance
+        c_row = QVBoxLayout(); c_row.setSpacing(2)
+        c_hdr = QHBoxLayout()
+        c_hdr.addWidget(_lbl("Confiance", T.FS_XS, color=T.TEXT_400))
+        self._conf_val = _lbl("—", T.FS_XS, bold=True, color=T.CYAN_600)
+        c_hdr.addStretch(); c_hdr.addWidget(self._conf_val)
+        c_row.addLayout(c_hdr); self._conf_bar = _mini_bar(T.CYAN_500)
+        c_row.addWidget(self._conf_bar); left_col.addLayout(c_row)
+
+        # Stress
+        s_row = QVBoxLayout(); s_row.setSpacing(2)
+        s_hdr = QHBoxLayout()
+        s_hdr.addWidget(_lbl("Stress", T.FS_XS, color=T.TEXT_400))
+        self._stress_val = _lbl("—", T.FS_XS, bold=True, color=T.RED_600)
+        s_hdr.addStretch(); s_hdr.addWidget(self._stress_val)
+        s_row.addLayout(s_hdr); self._stress_bar = _mini_bar(T.RED_500)
+        s_row.addWidget(self._stress_bar); left_col.addLayout(s_row)
+
+        # Contact visuel
+        e_row = QVBoxLayout(); e_row.setSpacing(2)
+        e_hdr = QHBoxLayout()
+        e_hdr.addWidget(_lbl("Contact visuel", T.FS_XS, color=T.TEXT_400))
+        self._contact_val = _lbl("—", T.FS_XS, bold=True, color=T.GREEN_600)
+        e_hdr.addStretch(); e_hdr.addWidget(self._contact_val)
+        e_row.addLayout(e_hdr); self._contact_bar = _mini_bar(T.GREEN_500)
+        e_row.addWidget(self._contact_bar); right_col.addLayout(e_row)
+
+        # Stabilité
+        st_row = QVBoxLayout(); st_row.setSpacing(2)
+        st_hdr = QHBoxLayout()
+        st_hdr.addWidget(_lbl("Stabilité", T.FS_XS, color=T.TEXT_400))
+        self._stab_val = _lbl("—", T.FS_XS, bold=True, color=T.AMBER_500)
+        st_hdr.addStretch(); st_hdr.addWidget(self._stab_val)
+        st_row.addLayout(st_hdr); self._stab_bar = _mini_bar(T.AMBER_500)
+        st_row.addWidget(self._stab_bar); right_col.addLayout(st_row)
+
+        grid.addLayout(left_col); grid.addLayout(right_col)
+        lay.addLayout(grid)
+
+        # Score LLM + verdict
+        score_row = QHBoxLayout(); score_row.setSpacing(T.SP_3)
+        self._score_badge = QFrame(); self._score_badge.setFixedSize(52, 52)
+        self._score_badge.setStyleSheet(f"""
+            QFrame {{ background: {T.CYAN_50}; border: 2px solid {T.CYAN_200};
+                      border-radius: 26px; }}
+        """)
+        sb_lay = QVBoxLayout(self._score_badge); sb_lay.setContentsMargins(0,0,0,0)
+        sb_lay.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._score_lbl = _lbl("—", T.FS_LG, bold=True, color=T.CYAN_700)
+        self._score_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        sb_lay.addWidget(self._score_lbl); score_row.addWidget(self._score_badge)
+
+        verdict_col = QVBoxLayout(); verdict_col.setSpacing(2)
+        self._verdict_lbl = _lbl("En attente d'évaluation", T.FS_SM, bold=True, color=T.TEXT_600)
+        self._verdict_lbl.setWordWrap(True)
+        self._feedback_lbl = _lbl("", T.FS_XS, color=T.TEXT_400)
+        self._feedback_lbl.setWordWrap(True)
+        verdict_col.addWidget(self._verdict_lbl)
+        verdict_col.addWidget(self._feedback_lbl)
+        score_row.addLayout(verdict_col, stretch=1)
+        lay.addLayout(score_row)
+
+        # Caché par défaut — visible après la 1ère évaluation
+        card.setVisible(False)
+        self._facial_card = card
         return card
 
     # ── Buttons ───────────────────────────────────────────────────────────────
@@ -269,7 +417,7 @@ class InterviewWidget(QWidget):
         s = QGraphicsDropShadowEffect(); s.setBlurRadius(22); s.setOffset(0, 6)
         s.setColor(QColor(6, 182, 212, 70)); btn.setGraphicsEffect(s)
         btn.clicked.connect(self._toggle_record)
-        btn.setEnabled(False)   # désactivé par défaut — activé après fin audio
+        btn.setEnabled(False)
         return btn
 
     def _make_end_btn(self):
@@ -279,7 +427,7 @@ class InterviewWidget(QWidget):
         btn.setStyleSheet(StarkTheme.get_button_style("danger"))
         btn.clicked.connect(self.end_interview.emit); return btn
 
-    # ── Logique enregistrement ────────────────────────────────────────────────
+    # ── Enregistrement ────────────────────────────────────────────────────────
 
     def _toggle_record(self):
         if not self.is_recording:
@@ -288,8 +436,8 @@ class InterviewWidget(QWidget):
             self._stop_rec(auto=False)
 
     def _start_rec(self):
-        self.is_recording     = True
-        self._remaining_secs  = self._max_recording_secs
+        self.is_recording    = True
+        self._remaining_secs = self._max_recording_secs
         self.start_recording.emit()
         self._set_recording_style(True)
         self._set_status("recording")
@@ -302,7 +450,7 @@ class InterviewWidget(QWidget):
         self.is_recording = False
         self.stop_recording.emit()
         self._set_recording_style(False)
-        self.record_btn.setEnabled(False)   # désactivé jusqu'à la prochaine question
+        self.record_btn.setEnabled(False)
         self._countdown_lbl.setVisible(False)
         if auto:
             self._set_status("waiting")
@@ -318,47 +466,28 @@ class InterviewWidget(QWidget):
             self._stop_rec(auto=True)
 
     def _update_countdown_label(self):
-        s = self._remaining_secs
-        # Couleur progressive : normal → orange → rouge
-        if s > 30:
-            color = T.TEXT_600
-        elif s > 10:
-            color = T.AMBER_500
-        else:
-            color = T.RED_600
+        s     = self._remaining_secs
+        color = T.TEXT_600 if s > 30 else (T.AMBER_500 if s > 10 else T.RED_600)
         self._countdown_lbl.setText(self.t("recording_left", s=s))
-        self._countdown_lbl.setStyleSheet(
-            f"color: {color}; font-weight: 700; background: transparent;"
-        )
-
-        # Aussi mettre à jour le pill
+        self._countdown_lbl.setStyleSheet(f"color: {color}; font-weight: 700; background: transparent;")
         self._pill_lbl.setText(self.t("recording_left", s=s))
-        self._pill_lbl.setStyleSheet(
-            f"color: {T.RED_600}; font-weight: 600; background: transparent;"
-        )
+        self._pill_lbl.setStyleSheet(f"color: {T.RED_600}; font-weight: 600; background: transparent;")
 
     def _set_recording_style(self, recording: bool):
         if recording:
             self.record_btn.setText(self.t("stop"))
             self.record_btn.setStyleSheet(f"""
                 QPushButton {{
-                    background: {T.RED_50};
-                    color: {T.RED_600};
-                    border: 1px solid #FECACA;
-                    border-radius: {T.R_MD}px;
-                    padding: 12px 28px;
-                    font-size: {T.FS_MD}px;
-                    font-weight: 700;
+                    background: {T.RED_50}; color: {T.RED_600};
+                    border: 1px solid #FECACA; border-radius: {T.R_MD}px;
+                    padding: 12px 28px; font-size: {T.FS_MD}px; font-weight: 700;
                 }}
                 QPushButton:hover {{
                     background: qlineargradient(x1:0,y1:0,x2:1,y2:0,
                         stop:0 {T.RED_500},stop:1 {T.RED_600});
                     color: white; border: none;
                 }}
-                QPushButton:pressed {{
-                    background: {T.RED_700};
-                    padding-top: 13px; padding-bottom: 11px;
-                }}
+                QPushButton:pressed {{ background: {T.RED_700}; padding-top: 13px; padding-bottom: 11px; }}
             """)
             self._dot.set_color(T.RED_500)
         else:
@@ -369,10 +498,10 @@ class InterviewWidget(QWidget):
     # ── Status pill ───────────────────────────────────────────────────────────
 
     _STATUS_CFG = {
-        "waiting"   : (T.TEXT_400,  T.BG_PAGE,   T.BORDER,      T.TEXT_400,  "waiting"),
-        "playing"   : (T.AMBER_500, T.AMBER_50,  T.AMBER_100,   T.AMBER_500, "playing"),
-        "ready"     : (T.GREEN_500, T.GREEN_50,  T.GREEN_100,   T.GREEN_700, "ready"),
-        "recording" : (T.RED_500,   T.RED_50,    T.RED_100,     T.RED_600,   "stop"),
+        "waiting":   (T.TEXT_400,  T.BG_PAGE,  T.BORDER,    T.TEXT_400,  "waiting"),
+        "playing":   (T.AMBER_500, T.AMBER_50, T.AMBER_100, T.AMBER_500, "playing"),
+        "ready":     (T.GREEN_500, T.GREEN_50, T.GREEN_100, T.GREEN_700, "ready"),
+        "recording": (T.RED_500,   T.RED_50,   T.RED_100,   T.RED_600,   "stop"),
     }
 
     def _set_status(self, state: str):
@@ -385,43 +514,33 @@ class InterviewWidget(QWidget):
     # ── API publique ──────────────────────────────────────────────────────────
 
     def set_max_recording_seconds(self, seconds: int):
-        """Met à jour la durée max et l'affichage. Appelé quand la question arrive."""
         self._max_recording_secs = max(10, seconds)
         self._remaining_secs     = self._max_recording_secs
         self._update_max_duration_label()
-        self._dur_badge.setVisible(True)   # afficher dès la première question
+        self._dur_badge.setVisible(True)
 
     def update_question(self, progress: dict):
-        """Appelé dès que la question commence à se charger. Désactive le bouton."""
         c = progress.get("current", 0)
-        t = progress.get("total", 0)
+        t = progress.get("total",   0)
         p = progress.get("percentage", 0)
         self._prog_lbl.setText(self.t("progress", c=c, t=t))
         self._pct_lbl.setText(f"{p} %")
         self.progress_bar.setValue(p)
         self._set_status("playing")
-        # Désactiver immédiatement — réactivé seulement après fin audio
         self.record_btn.setEnabled(False)
         self.record_btn.setText(self.t("start"))
         self.record_btn.setStyleSheet(StarkTheme.get_button_style("primary"))
         self._dot.set_color(T.CYAN_500)
 
     def set_audio_playing(self):
-        """Question en cours de lecture."""
         self._set_status("playing")
         self.record_btn.setEnabled(False)
 
     def set_ready_to_answer(self):
-        """Audio terminé — candidat peut répondre."""
         self._set_status("ready")
 
     def enable_recording(self, enabled: bool):
-        """
-        enabled=True  → audio terminé : démarrage automatique de l'enregistrement.
-        enabled=False → en attente / pendant lecture : bouton désactivé.
-        """
         if enabled:
-            # Démarrage automatique — le candidat peut arrêter quand il veut
             self.record_btn.setEnabled(True)
             self._start_rec()
         else:
@@ -429,3 +548,59 @@ class InterviewWidget(QWidget):
                 self._stop_rec(auto=False)
             self.record_btn.setEnabled(False)
             self._set_status("waiting")
+
+    def show_evaluation(self, eval_data: dict):
+        """
+        Affiche le résultat complet d'une évaluation dans le panneau facial.
+        eval_data contient : score, verdict, feedback + optionnellement facial {...}
+        """
+        score   = eval_data.get("score")
+        verdict = eval_data.get("verdict", "")
+        feedback= eval_data.get("feedback", "")
+        facial  = eval_data.get("facial")
+
+        # Score + verdict (toujours)
+        if score is not None:
+            self._score_lbl.setText(f"{score:.0f}")
+            score_color = T.GREEN_600 if score >= 7 else (T.AMBER_500 if score >= 5 else T.RED_600)
+            badge_bg    = T.GREEN_50  if score >= 7 else (T.AMBER_50  if score >= 5 else T.RED_50)
+            badge_border= T.GREEN_100 if score >= 7 else (T.AMBER_100 if score >= 5 else T.RED_100)
+            self._score_lbl.setStyleSheet(f"color: {score_color}; background: transparent; font-weight: 700;")
+            self._score_badge.setStyleSheet(f"""
+                QFrame {{ background: {badge_bg}; border: 2px solid {badge_border}; border-radius: 26px; }}
+            """)
+        self._verdict_lbl.setText(verdict)
+        self._feedback_lbl.setText(feedback[:120] + "…" if len(feedback) > 120 else feedback)
+
+        # Données faciales (si disponibles)
+        if facial and facial.get("frames_with_face", 0) > 0:
+            conf    = facial.get("confidence_score",  5.0)
+            stress  = facial.get("stress_score",      5.0)
+            contact = facial.get("eye_contact_ratio", 0.0) * 100
+            stab    = facial.get("head_stability",    1.0) * 100
+            emotion = facial.get("dominant_emotion",  "neutral")
+
+            self._conf_bar.setValue(int(conf * 10))
+            self._stress_bar.setValue(int(stress * 10))
+            self._contact_bar.setValue(int(contact))
+            self._stab_bar.setValue(int(stab))
+
+            self._conf_val.setText(f"{conf:.1f}/10")
+            self._stress_val.setText(f"{stress:.1f}/10")
+            self._contact_val.setText(f"{int(contact)}%")
+            self._stab_val.setText(f"{int(stab)}%")
+
+            # Emoji émotion
+            self._facial_emotion_lbl.setText(
+                {"happy":"😊","neutral":"😐","surprise":"😮","sad":"😟",
+                 "angry":"😠","fear":"😨","disgust":"🤢"}.get(emotion, "😐")
+            )
+        else:
+            # Pas de données faciales — afficher uniquement score/verdict
+            self._conf_bar.setValue(0); self._stress_bar.setValue(0)
+            self._contact_bar.setValue(0); self._stab_bar.setValue(0)
+            self._conf_val.setText("—"); self._stress_val.setText("—")
+            self._contact_val.setText("—"); self._stab_val.setText("—")
+            self._facial_emotion_lbl.setText("")
+
+        self._facial_card.setVisible(True)

@@ -264,8 +264,8 @@ class MainWindow(QMainWindow):
             freq, size, ch = pygame.mixer.get_init()
             logger.info(f"pygame mixer OK | frequency={freq} size={size} channels={ch}")
 
+        self._init_video_collector()  # DOIT être avant _setup_ui
         self._setup_ui()
-        self._init_video_collector()
 
     # ── Init VideoFrameCollector ──────────────────────────────────────────────
 
@@ -284,8 +284,7 @@ class MainWindow(QMainWindow):
         )
         self._video_collector.camera_ready.connect(self._on_camera_ready)
         self._video_collector.camera_error.connect(self._on_camera_error)
-
-        # Brancher frame_captured → overlay PiP + WebSocket
+        # Connecter ici — avant _setup_ui, donc disponible pour _build_interview_container
         self._video_collector.frame_captured.connect(self._on_video_frame)
 
         available = self._video_collector.is_camera_available(0)
@@ -527,12 +526,6 @@ class MainWindow(QMainWindow):
         self.video_player = VideoPlayerWidget()
         lay.addWidget(self.video_player, stretch=2)
 
-        # Brancher frame_captured → overlay PiP (le signal WebSocket est dans _on_video_frame)
-        if self._video_collector:
-            self._video_collector.frame_captured.connect(
-                self.video_player.camera_preview.on_frame
-            )
-
         self.interview_widget = InterviewWidget(language=self._language)
         self.interview_widget.setMaximumWidth(460)
         self.interview_widget.start_recording.connect(self._on_start_recording)
@@ -719,8 +712,12 @@ class MainWindow(QMainWindow):
             self.video_player.set_idle(); self.status_chip.set_state("connected"); return
 
         if mt == "answer_evaluated":
+            # Afficher le résultat dans le panneau interview_widget
+            self.interview_widget.show_evaluation(md)
+            # Transmettre les métriques faciales à l'overlay PiP
             facial = md.get("facial")
             if facial and facial.get("frames_with_face", 0) > 0:
+                self.video_player.camera_preview.set_facial_result(facial)
                 msg = self.t(
                     "facial_score",
                     c=facial.get("confidence_score", 0),
