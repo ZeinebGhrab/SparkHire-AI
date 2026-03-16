@@ -1,6 +1,11 @@
 """
-Service d'évaluation : orchestre le pipeline
+Service d'évaluation — orchestre le pipeline
 Audio → Whisper (ASR) → Ollama/Llama3 (LLM) → Score + Feedback
+
+Moyenne pondérée :
+  weighted_avg = Σ(score_i × weight_i) / Σ(weight_i)
+  Le weight est copié depuis Question.weight dans chaque AnswerEvaluationData
+  et AnswerEvaluation afin d'être auto-portant dans MongoDB.
 """
 
 import asyncio
@@ -20,20 +25,23 @@ from bson import ObjectId
 logger = logging.getLogger(__name__)
 
 
+def _weighted_avg(scores_weights: list[tuple[float, float]]) -> float:
+    """Calcule la moyenne pondérée. Retourne 0.0 si la liste est vide."""
+    if not scores_weights:
+        return 0.0
+    total_w = sum(w for _, w in scores_weights)
+    if total_w == 0:
+        return 0.0
+    return round(sum(s * w for s, w in scores_weights) / total_w, 2)
+
+
 class EvaluationService:
-    """
-    Orchestre le pipeline d'évaluation complet :
-    1. (optionnel) Re-transcription Whisper si transcript vide
-    2. Évaluation LLM par réponse
-    3. Synthèse globale LLM
-    4. Persistance en base
-    """
 
     def __init__(self, llm_service: OllamaLLMService, asr_service=None):
         self.llm = llm_service
         self.asr = asr_service
 
-    # ── Évaluation réponse par réponse (appelée en temps réel) ────────────
+    # ── Évaluation réponse par réponse ────────────────────────────────────
 
     async def evaluate_single_answer(
         self,
@@ -43,20 +51,13 @@ class EvaluationService:
         language: str = "fr",
         position_title: str = "",
         audio_path: Optional[str] = None,
+        weight: float = 1.0,
     ) -> AnswerEvaluation:
-        """
-        Évalue une seule réponse juste après qu'elle a été enregistrée.
-        Si le transcript est vide ET qu'un fichier audio existe, tente
-        une re-transcription Whisper.
-        """
         transcript = answer_transcript.strip()
-
-        # Retry Whisper si transcript vide et audio disponible
         if not transcript and audio_path and self.asr:
             transcript = await self._retranscribe(audio_path, language)
             logger.info(f"Re-transcription Whisper Q{question_order}: '{transcript}'")
 
-        # Évaluation LLM
         eval_result = await self.llm.evaluate_answer(
             question=question_text,
             answer=transcript,
@@ -69,6 +70,7 @@ class EvaluationService:
             question_text=question_text,
             transcript=transcript,
             evaluated_at=datetime.utcnow(),
+            weight=weight,
             **{k: eval_result[k] for k in
                ("score", "verdict", "strengths", "improvements",
                 "feedback", "llm_model", "evaluated")},
@@ -81,48 +83,43 @@ class EvaluationService:
         session_id: str,
         language: Optional[str] = None,
     ) -> Optional[GlobalEvaluation]:
-        """
-        Évalue toutes les réponses d'une session terminée, puis
-        génère un résumé global. Persiste le résultat en base.
-        """
-        # Charger la session
+        # ── Charger les données ────────────────────────────────────────────
         session = db.interview_sessions.find_one({"session_id": session_id})
         if not session:
             logger.error(f"Session introuvable : {session_id}")
             return None
 
-        # Charger le poste
-        position = db.job_positions.find_one(
-            {"_id": ObjectId(session["job_position_id"])}
-        )
+        position = db.job_positions.find_one({"_id": ObjectId(session["job_position_id"])})
         if not position:
             logger.error(f"Poste introuvable pour session {session_id}")
             return None
 
-        # Charger le candidat
-        candidate = db.candidates.find_one(
-            {"_id": ObjectId(session["candidate_id"])}
-        )
+        candidate = db.candidates.find_one({"_id": ObjectId(session["candidate_id"])})
         candidate_name = (
             f"{candidate.get('first_name', '')} {candidate.get('last_name', '')}".strip()
             if candidate else "Candidat"
         )
 
-        lang = language or session.get("language", "fr")
+        lang    = language or session.get("language", "fr")
         answers = session.get("answers", [])
-        questions = {q["order"]: q for q in position.get("questions", [])}
+
+        # Map order → question (avec weight)
+        questions: dict[int, dict] = {
+            q["order"]: q for q in position.get("questions", [])
+        }
 
         logger.info(
             f"Évaluation session {session_id} | "
-            f"{len(answers)} réponses | langue={lang}"
+            f"{len(answers)} réponse(s) | langue={lang}"
         )
 
-        # ── Évaluation par réponse en parallèle ──────────────────────────
+        # ── Évaluation par réponse en parallèle ───────────────────────────
         tasks = []
         for ans in answers:
             q_order = ans.get("question_order", 0)
             q_data  = questions.get(q_order, {})
             q_text  = ans.get("question_text") or self._get_question_text(q_data, lang)
+            weight  = float(q_data.get("weight", 1.0))
 
             tasks.append(
                 self.evaluate_single_answer(
@@ -132,26 +129,31 @@ class EvaluationService:
                     language=lang,
                     position_title=position.get("title", ""),
                     audio_path=ans.get("audio_file_path"),
+                    weight=weight,
                 )
             )
 
         per_answer: list[AnswerEvaluation] = await asyncio.gather(*tasks)
 
-        # ── Résumé global ─────────────────────────────────────────────────
-        avg_score = (
-            sum(a.score for a in per_answer) / len(per_answer)
-            if per_answer else 0.0
+        # ── Moyenne pondérée ───────────────────────────────────────────────
+        avg_score = _weighted_avg([(a.score, a.weight) for a in per_answer])
+
+        logger.info(
+            "Scores : "
+            + ", ".join(f"Q{a.question_order}={a.score}/10 (×{a.weight})" for a in per_answer)
+            + f" → weighted_avg={avg_score}/10"
         )
 
+        # ── Résumé global LLM ─────────────────────────────────────────────
         global_raw = await self.llm.generate_global_summary(
             answers_eval=[a.model_dump() for a in per_answer],
             position_title=position.get("title", ""),
             candidate_name=candidate_name,
             language=lang,
+            weighted_avg=avg_score,
         )
 
-        final_score = global_raw.get("global_score", avg_score)
-        decision    = compute_decision(final_score)
+        decision = compute_decision(avg_score)
 
         evaluation = GlobalEvaluation(
             session_id=session_id,
@@ -160,8 +162,7 @@ class EvaluationService:
             language=lang,
             total_questions=len(position.get("questions", [])),
             answered_questions=len(answers),
-            average_score=round(avg_score, 2),
-            global_score=final_score,
+            average_score=avg_score,
             global_verdict=global_raw.get("global_verdict", ""),
             recommendation=global_raw.get("recommendation", ""),
             decision=decision,
@@ -175,26 +176,104 @@ class EvaluationService:
             llm_model=self.llm.model,
         )
 
-        # ── Persistance ───────────────────────────────────────────────────
+        evaluation = self._fill_missing_fields(evaluation, per_answer, lang)
         self._save_evaluation(session_id, evaluation)
+
         logger.info(
-            f"✅ Évaluation terminée {session_id} | "
-            f"score={evaluation.global_score}/10 | "
-            f"verdict={evaluation.global_verdict}"
+            f"Evaluation done {session_id} | "
+            f"weighted_avg={avg_score}/10 | "
+            f"decision={evaluation.decision} | "
+            f"recommendation={evaluation.recommendation!r}"
         )
         return evaluation
+
+    # ── Garantie de complétude ────────────────────────────────────────────
+
+    def _fill_missing_fields(
+        self,
+        ev: GlobalEvaluation,
+        per_answer: list[AnswerEvaluation],
+        lang: str,
+    ) -> GlobalEvaluation:
+        from backend.services.llm_service import OllamaLLMService
+        score = ev.average_score
+
+        if not ev.global_verdict:
+            ev = ev.model_copy(update={"global_verdict": OllamaLLMService._score_to_verdict(score, lang)})
+
+        if not ev.recommendation:
+            if lang == "fr":
+                reco = "Embaucher" if score >= 7 else ("En attente" if score >= 5 else "Refuser")
+            elif lang == "ar":
+                reco = "توظيف" if score >= 7 else ("قيد الانتظار" if score >= 5 else "رفض")
+            else:
+                reco = "Hire" if score >= 7 else ("On Hold" if score >= 5 else "Reject")
+            ev = ev.model_copy(update={"recommendation": reco})
+
+        if not ev.decision_reason:
+            n = len(per_answer)
+            if lang == "fr":
+                reason = (
+                    f"Moyenne pondérée de {score}/10 sur {n} question(s). "
+                    f"Barème : ≥7 = Embaucher, 5–7 = En attente, <5 = Refuser."
+                )
+            elif lang == "ar":
+                reason = f"متوسط مرجح {score}/10 على {n} سؤال."
+            else:
+                reason = (
+                    f"Weighted average {score}/10 across {n} question(s). "
+                    f"Scale: ≥7 = Hire, 5–7 = On Hold, <5 = Reject."
+                )
+            ev = ev.model_copy(update={"decision_reason": reason})
+
+        if not ev.key_strengths:
+            seen, result = set(), []
+            for a in per_answer:
+                for s in a.strengths:
+                    if s and s not in seen:
+                        seen.add(s); result.append(s)
+            ev = ev.model_copy(update={"key_strengths": result[:4]})
+
+        if not ev.key_improvements:
+            seen, result = set(), []
+            for a in per_answer:
+                for imp in a.improvements:
+                    if imp and imp not in seen:
+                        seen.add(imp); result.append(imp)
+            ev = ev.model_copy(update={"key_improvements": result[:4]})
+
+        if not ev.summary:
+            scores_str = ", ".join(
+                f"Q{a.question_order}: {a.score}/10 (×{a.weight})" for a in per_answer
+            )
+            if lang == "fr":
+                summary = (
+                    f"Entretien de {len(per_answer)} question(s) — "
+                    f"moyenne pondérée {score}/10. {scores_str}. "
+                    f"Recommandation : {ev.recommendation}."
+                )
+            elif lang == "ar":
+                summary = f"مقابلة {len(per_answer)} سؤال — متوسط مرجح {score}/10. {scores_str}."
+            else:
+                summary = (
+                    f"{len(per_answer)}-question interview — "
+                    f"weighted average {score}/10. {scores_str}. "
+                    f"Recommendation: {ev.recommendation}."
+                )
+            ev = ev.model_copy(update={"summary": summary})
+
+        return ev
 
     # ── Helpers ───────────────────────────────────────────────────────────
 
     async def _retranscribe(self, audio_path: str, language: str) -> str:
-        """Re-transcription Whisper asynchrone."""
         try:
             path = Path(audio_path)
             if not path.exists():
                 return ""
             audio_bytes = path.read_bytes()
-            loop = asyncio.get_event_loop()
-            transcript = await loop.run_in_executor(
+            loop        = asyncio.get_event_loop()
+            transcript  = await loop.run_in_executor(
                 None,
                 lambda: self.asr.transcribe(audio_bytes, language=language),
             )
@@ -212,7 +291,6 @@ class EvaluationService:
         return q_data.get("question_en", "")
 
     def _save_evaluation(self, session_id: str, evaluation: GlobalEvaluation):
-        """Sauvegarde ou met à jour l'évaluation en base."""
         doc = evaluation.model_dump()
         try:
             db.evaluations.update_one(
@@ -220,16 +298,15 @@ class EvaluationService:
                 {"$set": doc},
                 upsert=True,
             )
-            # Met aussi à jour le score dans la session
             db.interview_sessions.update_one(
                 {"session_id": session_id},
                 {"$set": {
-                    "evaluation_score":          evaluation.global_score,
-                    "evaluation_verdict":        evaluation.global_verdict,
-                    "evaluation_recommendation": evaluation.recommendation,
-                    "evaluation_decision":       evaluation.decision,
-                    "evaluation_decision_label": evaluation.decision_label,
-                    "evaluation_decision_color": evaluation.decision_color,
+                    "evaluation_score":           evaluation.average_score,
+                    "evaluation_verdict":         evaluation.global_verdict,
+                    "evaluation_recommendation":  evaluation.recommendation,
+                    "evaluation_decision":        evaluation.decision,
+                    "evaluation_decision_label":  evaluation.decision_label,
+                    "evaluation_decision_color":  evaluation.decision_color,
                     "evaluation_decision_reason": evaluation.decision_reason,
                 }},
             )

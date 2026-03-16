@@ -12,6 +12,12 @@ class Question(BaseModel):
     question_fr: str = ""
     max_duration_seconds: int = 120
     evaluation_criteria: List[str] = []
+    weight: float = Field(
+        default=1.0,
+        ge=0.1,
+        le=10.0,
+        description="Poids de la question dans la moyenne pondérée (défaut 1.0)",
+    )
 
     def get_text(self, language: str) -> str:
         if language == "ar":
@@ -26,8 +32,8 @@ class Question(BaseModel):
 class JobPositionBase(BaseModel):
     title: str
     department: str
-    location: Optional[str] = None       # Ex: "Tunis", "Sfax", "Remote"
-    is_active: bool = True               # Offre active ou archivée
+    location: Optional[str] = None
+    is_active: bool = True
     questions: List[Question] = []
 
 class JobPositionCreate(JobPositionBase):
@@ -51,44 +57,45 @@ class JobPosition(JobPositionBase):
 class AnswerEvaluationData(BaseModel):
     """
     Évaluation LLM d'une réponse — document embarqué dans Answer.
-    Contient les scores initiaux ET finaux (après question de suivi si applicable).
+
+    Le champ `weight` est copié depuis Question.weight au moment de l'évaluation
+    afin que la moyenne pondérée soit recalculable depuis la session seule,
+    sans rejoindre la collection job_positions.
 
     Structure MongoDB : interview_sessions.answers[n].evaluation
     """
-    score: float = Field(0.0, ge=0, le=10)        # Score final LLM 0-10
-    verdict: str = ""                               # Ex: "Très bien", "Acceptable"
-    feedback: str = ""                              # Commentaire détaillé final
-    strengths: List[str] = []                       # Points forts identifiés
-    improvements: List[str] = []                    # Axes d'amélioration
-    llm_model: str = ""                             # Modèle utilisé (ex: "llama3")
-    evaluated_at: Optional[datetime] = None         # Timestamp d'évaluation
-    # ── Suivi (rempli uniquement si une question de suivi a été posée) ─────────
-    had_followup: bool = False                      # True si une question de suivi a été posée
-    initial_score: Optional[float] = None           # Score avant clarification
-    initial_verdict: Optional[str] = None           # Verdict avant clarification
-    followup_question: Optional[str] = None         # Question de clarification posée par le LLM
-    followup_transcript: Optional[str] = None       # Réponse vocale du candidat au suivi
+    score: float = Field(0.0, ge=0, le=10)
+    verdict: str = ""
+    feedback: str = ""
+    strengths: List[str] = []
+    improvements: List[str] = []
+    llm_model: str = ""
+    evaluated_at: Optional[datetime] = None
+    # ── Poids (copié depuis Question.weight) ───────────────────────────────
+    weight: float = Field(
+        default=1.0,
+        ge=0.1,
+        le=10.0,
+        description="Poids de la question — copié au moment de l'évaluation",
+    )
+    # ── Suivi ──────────────────────────────────────────────────────────────
+    had_followup: bool = False
+    initial_score: Optional[float] = None
+    initial_verdict: Optional[str] = None
+    followup_question: Optional[str] = None
+    followup_transcript: Optional[str] = None
 
 # ============ Answer Models ============
 
 class Answer(BaseModel):
-    """
-    Réponse vocale d'un candidat.
-
-    Pipeline de remplissage :
-      1. WebSocket reçoit l'audio PCM → Whisper → `transcript` sauvegardé en base
-      2. LLM évalue le transcript → `evaluation` sauvegardé dans answers[n].evaluation
-      3. Si score < 8 → question de suivi posée → réponse transcrite et réévaluation finale
-         Les champs followup_* dans evaluation stockent tout le contexte du suivi.
-    """
     question_order: int
     question_text: str
-    transcript: str = ""                        # Transcription Whisper de la réponse principale
-    audio_file_path: Optional[str] = None       # Chemin WAV réponse principale
-    audio_followup_path: Optional[str] = None   # Chemin WAV réponse de suivi
+    transcript: str = ""
+    audio_file_path: Optional[str] = None
+    audio_followup_path: Optional[str] = None
     duration_seconds: float = 0.0
     timestamp: datetime = Field(default_factory=datetime.utcnow)
-    evaluation: Optional[AnswerEvaluationData] = None  # ← Score LLM (rempli en async)
+    evaluation: Optional[AnswerEvaluationData] = None
 
 # ============ Interview Session Models ============
 
@@ -96,7 +103,7 @@ class InterviewSessionBase(BaseModel):
     candidate_id: str
     job_position_id: str
     language: str = "ar"
-    scheduled_at: Optional[datetime] = None   # Date/heure planifiée de l'entretien
+    scheduled_at: Optional[datetime] = None
 
 class InterviewSessionCreate(InterviewSessionBase):
     pass
@@ -112,29 +119,22 @@ class InterviewSession(InterviewSessionBase):
     expires_at: datetime
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
-    # ── Recruteur créateur (pour les notifications) ────────────────────────────
-    created_by: Optional[str] = None             # Email du recruteur ayant créé la session
-    # ── Planification ─────────────────────────────────────────────────────────
-    scheduled_at: Optional[datetime] = None         # Date/heure planifiée
-    late_access_deadline: Optional[datetime] = None  # scheduled_at + 30 min (calculé)
-    # ── Scores agrégés — mis à jour par EvaluationService après l'entretien complet
+    created_by: Optional[str] = None
+    scheduled_at: Optional[datetime] = None
+    late_access_deadline: Optional[datetime] = None
     evaluation_score: Optional[float] = None
     evaluation_verdict: Optional[str] = None
     evaluation_recommendation: Optional[str] = None
-    evaluation_decision: Optional[str] = None        # accepted | pending | rejected
-    evaluation_decision_label: Optional[str] = None  # libellé localisé
-    evaluation_decision_color: Optional[str] = None  # couleur hex
-    evaluation_decision_reason: Optional[str] = None # justification
+    evaluation_decision: Optional[str] = None
+    evaluation_decision_label: Optional[str] = None
+    evaluation_decision_color: Optional[str] = None
+    evaluation_decision_reason: Optional[str] = None
 
     model_config = {"populate_by_name": True}
 
 # ============ API Response Models ============
 
 class AnswerWithEvalResponse(BaseModel):
-    """
-    Réponse enrichie retournée par :
-      GET /interviews/sessions/{session_id}/answers
-    """
     question_order: int
     question_text: str
     transcript: str
@@ -148,12 +148,12 @@ class AnswerWithEvalResponse(BaseModel):
     improvements: List[str] = []
     llm_model: Optional[str] = None
     evaluated_at: Optional[datetime] = None
-    # ── Suivi LLM ──────────────────────────────────────────────────────────────
+    weight: float = 1.0
     had_followup: bool = False
     initial_score: Optional[float] = None
     initial_verdict: Optional[str] = None
-    followup_question: Optional[str] = None      # Question de clarification du LLM
-    followup_transcript: Optional[str] = None    # Réponse vocale du candidat au suivi
+    followup_question: Optional[str] = None
+    followup_transcript: Optional[str] = None
 
     @classmethod
     def from_answer(cls, answer: Answer) -> "AnswerWithEvalResponse":
@@ -172,6 +172,7 @@ class AnswerWithEvalResponse(BaseModel):
             improvements=ev.improvements if ev else [],
             llm_model=ev.llm_model if ev else None,
             evaluated_at=ev.evaluated_at if ev else None,
+            weight=ev.weight if ev else 1.0,
             had_followup=ev.had_followup if ev else False,
             initial_score=ev.initial_score if ev else None,
             initial_verdict=ev.initial_verdict if ev else None,
@@ -180,11 +181,10 @@ class AnswerWithEvalResponse(BaseModel):
         )
 
 class AnswersSummaryResponse(BaseModel):
-    """Résumé des évaluations pour GET /answers/summary"""
     session_id: str
     total_answers: int
     evaluated_count: int
-    average_score: Optional[float] = None
+    average_score: Optional[float] = None          # moyenne pondérée
     answers: List[AnswerWithEvalResponse] = []
 
 # ============ WebSocket Messages ============

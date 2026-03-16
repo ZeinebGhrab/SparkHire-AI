@@ -20,12 +20,15 @@ class AnswerEvaluation(BaseModel):
     llm_model: str = ""
     evaluated: bool = False
     evaluated_at: Optional[datetime] = None
+    weight: float = Field(
+        default=1.0,
+        ge=0.1,
+        le=10.0,
+        description="Poids de la question dans la moyenne pondérée",
+    )
 
 
 # ── Seuils de décision ───────────────────────────────────────────────────────
-# Accepté   : score >= 7.0
-# En attente : 5.0 <= score < 7.0
-# Refusé    : score < 5.0
 
 DECISION_ACCEPTED  = "accepted"
 DECISION_PENDING   = "pending"
@@ -36,7 +39,6 @@ DECISION_THRESHOLD_REJECT = 5.0
 
 
 def compute_decision(score: float) -> str:
-    """Calcule la décision automatique selon le score global /10."""
     if score >= DECISION_THRESHOLD_ACCEPT:
         return DECISION_ACCEPTED
     if score >= DECISION_THRESHOLD_REJECT:
@@ -63,9 +65,9 @@ DECISION_LABELS = {
 }
 
 DECISION_COLORS = {
-    DECISION_ACCEPTED: "#10B981",   # vert
-    DECISION_PENDING:  "#F59E0B",   # ambre
-    DECISION_REJECTED: "#EF4444",   # rouge
+    DECISION_ACCEPTED: "#10B981",
+    DECISION_PENDING:  "#F59E0B",
+    DECISION_REJECTED: "#EF4444",
 }
 
 
@@ -77,16 +79,13 @@ class GlobalEvaluation(BaseModel):
     language: str = "fr"
     total_questions: int
     answered_questions: int
-    average_score: float = 0.0
-    global_score: float = 0.0         # Score LLM final /10
-    global_verdict: str = ""          # Libellé court (ex: "Très bien")
-    recommendation: str = ""          # Texte libre LLM (Embaucher / Refuser / ...)
-    # ── Décision structurée ────────────────────────────────────────────────
-    decision: str = DECISION_PENDING  # "accepted" | "pending" | "rejected"
-    decision_label: str = ""          # Libellé localisé (Accepté / En attente / Refusé)
-    decision_color: str = ""          # Couleur hex pour le frontend
-    decision_reason: str = ""         # Justification courte générée par le LLM
-    # ── Détail ─────────────────────────────────────────────────────────────
+    average_score: float = 0.0          # moyenne pondérée des scores /10
+    global_verdict: str = ""
+    recommendation: str = ""
+    decision: str = DECISION_PENDING
+    decision_label: str = ""
+    decision_color: str = ""
+    decision_reason: str = ""
     key_strengths: List[str] = []
     key_improvements: List[str] = []
     summary: str = ""
@@ -94,30 +93,25 @@ class GlobalEvaluation(BaseModel):
     evaluated_at: datetime = Field(default_factory=datetime.utcnow)
     llm_model: str = ""
 
-    # Score normalisé 0–100
     @property
     def score_100(self) -> float:
-        return round(self.global_score * 10, 1)
+        return round(self.average_score * 10, 1)
 
-    # Couleur verdict (pour le front)
     @property
     def verdict_color(self) -> str:
         return DECISION_COLORS.get(self.decision, "#F59E0B")
 
 
 class EvaluationRequest(BaseModel):
-    """Déclencheur manuel d'évaluation depuis l'API."""
     session_id: str
-    language: Optional[str] = None     # surcharge la langue de la session
+    language: Optional[str] = None
 
 
 class EvaluationSummaryResponse(BaseModel):
-    """Réponse allégée pour le listing."""
     session_id: str
     candidate_name: str
     position_title: str
     average_score: float
-    global_score: float
     global_verdict: str
     recommendation: str
     evaluated_at: datetime
