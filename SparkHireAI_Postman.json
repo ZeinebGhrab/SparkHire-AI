@@ -1,7 +1,7 @@
 {
   "info": {
-    "name": "SparkHire AI — Collection Complète v3 (Poids Questions)",
-    "description": "Collection complète pour tester toutes les routes de SparkHire AI.\n\n**Nouveautés v3 :**\n- `Question.weight` — poids par question (défaut 1.0, min 0.1, max 10.0)\n- `average_score` = moyenne pondérée Σ(score × weight) / Σ(weight)\n- `global_score` supprimé (redondant)\n- Résumé global garanti complet (recommendation, decision_reason, summary, key_strengths, key_improvements)\n\n**Workflow complet :**\n1. Auth → Login → `{{token}}`\n2. Candidates → Create → `{{candidate_id}}`\n3. Positions → Create (avec weights) → `{{position_id}}`\n4. Sessions → Create → `{{session_id}}`\n5. WebSocket ws://localhost:8000/ws/interview/{{session_id}}?lang=fr\n6. Evaluations → Get → rapport complet\n7. Notifications → vérifier la notification automatique",
+    "name": "SparkHire AI — Collection Complète v4",
+    "description": "Collection complète pour tester toutes les routes de SparkHire AI.\n\n**Changelog v4 :**\n- `Question.max_duration_seconds` défaut = 90 s (1 min 30 s)\n- `Question.weight` défaut = 1.0 (moyenne pondérée)\n- `global_verdict` supprimé — remplacé par `average_score` + `decision`\n- Bouton réponse désactivé pendant lecture audio (activé après fin)\n- Compte à rebours 1:30 affiché pendant enregistrement\n- Welcome back si reconnexion sur session in_progress\n- followup_thanks supprimé sur la dernière question\n\n**Workflow :**\n1. Auth → Login\n2. Candidates → Create\n3. Positions → Create (weights + max_duration)\n4. Sessions → Create\n5. WebSocket → Entretien\n6. Evaluations → Get rapport\n7. Notifications → Vérifier",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -19,11 +19,7 @@
       "item": [
         {
           "name": "Health Check",
-          "request": {
-            "method": "GET",
-            "url": "{{base_url}}/health",
-            "description": "Vérifie l'état de tous les services (ASR, TTS, LLM, DB)"
-          }
+          "request": { "method": "GET", "url": "{{base_url}}/health" }
         },
         {
           "name": "Root",
@@ -41,31 +37,21 @@
       "item": [
         {
           "name": "Login",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "const json = pm.response.json();",
-                  "if (json.access_token) {",
-                  "    pm.collectionVariables.set('token', json.access_token);",
-                  "    console.log('Token sauvegardé');",
-                  "}"
-                ]
-              }
-            }
-          ],
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "const j = pm.response.json();",
+              "if (j.access_token) { pm.collectionVariables.set('token', j.access_token); console.log('Token OK'); }"
+            ]}
+          }],
           "request": {
             "method": "POST",
             "url": "{{base_url}}/auth/login",
             "header": [{ "key": "Content-Type", "value": "application/x-www-form-urlencoded" }],
-            "body": {
-              "mode": "urlencoded",
-              "urlencoded": [
-                { "key": "username", "value": "rh@stark.tn" },
-                { "key": "password", "value": "admin123" }
-              ]
-            }
+            "body": { "mode": "urlencoded", "urlencoded": [
+              { "key": "username", "value": "rh@stark.tn" },
+              { "key": "password", "value": "admin123" }
+            ]}
           }
         },
         {
@@ -84,20 +70,13 @@
       "item": [
         {
           "name": "Create Candidate",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "const json = pm.response.json();",
-                  "if (json._id) {",
-                  "    pm.collectionVariables.set('candidate_id', json._id);",
-                  "    console.log('candidate_id:', json._id);",
-                  "}"
-                ]
-              }
-            }
-          ],
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "const j = pm.response.json();",
+              "if (j._id) { pm.collectionVariables.set('candidate_id', j._id); console.log('candidate_id:', j._id); }"
+            ]}
+          }],
           "request": {
             "method": "POST",
             "url": "{{base_url}}/candidates/",
@@ -107,7 +86,8 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"first_name\": \"Ahmed\",\n  \"last_name\": \"Ben Ali\",\n  \"contact\": {\n    \"email\": \"ahmed.benali@example.com\",\n    \"phone\": \"+216 55 123 456\",\n    \"linkedin\": \"https://linkedin.com/in/ahmedbenali\",\n    \"github\": \"https://github.com/ahmedbenali\"\n  },\n  \"technical_skills\": [\n    { \"name\": \"Python\",          \"level\": \"Advanced\",     \"years_experience\": 4 },\n    { \"name\": \"FastAPI\",         \"level\": \"Intermediate\", \"years_experience\": 2 },\n    { \"name\": \"MongoDB\",         \"level\": \"Intermediate\", \"years_experience\": 2 },\n    { \"name\": \"Machine Learning\",\"level\": \"Advanced\",     \"years_experience\": 3 },\n    { \"name\": \"Scikit-learn\",    \"level\": \"Advanced\",     \"years_experience\": 3 },\n    { \"name\": \"TensorFlow\",      \"level\": \"Intermediate\", \"years_experience\": 2 }\n  ],\n  \"experiences\": [\n    {\n      \"title\": \"Data Scientist\",\n      \"company\": \"TechCorp Tunis\",\n      \"location\": \"Tunis\",\n      \"start_date\": \"2022-01\",\n      \"end_date\": null,\n      \"currently_working\": true,\n      \"description\": \"Développement de modèles ML pour la prédiction client\",\n      \"technologies\": [\"Python\", \"Scikit-learn\", \"TensorFlow\"]\n    }\n  ],\n  \"education\": [\n    {\n      \"degree\": \"Ingénieur\",\n      \"field\": \"Data Engineering & Systèmes Décisionnels\",\n      \"institution\": \"ENETCOM Sfax\",\n      \"start_date\": \"2020\",\n      \"end_date\": \"2023\",\n      \"currently_studying\": false\n    }\n  ],\n  \"languages\": [\n    { \"name\": \"Arabic\",  \"level\": \"Native\" },\n    { \"name\": \"French\",  \"level\": \"C1\" },\n    { \"name\": \"English\", \"level\": \"B2\" }\n  ],\n  \"soft_skills\": [\n    { \"name\": \"Teamwork\" },\n    { \"name\": \"Communication\" },\n    { \"name\": \"Problem Solving\" }\n  ],\n  \"certifications\": [\n    {\n      \"name\": \"AWS Certified Developer\",\n      \"issuer\": \"Amazon Web Services\",\n      \"issue_date\": \"2023-06\",\n      \"expiry_date\": \"2026-06\",\n      \"credential_id\": \"AWS-DEV-123456\",\n      \"credential_url\": \"https://aws.amazon.com/verify\"\n    }\n  ]\n}"
+              "raw": "{\n  \"first_name\": \"Ahmed\",\n  \"last_name\": \"Ben Ali\",\n  \"contact\": {\n    \"email\": \"ahmed.benali@example.com\",\n    \"phone\": \"+216 55 123 456\",\n    \"linkedin\": \"https://linkedin.com/in/ahmedbenali\",\n    \"github\": \"https://github.com/ahmedbenali\"\n  },\n  \"technical_skills\": [\n    { \"name\": \"Python\",           \"level\": \"Advanced\",     \"years_experience\": 4 },\n    { \"name\": \"FastAPI\",          \"level\": \"Intermediate\", \"years_experience\": 2 },\n    { \"name\": \"MongoDB\",          \"level\": \"Intermediate\", \"years_experience\": 2 },\n    { \"name\": \"Machine Learning\", \"level\": \"Advanced\",     \"years_experience\": 3 },\n    { \"name\": \"Scikit-learn\",     \"level\": \"Advanced\",     \"years_experience\": 3 },\n    { \"name\": \"TensorFlow\",       \"level\": \"Intermediate\", \"years_experience\": 2 }\n  ],\n  \"experiences\": [\n    {\n      \"title\": \"Data Scientist\",\n      \"company\": \"TechCorp Tunis\",\n      \"location\": \"Tunis\",\n      \"start_date\": \"2022-01\",\n      \"currently_working\": true,\n      \"description\": \"Développement de modèles ML pour la prédiction client\",\n      \"technologies\": [\"Python\", \"Scikit-learn\", \"TensorFlow\"]\n    }\n  ],\n  \"education\": [\n    {\n      \"degree\": \"Ingénieur\",\n      \"field\": \"Data Engineering & Systèmes Décisionnels\",\n      \"institution\": \"ENETCOM Sfax\",\n      \"start_date\": \"2020\",\n      \"end_date\": \"2023\",\n      \"currently_studying\": false\n    }\n  ],\n  \"languages\": [\n    { \"name\": \"Arabic\",  \"level\": \"Native\" },\n    { \"name\": \"French\",  \"level\": \"C1\" },\n    { \"name\": \"English\", \"level\": \"B2\" }\n  ],\n  \"soft_skills\": [\n    { \"name\": \"Teamwork\" },\n    { \"name\": \"Communication\" },\n    { \"name\": \"Problem Solving\" }\n  ],\n  \"certifications\": [\n    {\n      \"name\": \"AWS Certified Developer\",\n      \"issuer\": \"Amazon Web Services\",\n      \"issue_date\": \"2023-06\",\n      \"expiry_date\": \"2026-06\",\n      \"credential_id\": \"AWS-DEV-123456\"\n    }\n  ]\n}",
+              "options": { "raw": { "language": "json" } }
             }
           }
         },
@@ -115,14 +95,9 @@
           "name": "List Candidates",
           "request": {
             "method": "GET",
-            "url": {
-              "raw": "{{base_url}}/candidates/?skip=0&limit=20",
-              "host": ["{{base_url}}"],
-              "path": ["candidates", ""],
-              "query": [
-                { "key": "skip",  "value": "0" },
-                { "key": "limit", "value": "20" }
-              ]
+            "url": { "raw": "{{base_url}}/candidates/?skip=0&limit=20",
+              "host": ["{{base_url}}"], "path": ["candidates",""],
+              "query": [{"key":"skip","value":"0"},{"key":"limit","value":"20"}]
             },
             "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }]
           }
@@ -136,35 +111,6 @@
           }
         },
         {
-          "name": "Search by Email",
-          "request": {
-            "method": "GET",
-            "url": {
-              "raw": "{{base_url}}/candidates/search/email?email=ahmed.benali@example.com",
-              "host": ["{{base_url}}"],
-              "path": ["candidates", "search", "email"],
-              "query": [{ "key": "email", "value": "ahmed.benali@example.com" }]
-            },
-            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }]
-          }
-        },
-        {
-          "name": "Search by Skills",
-          "request": {
-            "method": "GET",
-            "url": {
-              "raw": "{{base_url}}/candidates/search/skills?skills=Python&skills=FastAPI",
-              "host": ["{{base_url}}"],
-              "path": ["candidates", "search", "skills"],
-              "query": [
-                { "key": "skills", "value": "Python" },
-                { "key": "skills", "value": "FastAPI" }
-              ]
-            },
-            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }]
-          }
-        },
-        {
           "name": "Update Candidate (PATCH)",
           "request": {
             "method": "PATCH",
@@ -173,10 +119,7 @@
               { "key": "Authorization", "value": "Bearer {{token}}" },
               { "key": "Content-Type",  "value": "application/json" }
             ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"soft_skills\": [\n    { \"name\": \"Leadership\" },\n    { \"name\": \"Adaptability\" }\n  ]\n}"
-            }
+            "body": { "mode": "raw", "raw": "{\n  \"soft_skills\": [\n    { \"name\": \"Leadership\" },\n    { \"name\": \"Adaptability\" }\n  ]\n}", "options": {"raw":{"language":"json"}}}
           }
         },
         {
@@ -191,28 +134,21 @@
     },
 
     {
-      "name": "03 — Positions (avec poids)",
+      "name": "03 — Positions",
       "item": [
         {
-          "name": "Create Position — Data Scientist (poids variés) ★",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "const json = pm.response.json();",
-                  "if (json._id) {",
-                  "    pm.collectionVariables.set('position_id', json._id);",
-                  "    console.log('position_id:', json._id);",
-                  "    console.log('Questions et poids :');",
-                  "    json.questions.forEach(q => {",
-                  "        console.log('  Q' + q.order + ' (weight=' + q.weight + '): ' + q.question_fr.substring(0,60));",
-                  "    });",
-                  "}"
-                ]
-              }
-            }
-          ],
+          "name": "Create Position — Data Scientist ★ (weights + 90 s défaut)",
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "const j = pm.response.json();",
+              "if (j._id) {",
+              "  pm.collectionVariables.set('position_id', j._id);",
+              "  console.log('position_id:', j._id);",
+              "  j.questions.forEach(q => console.log(`  Q${q.order} weight=${q.weight} max=${q.max_duration_seconds}s : ${q.question_fr.substring(0,50)}`));",
+              "}"
+            ]}
+          }],
           "request": {
             "method": "POST",
             "url": "{{base_url}}/interviews/positions",
@@ -222,25 +158,21 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"title\": \"Data Scientist\",\n  \"department\": \"Tech\",\n  \"location\": \"Sfax\",\n  \"is_active\": true,\n  \"questions\": [\n    {\n      \"order\": 1,\n      \"weight\": 1.0,\n      \"question_ar\": \"أخبرني عن نفسك وعن تجربتك في علم البيانات.\",\n      \"question_fr\": \"Parlez-moi de vous et de votre expérience en data science.\",\n      \"question_en\": \"Tell me about yourself and your data science experience.\",\n      \"max_duration_seconds\": 120,\n      \"evaluation_criteria\": [\"clarté\", \"expérience pertinente\", \"motivation\"]\n    },\n    {\n      \"order\": 2,\n      \"weight\": 2.0,\n      \"question_ar\": \"ما هي أدوات تعلم الآلة التي استخدمتها؟ أعطني مثالاً.\",\n      \"question_fr\": \"Quels outils de machine learning avez-vous utilisés ? Donnez un exemple concret.\",\n      \"question_en\": \"What machine learning tools have you used? Give a concrete example.\",\n      \"max_duration_seconds\": 150,\n      \"evaluation_criteria\": [\"maîtrise technique\", \"exemples concrets\", \"profondeur\"]\n    },\n    {\n      \"order\": 3,\n      \"weight\": 3.0,\n      \"question_ar\": \"كيف تتعامل مع البيانات المفقودة في مجموعة بيانات؟\",\n      \"question_fr\": \"Comment gérez-vous les données manquantes dans un jeu de données ?\",\n      \"question_en\": \"How do you handle missing data in a dataset?\",\n      \"max_duration_seconds\": 120,\n      \"evaluation_criteria\": [\"méthodes\", \"justification\", \"expérience pratique\"]\n    }\n  ]\n}",
+              "raw": "{\n  \"title\": \"Data Scientist\",\n  \"department\": \"Tech\",\n  \"location\": \"Sfax\",\n  \"is_active\": true,\n  \"questions\": [\n    {\n      \"order\": 1,\n      \"weight\": 1.0,\n      \"max_duration_seconds\": 90,\n      \"question_ar\": \"أخبرني عن نفسك وعن تجربتك في علم البيانات.\",\n      \"question_fr\": \"Parlez-moi de vous et de votre expérience en data science.\",\n      \"question_en\": \"Tell me about yourself and your data science experience.\",\n      \"evaluation_criteria\": [\"clarté\", \"expérience pertinente\", \"motivation\"]\n    },\n    {\n      \"order\": 2,\n      \"weight\": 2.0,\n      \"max_duration_seconds\": 90,\n      \"question_ar\": \"ما هي أدوات تعلم الآلة التي استخدمتها؟ أعطني مثالاً.\",\n      \"question_fr\": \"Quels outils de machine learning avez-vous utilisés ? Donnez un exemple concret.\",\n      \"question_en\": \"What machine learning tools have you used? Give a concrete example.\",\n      \"evaluation_criteria\": [\"maîtrise technique\", \"exemples concrets\", \"profondeur\"]\n    },\n    {\n      \"order\": 3,\n      \"weight\": 3.0,\n      \"max_duration_seconds\": 90,\n      \"question_ar\": \"كيف تتعامل مع البيانات المفقودة في مجموعة بيانات؟\",\n      \"question_fr\": \"Comment gérez-vous les données manquantes dans un jeu de données ?\",\n      \"question_en\": \"How do you handle missing data in a dataset?\",\n      \"evaluation_criteria\": [\"méthodes\", \"justification\", \"expérience pratique\"]\n    }\n  ]\n}",
               "options": { "raw": { "language": "json" } }
             },
-            "description": "**Poids des questions :**\n- Q1 (présentation) : weight=1.0 — question d'introduction\n- Q2 (ML tools) : weight=2.0 — technique importante\n- Q3 (missing data) : weight=3.0 — technique critique\n\n**Exemple de calcul :**\nSi scores = [8, 6, 5] → moyenne pondérée = (8×1 + 6×2 + 5×3) / (1+2+3) = 35/6 = 5.83\nvs moyenne simple = (8+6+5)/3 = 6.33\n\nLa Q3 ayant le poids le plus fort, un mauvais score technique pénalise davantage."
+            "description": "Toutes les questions ont max_duration_seconds=90 (1 min 30 s).\nPoids : Q1=×1, Q2=×2, Q3=×3 → moyenne pondérée."
           }
         },
         {
-          "name": "Create Position — Développeur Full Stack (poids uniformes)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "const json = pm.response.json();",
-                  "if (json._id) pm.collectionVariables.set('position_id', json._id);"
-                ]
-              }
-            }
-          ],
+          "name": "Create Position — Full Stack (poids uniformes, 90 s)",
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "const j = pm.response.json();",
+              "if (j._id) pm.collectionVariables.set('position_id', j._id);"
+            ]}
+          }],
           "request": {
             "method": "POST",
             "url": "{{base_url}}/interviews/positions",
@@ -250,52 +182,37 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"title\": \"Développeur Full Stack\",\n  \"department\": \"IT\",\n  \"location\": \"Tunis\",\n  \"is_active\": true,\n  \"questions\": [\n    {\n      \"order\": 1,\n      \"weight\": 1.0,\n      \"question_ar\": \"قدم نفسك وأخبرني عن تجربتك في تطوير الويب.\",\n      \"question_fr\": \"Présentez-vous et parlez de votre expérience en développement web.\",\n      \"question_en\": \"Introduce yourself and talk about your web development experience.\",\n      \"max_duration_seconds\": 120,\n      \"evaluation_criteria\": [\"clarté\", \"expérience\", \"motivation\"]\n    },\n    {\n      \"order\": 2,\n      \"weight\": 1.0,\n      \"question_ar\": \"ما هي الأطر التقنية التي تعمل بها؟ أعطني مثالاً.\",\n      \"question_fr\": \"Quels frameworks utilisez-vous ? Donnez un exemple concret de projet.\",\n      \"question_en\": \"What frameworks do you use? Give a concrete project example.\",\n      \"max_duration_seconds\": 150,\n      \"evaluation_criteria\": [\"maîtrise technique\", \"exemples concrets\"]\n    },\n    {\n      \"order\": 3,\n      \"weight\": 1.0,\n      \"question_ar\": \"كيف تتعامل مع أداء التطبيق وتحسينه؟\",\n      \"question_fr\": \"Comment gérez-vous les problèmes de performance d'une application ?\",\n      \"question_en\": \"How do you handle application performance issues?\",\n      \"max_duration_seconds\": 120,\n      \"evaluation_criteria\": [\"méthodes\", \"outils\", \"expérience\"]\n    }\n  ]\n}",
+              "raw": "{\n  \"title\": \"Développeur Full Stack\",\n  \"department\": \"IT\",\n  \"location\": \"Tunis\",\n  \"is_active\": true,\n  \"questions\": [\n    {\n      \"order\": 1,\n      \"weight\": 1.0,\n      \"max_duration_seconds\": 90,\n      \"question_ar\": \"قدم نفسك وأخبرني عن تجربتك في تطوير الويب.\",\n      \"question_fr\": \"Présentez-vous et parlez de votre expérience en développement web.\",\n      \"question_en\": \"Introduce yourself and talk about your web development experience.\",\n      \"evaluation_criteria\": [\"clarté\", \"expérience\", \"motivation\"]\n    },\n    {\n      \"order\": 2,\n      \"weight\": 1.0,\n      \"max_duration_seconds\": 90,\n      \"question_ar\": \"ما هي الأطر التقنية التي تعمل بها؟\",\n      \"question_fr\": \"Quels frameworks utilisez-vous ? Donnez un exemple concret.\",\n      \"question_en\": \"What frameworks do you use? Give a concrete project example.\",\n      \"evaluation_criteria\": [\"maîtrise technique\", \"exemples concrets\"]\n    },\n    {\n      \"order\": 3,\n      \"weight\": 1.0,\n      \"max_duration_seconds\": 90,\n      \"question_ar\": \"كيف تتعامل مع أداء التطبيق؟\",\n      \"question_fr\": \"Comment gérez-vous les problèmes de performance d'une application ?\",\n      \"question_en\": \"How do you handle application performance issues?\",\n      \"evaluation_criteria\": [\"méthodes\", \"outils\", \"expérience\"]\n    }\n  ]\n}",
               "options": { "raw": { "language": "json" } }
-            },
-            "description": "Tous les poids à 1.0 → moyenne pondérée = moyenne simple."
+            }
           }
         },
         {
           "name": "List Positions",
           "request": {
             "method": "GET",
-            "url": {
-              "raw": "{{base_url}}/interviews/positions?skip=0&limit=20&sort_by=created_at&order=desc",
-              "host": ["{{base_url}}"],
-              "path": ["interviews", "positions"],
-              "query": [
-                { "key": "skip",    "value": "0" },
-                { "key": "limit",   "value": "20" },
-                { "key": "sort_by", "value": "created_at" },
-                { "key": "order",   "value": "desc" }
-              ]
+            "url": { "raw": "{{base_url}}/interviews/positions?skip=0&limit=20&sort_by=created_at&order=desc",
+              "host":["{{base_url}}"],"path":["interviews","positions"],
+              "query":[{"key":"skip","value":"0"},{"key":"limit","value":"20"},{"key":"sort_by","value":"created_at"},{"key":"order","value":"desc"}]
             },
             "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }]
           }
         },
         {
           "name": "Get Position by ID",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "const json = pm.response.json();",
-                  "pm.test('Chaque question a un weight', () => {",
-                  "    json.questions.forEach((q, i) => {",
-                  "        pm.expect(q.weight, `Q${i+1} weight`).to.be.a('number');",
-                  "        pm.expect(q.weight).to.be.at.least(0.1);",
-                  "    });",
-                  "});",
-                  "console.log('Questions :');",
-                  "json.questions.forEach(q => {",
-                  "    console.log(`  Q${q.order} weight=${q.weight} | ${q.question_fr.substring(0,50)}`);",
-                  "});"
-                ]
-              }
-            }
-          ],
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "const j = pm.response.json();",
+              "pm.test('Chaque question a weight et max_duration_seconds', () => {",
+              "  j.questions.forEach((q,i) => {",
+              "    pm.expect(q.weight, `Q${i+1} weight`).to.be.a('number');",
+              "    pm.expect(q.max_duration_seconds, `Q${i+1} max_duration`).to.be.a('number');",
+              "  });",
+              "});",
+              "j.questions.forEach(q => console.log(`  Q${q.order} weight=${q.weight} max=${q.max_duration_seconds}s`));"
+            ]}
+          }],
           "request": {
             "method": "GET",
             "url": "{{base_url}}/interviews/positions/{{position_id}}",
@@ -325,54 +242,19 @@
       "name": "04 — Sessions",
       "item": [
         {
-          "name": "Create Session (avec schedule)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "const json = pm.response.json();",
-                  "if (json.session_id) {",
-                  "    pm.collectionVariables.set('session_id', json.session_id);",
-                  "    console.log('session_id:', json.session_id);",
-                  "    console.log('created_by:', json.created_by);",
-                  "    console.log('scheduled_at:', json.scheduled_at);",
-                  "}"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "url": "{{base_url}}/interviews/sessions",
-            "header": [
-              { "key": "Authorization", "value": "Bearer {{token}}" },
-              { "key": "Content-Type",  "value": "application/json" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"candidate_id\": \"{{candidate_id}}\",\n  \"job_position_id\": \"{{position_id}}\",\n  \"language\": \"fr\",\n  \"scheduled_at\": \"2026-03-20T10:00:00Z\"\n}",
-              "options": { "raw": { "language": "json" } }
-            }
-          }
-        },
-        {
-          "name": "Create Session (sans schedule — accès immédiat)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "const json = pm.response.json();",
-                  "if (json.session_id) {",
-                  "    pm.collectionVariables.set('session_id', json.session_id);",
-                  "    console.log('session_id:', json.session_id);",
-                  "    console.log('expires_at:', json.expires_at);",
-                  "}"
-                ]
-              }
-            }
-          ],
+          "name": "Create Session (accès immédiat)",
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "const j = pm.response.json();",
+              "if (j.session_id) {",
+              "  pm.collectionVariables.set('session_id', j.session_id);",
+              "  console.log('session_id:', j.session_id);",
+              "  console.log('created_by:', j.created_by);",
+              "  console.log('expires_at:', j.expires_at);",
+              "}"
+            ]}
+          }],
           "request": {
             "method": "POST",
             "url": "{{base_url}}/interviews/sessions",
@@ -383,6 +265,29 @@
             "body": {
               "mode": "raw",
               "raw": "{\n  \"candidate_id\": \"{{candidate_id}}\",\n  \"job_position_id\": \"{{position_id}}\",\n  \"language\": \"fr\"\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          }
+        },
+        {
+          "name": "Create Session (avec schedule)",
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "const j = pm.response.json();",
+              "if (j.session_id) pm.collectionVariables.set('session_id', j.session_id);"
+            ]}
+          }],
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/interviews/sessions",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type",  "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"candidate_id\": \"{{candidate_id}}\",\n  \"job_position_id\": \"{{position_id}}\",\n  \"language\": \"fr\",\n  \"scheduled_at\": \"2026-03-25T10:00:00Z\"\n}",
               "options": { "raw": { "language": "json" } }
             }
           }
@@ -399,68 +304,46 @@
           "name": "List Sessions",
           "request": {
             "method": "GET",
-            "url": {
-              "raw": "{{base_url}}/interviews/sessions?skip=0&limit=20",
-              "host": ["{{base_url}}"],
-              "path": ["interviews", "sessions"],
-              "query": [
-                { "key": "skip",   "value": "0" },
-                { "key": "limit",  "value": "20" },
-                { "key": "status", "value": "pending", "disabled": true }
-              ]
+            "url": { "raw": "{{base_url}}/interviews/sessions?skip=0&limit=20",
+              "host":["{{base_url}}"],"path":["interviews","sessions"],
+              "query":[{"key":"skip","value":"0"},{"key":"limit","value":"20"},{"key":"status","value":"pending","disabled":true}]
             },
             "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }]
           }
         },
         {
           "name": "Get Session Answers (avec weight)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "const json = pm.response.json();",
-                  "pm.test('Réponse OK', () => pm.response.to.have.status(200));",
-                  "console.log(`${json.length} réponse(s) :`);",
-                  "let totalW = 0, sumSW = 0;",
-                  "json.forEach(a => {",
-                  "    const w = a.weight || 1.0;",
-                  "    const s = a.score || 0;",
-                  "    totalW += w; sumSW += s * w;",
-                  "    console.log(`  Q${a.question_order} score=${s}/10 weight=${w} evaluated=${a.evaluated}`);",
-                  "});",
-                  "if (totalW > 0) {",
-                  "    const avg = (sumSW / totalW).toFixed(2);",
-                  "    console.log(`Moyenne pondérée client : ${avg}/10`);",
-                  "}"
-                ]
-              }
-            }
-          ],
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "const j = pm.response.json();",
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "let totalW = 0, sumSW = 0;",
+              "j.forEach(a => {",
+              "  const w = a.weight || 1.0, s = a.score || 0;",
+              "  totalW += w; sumSW += s * w;",
+              "  console.log(`  Q${a.question_order} score=${s}/10 weight=${w} max_duration=voir position`);",
+              "});",
+              "if (totalW > 0) console.log('Moyenne pondérée:', (sumSW/totalW).toFixed(2), '/10');"
+            ]}
+          }],
           "request": {
             "method": "GET",
             "url": "{{base_url}}/interviews/sessions/{{session_id}}/answers",
-            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
-            "description": "Retourne les réponses avec le champ `weight` par réponse.\nLe test automatique calcule la moyenne pondérée côté client pour vérification."
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }]
           }
         },
         {
           "name": "Get Session Answers Summary",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "const json = pm.response.json();",
-                  "pm.test('average_score est la moyenne pondérée', () => {",
-                  "    pm.expect(json.average_score).to.be.a('number');",
-                  "});",
-                  "console.log('average_score (pondéré):', json.average_score, '/10');",
-                  "console.log('evaluated:', json.evaluated_count, '/', json.total_answers);"
-                ]
-              }
-            }
-          ],
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "const j = pm.response.json();",
+              "pm.test('average_score présent', () => pm.expect(j.average_score).to.be.a('number'));",
+              "console.log('average_score (pondéré):', j.average_score, '/10');",
+              "console.log('evaluated:', j.evaluated_count, '/', j.total_answers);"
+            ]}
+          }],
           "request": {
             "method": "GET",
             "url": "{{base_url}}/interviews/sessions/{{session_id}}/answers/summary",
@@ -479,11 +362,9 @@
           "name": "Schedule / Reschedule Session",
           "request": {
             "method": "PATCH",
-            "url": {
-              "raw": "{{base_url}}/interviews/sessions/{{session_id}}/schedule?scheduled_at=2026-03-20T10:00:00Z",
-              "host": ["{{base_url}}"],
-              "path": ["interviews", "sessions", "{{session_id}}", "schedule"],
-              "query": [{ "key": "scheduled_at", "value": "2026-03-20T10:00:00Z" }]
+            "url": { "raw": "{{base_url}}/interviews/sessions/{{session_id}}/schedule?scheduled_at=2026-03-25T10:00:00Z",
+              "host":["{{base_url}}"],"path":["interviews","sessions","{{session_id}}","schedule"],
+              "query":[{"key":"scheduled_at","value":"2026-03-25T10:00:00Z"}]
             },
             "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }]
           }
@@ -492,14 +373,12 @@
           "name": "Update Session Status",
           "request": {
             "method": "PATCH",
-            "url": {
-              "raw": "{{base_url}}/interviews/sessions/{{session_id}}/status?status=cancelled",
-              "host": ["{{base_url}}"],
-              "path": ["interviews", "sessions", "{{session_id}}", "status"],
-              "query": [{ "key": "status", "value": "cancelled" }]
+            "url": { "raw": "{{base_url}}/interviews/sessions/{{session_id}}/status?status=cancelled",
+              "host":["{{base_url}}"],"path":["interviews","sessions","{{session_id}}","status"],
+              "query":[{"key":"status","value":"cancelled"}]
             },
             "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
-            "description": "Statuts valides : pending | in_progress | completed | cancelled\n\nQuand status=completed → notification automatique insérée."
+            "description": "Statuts valides : pending | in_progress | completed | cancelled\nstatus=completed → notification automatique."
           }
         },
         {
@@ -518,19 +397,13 @@
       "item": [
         {
           "name": "Trigger Evaluation (manuel)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
-                  "const json = pm.response.json();",
-                  "console.log('Status:', json.status);",
-                  "console.log('Message:', json.message);"
-                ]
-              }
-            }
-          ],
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "console.log(pm.response.json().message);"
+            ]}
+          }],
           "request": {
             "method": "POST",
             "url": "{{base_url}}/evaluations/trigger",
@@ -543,92 +416,63 @@
               "raw": "{\n  \"session_id\": \"{{session_id}}\",\n  \"language\": \"fr\"\n}",
               "options": { "raw": { "language": "json" } }
             },
-            "description": "Lance l'évaluation LLM globale en arrière-plan.\nAttendre 10-30 secondes puis appeler GET /evaluations/{{session_id}}."
+            "description": "Lance l'évaluation LLM en arrière-plan.\nAttendre 10-30 s puis GET /evaluations/{{session_id}}."
           }
         },
         {
-          "name": "Get Evaluation (rapport complet) ★",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
-                  "const json = pm.response.json();",
-                  "",
-                  "// Vérifications v3 — plus de global_score",
-                  "pm.test('average_score présent', () => {",
-                  "    pm.expect(json.average_score).to.be.a('number');",
-                  "});",
-                  "pm.test('recommendation non vide', () => {",
-                  "    pm.expect(json.recommendation).to.be.a('string').and.not.empty;",
-                  "});",
-                  "pm.test('decision_reason non vide', () => {",
-                  "    pm.expect(json.decision_reason).to.be.a('string').and.not.empty;",
-                  "});",
-                  "pm.test('summary non vide', () => {",
-                  "    pm.expect(json.summary).to.be.a('string').and.not.empty;",
-                  "});",
-                  "pm.test('per_answer contient les weights', () => {",
-                  "    json.per_answer.forEach((a, i) => {",
-                  "        pm.expect(a.weight, `Q${i+1} weight`).to.be.a('number').and.be.at.least(0.1);",
-                  "    });",
-                  "});",
-                  "",
-                  "// Affichage rapport",
-                  "console.log('=== RAPPORT ÉVALUATION ===');",
-                  "console.log('Candidat    :', json.candidate_name);",
-                  "console.log('Poste       :', json.position_title);",
-                  "console.log('Langue      :', json.language);",
-                  "console.log('');",
-                  "console.log('Score moyen pondéré :', json.average_score, '/10');",
-                  "console.log('Verdict     :', json.global_verdict);",
-                  "console.log('Décision    :', json.decision, '→', json.decision_label);",
-                  "console.log('Couleur     :', json.decision_color);",
-                  "console.log('Raisonnement:', json.decision_reason);",
-                  "console.log('');",
-                  "console.log('Recommandation :', json.recommendation);",
-                  "console.log('Résumé         :', json.summary);",
-                  "console.log('');",
-                  "console.log('Points forts  :', JSON.stringify(json.key_strengths));",
-                  "console.log('Améliorations :', JSON.stringify(json.key_improvements));",
-                  "console.log('');",
-                  "console.log('--- Détail par question ---');",
-                  "let totalW = 0, sumSW = 0;",
-                  "json.per_answer.forEach(a => {",
-                  "    const w = a.weight;",
-                  "    totalW += w; sumSW += a.score * w;",
-                  "    console.log(`Q${a.question_order} | score=${a.score}/10 | weight=${w} | verdict=${a.verdict}`);",
-                  "    console.log(`   feedback: ${a.feedback}`);",
-                  "});",
-                  "console.log('');",
-                  "console.log('Vérification moyenne pondérée :');",
-                  "console.log(`  Σ(score×weight) = ${sumSW.toFixed(2)}`);",
-                  "console.log(`  Σ(weight)       = ${totalW.toFixed(2)}`);",
-                  "console.log(`  Résultat        = ${(sumSW/totalW).toFixed(2)}/10`);"
-                ]
-              }
-            }
-          ],
+          "name": "Get Evaluation ★ (rapport complet v4)",
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "const j = pm.response.json();",
+              "",
+              "// v4 : global_verdict absent",
+              "pm.test('global_verdict absent', () => pm.expect(j.global_verdict).to.be.undefined);",
+              "pm.test('average_score présent', () => pm.expect(j.average_score).to.be.a('number'));",
+              "pm.test('recommendation non vide', () => pm.expect(j.recommendation).to.not.be.empty);",
+              "pm.test('decision_reason non vide', () => pm.expect(j.decision_reason).to.not.be.empty);",
+              "pm.test('summary non vide', () => pm.expect(j.summary).to.not.be.empty);",
+              "pm.test('per_answer contient weight', () => {",
+              "  j.per_answer.forEach((a,i) => pm.expect(a.weight, `Q${i+1}`).to.be.a('number'));",
+              "});",
+              "",
+              "// Affichage",
+              "console.log('=== RAPPORT v4 ===');",
+              "console.log('Candidat      :', j.candidate_name);",
+              "console.log('Poste         :', j.position_title);",
+              "console.log('Score pondéré :', j.average_score, '/10  (', j.average_score*10, '/100)');",
+              "console.log('Décision      :', j.decision, '→', j.decision_label, j.decision_color);",
+              "console.log('Raison        :', j.decision_reason);",
+              "console.log('Recommandation:', j.recommendation);",
+              "console.log('Résumé        :', j.summary);",
+              "console.log('Points forts  :', JSON.stringify(j.key_strengths));",
+              "console.log('Améliorations :', JSON.stringify(j.key_improvements));",
+              "console.log('');",
+              "let totalW = 0, sumSW = 0;",
+              "j.per_answer.forEach(a => {",
+              "  totalW += a.weight; sumSW += a.score * a.weight;",
+              "  console.log(`  Q${a.question_order} (×${a.weight}) | score=${a.score}/10 | verdict=${a.verdict}`);",
+              "  if (a.had_followup) console.log(`    ↳ suivi | initial=${a.initial_score} → final=${a.score}`);",
+              "});",
+              "console.log('');",
+              "console.log('Vérification pondérée :', (sumSW/totalW).toFixed(2), '/10 (attendu:', j.average_score, ')');"
+            ]}
+          }],
           "request": {
             "method": "GET",
             "url": "{{base_url}}/evaluations/{{session_id}}",
             "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
-            "description": "Rapport complet v3 :\n- `average_score` = moyenne pondérée Σ(score×weight)/Σ(weight)\n- `global_score` supprimé\n- `recommendation`, `decision_reason`, `summary` toujours remplis\n- `per_answer[n].weight` = poids de chaque question\n\nLe test automatique vérifie tous ces champs et recalcule la moyenne pondérée pour validation croisée."
+            "description": "Rapport v4 :\n- `average_score` = Σ(score×weight)/Σ(weight)\n- `global_verdict` supprimé\n- `recommendation`, `decision_reason`, `summary` toujours remplis\n- `per_answer[n].weight` présent\n- `had_followup`, `initial_score` si question de suivi posée"
           }
         },
         {
           "name": "List All Evaluations",
           "request": {
             "method": "GET",
-            "url": {
-              "raw": "{{base_url}}/evaluations/?skip=0&limit=20",
-              "host": ["{{base_url}}"],
-              "path": ["evaluations", ""],
-              "query": [
-                { "key": "skip",  "value": "0" },
-                { "key": "limit", "value": "20" }
-              ]
+            "url": { "raw": "{{base_url}}/evaluations/?skip=0&limit=20",
+              "host":["{{base_url}}"],"path":["evaluations",""],
+              "query":[{"key":"skip","value":"0"},{"key":"limit","value":"20"}]
             },
             "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }]
           }
@@ -657,19 +501,14 @@
       "item": [
         {
           "name": "1. Unread Count (avant entretien)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "const json = pm.response.json();",
-                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
-                  "pm.environment.set('unread_before', json.unread_count);",
-                  "console.log('Notifications non lues AVANT :', json.unread_count);"
-                ]
-              }
-            }
-          ],
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "const j = pm.response.json();",
+              "pm.environment.set('unread_before', j.unread_count);",
+              "console.log('Avant entretien :', j.unread_count);"
+            ]}
+          }],
           "request": {
             "method": "GET",
             "url": "{{base_url}}/notifications/unread-count",
@@ -678,21 +517,15 @@
         },
         {
           "name": "2. Unread Count (après entretien)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "const json = pm.response.json();",
-                  "const before = parseInt(pm.environment.get('unread_before') || '0');",
-                  "pm.test('Compteur augmenté de 1', () => {",
-                  "    pm.expect(json.unread_count).to.be.at.least(before + 1);",
-                  "});",
-                  "console.log('AVANT:', before, '| APRÈS:', json.unread_count, '| Δ:', json.unread_count - before);"
-                ]
-              }
-            }
-          ],
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "const j = pm.response.json();",
+              "const before = parseInt(pm.environment.get('unread_before') || '0');",
+              "pm.test('Compteur augmenté', () => pm.expect(j.unread_count).to.be.at.least(before + 1));",
+              "console.log('AVANT:', before, '| APRÈS:', j.unread_count);"
+            ]}
+          }],
           "request": {
             "method": "GET",
             "url": "{{base_url}}/notifications/unread-count",
@@ -701,38 +534,27 @@
         },
         {
           "name": "List Notifications (non lues)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "const json = pm.response.json();",
-                  "const sid = pm.collectionVariables.get('session_id');",
-                  "const notif = json.find(n => n.type === 'interview_completed' && n.data && n.data.session_id === sid);",
-                  "if (notif) {",
-                  "    pm.collectionVariables.set('notification_id', notif._id);",
-                  "    console.log('Notification trouvée !');",
-                  "    console.log('  ID       :', notif._id);",
-                  "    console.log('  Titre    :', notif.title);",
-                  "    console.log('  Message  :', notif.message);",
-                  "    console.log('  Candidat :', notif.data.candidate_name);",
-                  "    console.log('  Poste    :', notif.data.position_title);",
-                  "    pm.test('Notification interview_completed trouvée', () => pm.expect(notif).to.exist);",
-                  "    pm.test('Non lue', () => pm.expect(notif.read).to.be.false);",
-                  "} else {",
-                  "    console.warn('Notification non trouvée — entretien terminé ?');",
-                  "}"
-                ]
-              }
-            }
-          ],
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "const j = pm.response.json();",
+              "const sid = pm.collectionVariables.get('session_id');",
+              "const n = j.find(n => n.type === 'interview_completed' && n.data && n.data.session_id === sid);",
+              "if (n) {",
+              "  pm.collectionVariables.set('notification_id', n._id);",
+              "  pm.test('Notification trouvée', () => pm.expect(n).to.exist);",
+              "  pm.test('Non lue', () => pm.expect(n.read).to.be.false);",
+              "  console.log('ID:', n._id, '| Candidat:', n.data.candidate_name, '| Poste:', n.data.position_title);",
+              "} else {",
+              "  console.warn('Non trouvée — entretien terminé ?');",
+              "}"
+            ]}
+          }],
           "request": {
             "method": "GET",
-            "url": {
-              "raw": "{{base_url}}/notifications/?unread_only=true",
-              "host": ["{{base_url}}"],
-              "path": ["notifications", ""],
-              "query": [{ "key": "unread_only", "value": "true" }]
+            "url": { "raw": "{{base_url}}/notifications/?unread_only=true",
+              "host":["{{base_url}}"],"path":["notifications",""],
+              "query":[{"key":"unread_only","value":"true"}]
             },
             "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }]
           }
@@ -741,31 +563,19 @@
           "name": "List All Notifications",
           "request": {
             "method": "GET",
-            "url": {
-              "raw": "{{base_url}}/notifications/?skip=0&limit=50",
-              "host": ["{{base_url}}"],
-              "path": ["notifications", ""],
-              "query": [
-                { "key": "skip",  "value": "0" },
-                { "key": "limit", "value": "50" }
-              ]
+            "url": { "raw": "{{base_url}}/notifications/?skip=0&limit=50",
+              "host":["{{base_url}}"],"path":["notifications",""],
+              "query":[{"key":"skip","value":"0"},{"key":"limit","value":"50"}]
             },
             "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }]
           }
         },
         {
           "name": "Mark Notification as Read",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "const json = pm.response.json();",
-                  "pm.test('Marquée comme lue', () => pm.expect(json.read).to.be.true);"
-                ]
-              }
-            }
-          ],
+          "event": [{
+            "listen": "test",
+            "script": { "exec": ["pm.test('Marquée lue', () => pm.expect(pm.response.json().read).to.be.true);"]}
+          }],
           "request": {
             "method": "PATCH",
             "url": "{{base_url}}/notifications/{{notification_id}}",
@@ -773,11 +583,7 @@
               { "key": "Authorization", "value": "Bearer {{token}}" },
               { "key": "Content-Type",  "value": "application/json" }
             ],
-            "body": {
-              "mode": "raw",
-              "raw": "{ \"read\": true }",
-              "options": { "raw": { "language": "json" } }
-            }
+            "body": { "mode": "raw", "raw": "{ \"read\": true }", "options": {"raw":{"language":"json"}}}
           }
         },
         {
@@ -786,33 +592,6 @@
             "method": "POST",
             "url": "{{base_url}}/notifications/mark-all-read",
             "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }]
-          }
-        },
-        {
-          "name": "Create Notification (manuelle)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "const json = pm.response.json();",
-                  "if (json._id) pm.collectionVariables.set('notification_id', json._id);"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "url": "{{base_url}}/notifications/",
-            "header": [
-              { "key": "Authorization", "value": "Bearer {{token}}" },
-              { "key": "Content-Type",  "value": "application/json" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"recipient_email\": \"rh@stark.tn\",\n  \"title\": \"Test notification manuelle\",\n  \"message\": \"Notification créée manuellement via l'API\",\n  \"type\": \"interview_completed\",\n  \"data\": {\n    \"session_id\": \"{{session_id}}\",\n    \"candidate_name\": \"Test Candidat\",\n    \"position_title\": \"Data Scientist\",\n    \"total_answers\": 3\n  },\n  \"priority\": \"high\"\n}",
-              "options": { "raw": { "language": "json" } }
-            }
           }
         },
         {
@@ -830,14 +609,11 @@
       "name": "07 — Analytics",
       "item": [
         {
-          "name": "Dashboard (all stats)",
+          "name": "Dashboard",
           "request": {
             "method": "GET",
-            "url": {
-              "raw": "{{base_url}}/analytics/dashboard?days=30",
-              "host": ["{{base_url}}"],
-              "path": ["analytics", "dashboard"],
-              "query": [{ "key": "days", "value": "30" }]
+            "url": { "raw": "{{base_url}}/analytics/dashboard?days=30",
+              "host":["{{base_url}}"],"path":["analytics","dashboard"],"query":[{"key":"days","value":"30"}]
             },
             "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }]
           }
@@ -846,11 +622,8 @@
           "name": "Candidate Stats",
           "request": {
             "method": "GET",
-            "url": {
-              "raw": "{{base_url}}/analytics/candidates?days=30",
-              "host": ["{{base_url}}"],
-              "path": ["analytics", "candidates"],
-              "query": [{ "key": "days", "value": "30" }]
+            "url": { "raw": "{{base_url}}/analytics/candidates?days=30",
+              "host":["{{base_url}}"],"path":["analytics","candidates"],"query":[{"key":"days","value":"30"}]
             },
             "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }]
           }
@@ -859,17 +632,14 @@
           "name": "Interview Stats",
           "request": {
             "method": "GET",
-            "url": {
-              "raw": "{{base_url}}/analytics/interviews?days=30",
-              "host": ["{{base_url}}"],
-              "path": ["analytics", "interviews"],
-              "query": [{ "key": "days", "value": "30" }]
+            "url": { "raw": "{{base_url}}/analytics/interviews?days=30",
+              "host":["{{base_url}}"],"path":["analytics","interviews"],"query":[{"key":"days","value":"30"}]
             },
             "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }]
           }
         },
         {
-          "name": "Score Stats (KPIs + charts)",
+          "name": "Score Stats",
           "request": {
             "method": "GET",
             "url": "{{base_url}}/analytics/scores",
@@ -885,7 +655,7 @@
           }
         },
         {
-          "name": "Position Score Stats (toutes offres)",
+          "name": "Position Score Stats (toutes)",
           "request": {
             "method": "GET",
             "url": "{{base_url}}/analytics/positions/scores",
@@ -896,11 +666,9 @@
           "name": "Position Score Stats (par offre)",
           "request": {
             "method": "GET",
-            "url": {
-              "raw": "{{base_url}}/analytics/positions/scores?position_id={{position_id}}",
-              "host": ["{{base_url}}"],
-              "path": ["analytics", "positions", "scores"],
-              "query": [{ "key": "position_id", "value": "{{position_id}}" }]
+            "url": { "raw": "{{base_url}}/analytics/positions/scores?position_id={{position_id}}",
+              "host":["{{base_url}}"],"path":["analytics","positions","scores"],
+              "query":[{"key":"position_id","value":"{{position_id}}"}]
             },
             "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }]
           }
@@ -921,205 +689,132 @@
       "item": [
         {
           "name": "Export Candidates CSV",
-          "request": {
-            "method": "GET",
-            "url": "{{base_url}}/export/candidates/csv",
-            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }]
-          }
+          "request": { "method": "GET", "url": "{{base_url}}/export/candidates/csv", "header": [{"key":"Authorization","value":"Bearer {{token}}"}] }
         },
         {
           "name": "Export Interviews CSV",
-          "request": {
-            "method": "GET",
-            "url": "{{base_url}}/export/interviews/csv",
-            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }]
-          }
+          "request": { "method": "GET", "url": "{{base_url}}/export/interviews/csv", "header": [{"key":"Authorization","value":"Bearer {{token}}"}] }
         },
         {
-          "name": "Export Interview JSON (détail complet)",
-          "request": {
-            "method": "GET",
-            "url": "{{base_url}}/export/interviews/{{session_id}}/json",
-            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
-            "description": "Exporte la session complète en JSON incluant les answers avec weight."
-          }
+          "name": "Export Interview JSON",
+          "request": { "method": "GET", "url": "{{base_url}}/export/interviews/{{session_id}}/json", "header": [{"key":"Authorization","value":"Bearer {{token}}"}] }
         },
         {
           "name": "Export Evaluations CSV",
-          "request": {
-            "method": "GET",
-            "url": "{{base_url}}/export/evaluations/csv",
-            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }]
-          }
+          "request": { "method": "GET", "url": "{{base_url}}/export/evaluations/csv", "header": [{"key":"Authorization","value":"Bearer {{token}}"}] }
         }
       ]
     },
 
     {
-      "name": "09 — Media",
+      "name": "09 — WebSocket (référence)",
       "item": [
         {
-          "name": "Upload File",
-          "request": {
-            "method": "POST",
-            "url": "{{base_url}}/media/upload",
-            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
-            "body": {
-              "mode": "formdata",
-              "formdata": [
-                { "key": "file",     "type": "file",   "src": "" },
-                { "key": "category", "type": "text",   "value": "interviews" }
-              ]
-            }
-          }
-        },
-        {
-          "name": "Download File",
-          "request": {
-            "method": "GET",
-            "url": "{{base_url}}/media/download/interviews/answer_session_xxx_1.wav",
-            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }]
-          }
-        },
-        {
-          "name": "Delete File",
-          "request": {
-            "method": "DELETE",
-            "url": "{{base_url}}/media/interviews/answer_session_xxx_1.wav",
-            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }]
-          }
-        }
-      ]
-    },
-
-    {
-      "name": "10 — WebSocket (info)",
-      "item": [
-        {
-          "name": "WebSocket — Référence",
+          "name": "WebSocket — Info",
           "request": {
             "method": "GET",
             "url": "{{base_url}}/health",
-            "description": "Le WebSocket se teste via l'onglet WebSocket de Postman.\n\n**URL :**\n  ws://localhost:8000/ws/interview/{{session_id}}?lang=fr\n\n**Messages à envoyer (JSON) :**\n  {\"type\": \"audio_finished\"}          ← après lecture du message de bienvenue\n  {\"type\": \"audio_chunk\", \"audio_data\": \"<base64_pcm>\"}  ← pendant l'enregistrement\n  {\"type\": \"answer_complete\"}         ← fin d'enregistrement\n  {\"type\": \"end_interview\"}           ← annulation\n\n**Messages reçus :**\n  welcome          → audio bienvenue (chunked PCM)\n  question         → audio question (chunked PCM, contient progress)\n  question_loading → génération audio en cours\n  answer_saved     → transcription sauvegardée\n  answer_evaluated → {score, verdict, feedback, weight, strengths, improvements}\n  followup_question → question de suivi si score < 8\n  answer_followup_completed → score final après suivi\n  interview_completed → fin entretien + notification déclenchée\n  global_evaluation → rapport complet (average_score pondéré, decision, recommendation...)\n\n**Champ weight dans answer_evaluated :**\n  Le poids de la question est disponible dans\n  la réponse answer_evaluated.data.weight"
+            "description": "Utiliser l'onglet WebSocket Postman :\n  ws://localhost:8000/ws/interview/{{session_id}}?lang=fr\n\n**Messages envoyés :**\n  {\"type\": \"audio_finished\"}       ← fin lecture bienvenue/question\n  {\"type\": \"audio_chunk\", \"audio_data\": \"<base64>\"}\n  {\"type\": \"answer_complete\"}      ← fin enregistrement\n  {\"type\": \"end_interview\"}        ← annulation\n\n**Messages reçus :**\n  welcome          → audio bienvenue (chunked PCM)\n  welcome_back     → audio reprise si session in_progress (is_reconnection=true)\n  question         → audio question (max_duration, weight, progress)\n  question_loading → génération en cours\n  answer_saved     → transcription OK\n  answer_evaluated → {score, verdict, weight, feedback, needs_followup}\n  followup_question → question de suivi si score < 8\n  answer_followup_completed → score final\n  interview_completed → fin + notification déclenchée\n  global_evaluation → {average_score, decision, decision_label,\n                        decision_color, decision_reason, recommendation,\n                        key_strengths, key_improvements, summary}\n                      NB : global_verdict absent (supprimé v4)\n\n**Durée réponse :**\n  max_duration_seconds = 90 s par défaut (configurable par question)\n  Le client affiche un compte à rebours et s'arrête automatiquement."
           }
         }
       ]
     },
 
     {
-      "name": "11 — Flux complet (ordre recommandé)",
+      "name": "10 — Flux complet (ordre recommandé)",
       "item": [
         {
           "name": "STEP 1 — Login",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "const json = pm.response.json();",
-                  "if (json.access_token) pm.collectionVariables.set('token', json.access_token);",
-                  "pm.test('Login OK', () => pm.response.to.have.status(200));"
-                ]
-              }
-            }
-          ],
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "const j = pm.response.json();",
+              "if (j.access_token) pm.collectionVariables.set('token', j.access_token);",
+              "pm.test('Login OK', () => pm.response.to.have.status(200));"
+            ]}
+          }],
           "request": {
             "method": "POST",
             "url": "{{base_url}}/auth/login",
             "header": [{ "key": "Content-Type", "value": "application/x-www-form-urlencoded" }],
-            "body": {
-              "mode": "urlencoded",
-              "urlencoded": [
-                { "key": "username", "value": "rh@stark.tn" },
-                { "key": "password", "value": "admin123" }
-              ]
-            }
+            "body": { "mode": "urlencoded", "urlencoded": [
+              {"key": "username", "value": "rh@stark.tn"},
+              {"key": "password", "value": "admin123"}
+            ]}
           }
         },
         {
           "name": "STEP 2 — Create Candidate",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "const json = pm.response.json();",
-                  "pm.test('Candidat créé', () => pm.response.to.have.status(200));",
-                  "if (json._id) pm.collectionVariables.set('candidate_id', json._id);"
-                ]
-              }
-            }
-          ],
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "const j = pm.response.json();",
+              "pm.test('Candidat créé', () => pm.response.to.have.status(200));",
+              "if (j._id) pm.collectionVariables.set('candidate_id', j._id);"
+            ]}
+          }],
           "request": {
             "method": "POST",
             "url": "{{base_url}}/candidates/",
             "header": [
-              { "key": "Authorization", "value": "Bearer {{token}}" },
-              { "key": "Content-Type",  "value": "application/json" }
+              {"key": "Authorization", "value": "Bearer {{token}}"},
+              {"key": "Content-Type",  "value": "application/json"}
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"first_name\": \"Zeineb\",\n  \"last_name\": \"Ghrab\",\n  \"contact\": { \"email\": \"zeineb.ghrab@test.tn\", \"phone\": \"+216 55 000 001\" },\n  \"technical_skills\": [\n    { \"name\": \"Python\",     \"level\": \"Advanced\",     \"years_experience\": 3 },\n    { \"name\": \"FastAPI\",    \"level\": \"Advanced\",     \"years_experience\": 2 },\n    { \"name\": \"MongoDB\",    \"level\": \"Intermediate\", \"years_experience\": 2 },\n    { \"name\": \"React.js\",   \"level\": \"Intermediate\", \"years_experience\": 2 },\n    { \"name\": \"PySide6\",    \"level\": \"Intermediate\", \"years_experience\": 1 },\n    { \"name\": \"Whisper ASR\",\"level\": \"Intermediate\", \"years_experience\": 1 }\n  ],\n  \"experiences\": [\n    {\n      \"title\": \"Data Engineer\",\n      \"company\": \"ENET'Com Sfax\",\n      \"location\": \"Sfax\",\n      \"start_date\": \"2024-09\",\n      \"currently_working\": true,\n      \"description\": \"Projet fin d'études : plateforme d'entretien vocal IA\",\n      \"technologies\": [\"Python\", \"FastAPI\", \"Whisper\", \"Llama3\", \"PySide6\", \"MongoDB\"]\n    }\n  ],\n  \"education\": [\n    {\n      \"degree\": \"Ingénieur\",\n      \"field\": \"Data Engineering & Systèmes Décisionnels\",\n      \"institution\": \"ENET'Com Sfax\",\n      \"start_date\": \"2023\",\n      \"currently_studying\": true\n    }\n  ],\n  \"languages\": [\n    { \"name\": \"Arabic\",  \"level\": \"Native\" },\n    { \"name\": \"French\",  \"level\": \"C1\" },\n    { \"name\": \"English\", \"level\": \"B2\" }\n  ],\n  \"soft_skills\": [\n    { \"name\": \"Rigueur\" },\n    { \"name\": \"Autonomie\" },\n    { \"name\": \"Leadership\" }\n  ],\n  \"certifications\": [\n    {\n      \"name\": \"DP-900 Azure Data Fundamentals\",\n      \"issuer\": \"Microsoft\",\n      \"issue_date\": \"2024-08\"\n    }\n  ]\n}",
-              "options": { "raw": { "language": "json" } }
+              "raw": "{\n  \"first_name\": \"Zeineb\",\n  \"last_name\": \"Ghrab\",\n  \"contact\": { \"email\": \"zeineb.ghrab@test.tn\", \"phone\": \"+216 55 000 001\" },\n  \"technical_skills\": [\n    { \"name\": \"Python\",      \"level\": \"Advanced\",     \"years_experience\": 3 },\n    { \"name\": \"FastAPI\",     \"level\": \"Advanced\",     \"years_experience\": 2 },\n    { \"name\": \"MongoDB\",     \"level\": \"Intermediate\", \"years_experience\": 2 },\n    { \"name\": \"PySide6\",     \"level\": \"Intermediate\", \"years_experience\": 1 },\n    { \"name\": \"Whisper ASR\", \"level\": \"Intermediate\", \"years_experience\": 1 }\n  ],\n  \"experiences\": [{\n    \"title\": \"Data Engineer\",\n    \"company\": \"ENET'Com Sfax\",\n    \"location\": \"Sfax\",\n    \"start_date\": \"2024-09\",\n    \"currently_working\": true,\n    \"description\": \"Projet fin d'études : plateforme d'entretien vocal IA\",\n    \"technologies\": [\"Python\", \"FastAPI\", \"Whisper\", \"Llama3\", \"PySide6\", \"MongoDB\"]\n  }],\n  \"education\": [{\n    \"degree\": \"Ingénieur\",\n    \"field\": \"Data Engineering & Systèmes Décisionnels\",\n    \"institution\": \"ENET'Com Sfax\",\n    \"start_date\": \"2023\",\n    \"currently_studying\": true\n  }],\n  \"languages\": [\n    { \"name\": \"Arabic\",  \"level\": \"Native\" },\n    { \"name\": \"French\",  \"level\": \"C1\" },\n    { \"name\": \"English\", \"level\": \"B2\" }\n  ],\n  \"soft_skills\": [\n    { \"name\": \"Rigueur\" },\n    { \"name\": \"Autonomie\" },\n    { \"name\": \"Leadership\" }\n  ],\n  \"certifications\": [{\n    \"name\": \"DP-900 Azure Data Fundamentals\",\n    \"issuer\": \"Microsoft\",\n    \"issue_date\": \"2024-08\"\n  }]\n}",
+              "options": {"raw":{"language":"json"}}
             }
           }
         },
         {
-          "name": "STEP 3 — Create Position (poids variés)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "const json = pm.response.json();",
-                  "pm.test('Position créée', () => pm.response.to.have.status(200));",
-                  "if (json._id) pm.collectionVariables.set('position_id', json._id);",
-                  "console.log('Weights :', json.questions.map(q => `Q${q.order}=×${q.weight}`).join(', '));"
-                ]
-              }
-            }
-          ],
+          "name": "STEP 3 — Create Position (90 s, weights variés)",
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "const j = pm.response.json();",
+              "pm.test('Position créée', () => pm.response.to.have.status(200));",
+              "if (j._id) pm.collectionVariables.set('position_id', j._id);",
+              "console.log('Weights :', j.questions.map(q => `Q${q.order}=×${q.weight}(${q.max_duration_seconds}s)`).join(', '));"
+            ]}
+          }],
           "request": {
             "method": "POST",
             "url": "{{base_url}}/interviews/positions",
             "header": [
-              { "key": "Authorization", "value": "Bearer {{token}}" },
-              { "key": "Content-Type",  "value": "application/json" }
+              {"key": "Authorization", "value": "Bearer {{token}}"},
+              {"key": "Content-Type",  "value": "application/json"}
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"title\": \"Data Scientist\",\n  \"department\": \"Tech\",\n  \"location\": \"Sfax\",\n  \"is_active\": true,\n  \"questions\": [\n    {\n      \"order\": 1,\n      \"weight\": 1.0,\n      \"question_ar\": \"أخبرني عن نفسك وعن تجربتك في علم البيانات.\",\n      \"question_fr\": \"Parlez-moi de vous et de votre expérience en data science.\",\n      \"question_en\": \"Tell me about yourself and your data science experience.\",\n      \"max_duration_seconds\": 120,\n      \"evaluation_criteria\": [\"clarté\", \"expérience pertinente\", \"motivation\"]\n    },\n    {\n      \"order\": 2,\n      \"weight\": 2.0,\n      \"question_ar\": \"ما هي أدوات تعلم الآلة التي استخدمتها؟ أعطني مثالاً.\",\n      \"question_fr\": \"Quels outils de machine learning avez-vous utilisés ? Donnez un exemple concret.\",\n      \"question_en\": \"What machine learning tools have you used? Give a concrete example.\",\n      \"max_duration_seconds\": 150,\n      \"evaluation_criteria\": [\"maîtrise technique\", \"exemples concrets\", \"profondeur\"]\n    },\n    {\n      \"order\": 3,\n      \"weight\": 3.0,\n      \"question_ar\": \"كيف تتعامل مع البيانات المفقودة في مجموعة بيانات؟\",\n      \"question_fr\": \"Comment gérez-vous les données manquantes dans un jeu de données ?\",\n      \"question_en\": \"How do you handle missing data in a dataset?\",\n      \"max_duration_seconds\": 120,\n      \"evaluation_criteria\": [\"méthodes\", \"justification\", \"expérience pratique\"]\n    }\n  ]\n}",
-              "options": { "raw": { "language": "json" } }
+              "raw": "{\n  \"title\": \"Data Scientist\",\n  \"department\": \"Tech\",\n  \"location\": \"Sfax\",\n  \"is_active\": true,\n  \"questions\": [\n    {\n      \"order\": 1, \"weight\": 1.0, \"max_duration_seconds\": 90,\n      \"question_ar\": \"أخبرني عن نفسك وعن تجربتك في علم البيانات.\",\n      \"question_fr\": \"Parlez-moi de vous et de votre expérience en data science.\",\n      \"question_en\": \"Tell me about yourself and your data science experience.\",\n      \"evaluation_criteria\": [\"clarté\", \"expérience\", \"motivation\"]\n    },\n    {\n      \"order\": 2, \"weight\": 2.0, \"max_duration_seconds\": 90,\n      \"question_ar\": \"ما هي أدوات تعلم الآلة التي استخدمتها؟\",\n      \"question_fr\": \"Quels outils de machine learning avez-vous utilisés ?\",\n      \"question_en\": \"What machine learning tools have you used?\",\n      \"evaluation_criteria\": [\"maîtrise technique\", \"exemples concrets\"]\n    },\n    {\n      \"order\": 3, \"weight\": 3.0, \"max_duration_seconds\": 90,\n      \"question_ar\": \"كيف تتعامل مع البيانات المفقودة في مجموعة بيانات؟\",\n      \"question_fr\": \"Comment gérez-vous les données manquantes dans un jeu de données ?\",\n      \"question_en\": \"How do you handle missing data in a dataset?\",\n      \"evaluation_criteria\": [\"méthodes\", \"justification\"]\n    }\n  ]\n}",
+              "options": {"raw":{"language":"json"}}
             }
           }
         },
         {
           "name": "STEP 4 — Create Session",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "const json = pm.response.json();",
-                  "pm.test('Session créée', () => pm.response.to.have.status(200));",
-                  "if (json.session_id) pm.collectionVariables.set('session_id', json.session_id);",
-                  "console.log('session_id:', json.session_id);",
-                  "console.log('→ Copier dans le client PySide6 ou WebSocket Postman');"
-                ]
-              }
-            }
-          ],
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "const j = pm.response.json();",
+              "pm.test('Session créée', () => pm.response.to.have.status(200));",
+              "if (j.session_id) pm.collectionVariables.set('session_id', j.session_id);",
+              "console.log('session_id:', j.session_id);",
+              "console.log('→ Copier dans le client PySide6');"
+            ]}
+          }],
           "request": {
             "method": "POST",
             "url": "{{base_url}}/interviews/sessions",
             "header": [
-              { "key": "Authorization", "value": "Bearer {{token}}" },
-              { "key": "Content-Type",  "value": "application/json" }
+              {"key": "Authorization", "value": "Bearer {{token}}"},
+              {"key": "Content-Type",  "value": "application/json"}
             ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"candidate_id\": \"{{candidate_id}}\",\n  \"job_position_id\": \"{{position_id}}\",\n  \"language\": \"fr\"\n}",
-              "options": { "raw": { "language": "json" } }
+              "options": {"raw":{"language":"json"}}
             }
           }
         },
@@ -1128,37 +823,25 @@
           "request": {
             "method": "GET",
             "url": "{{base_url}}/health",
-            "description": "Ouvrir l'onglet WebSocket Postman et se connecter à :\n  ws://localhost:8000/ws/interview/{{session_id}}?lang=fr\n\nOU lancer le client PySide6 :\n  python -m client.main\n\nUne fois l'entretien terminé, passer à STEP 6."
+            "description": "Lancer le client PySide6 :\n  python -m client.main\n\nOu WebSocket Postman :\n  ws://localhost:8000/ws/interview/{{session_id}}?lang=fr\n\nComportement v4 :\n  - Bouton répondre désactivé pendant lecture audio\n  - Compte à rebours 90 s affiché (durée max)\n  - Arrêt automatique à 0 s\n  - Si reconnexion sur session in_progress → message 'Bon retour'\n  - Sur la dernière question : pas de 'passons à la suivante' après suivi"
           }
         },
         {
-          "name": "STEP 6 — Get Evaluation (rapport final)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test('Évaluation disponible', () => pm.response.to.have.status(200));",
-                  "const json = pm.response.json();",
-                  "pm.test('average_score pondéré présent', () => pm.expect(json.average_score).to.be.a('number'));",
-                  "pm.test('recommendation non vide', () => pm.expect(json.recommendation).to.not.be.empty);",
-                  "pm.test('summary non vide', () => pm.expect(json.summary).to.not.be.empty);",
-                  "",
-                  "console.log('=== RÉSULTAT FINAL ===');",
-                  "console.log('Score pondéré :', json.average_score, '/10');",
-                  "console.log('Verdict       :', json.global_verdict);",
-                  "console.log('Décision      :', json.decision_label, json.decision_color);",
-                  "console.log('Recommandation:', json.recommendation);",
-                  "console.log('Raison        :', json.decision_reason);",
-                  "console.log('Résumé        :', json.summary);",
-                  "console.log('');",
-                  "json.per_answer.forEach(a => {",
-                  "    console.log(`  Q${a.question_order} (×${a.weight}) : ${a.score}/10 — ${a.verdict}`);",
-                  "});"
-                ]
-              }
-            }
-          ],
+          "name": "STEP 6 — Get Evaluation",
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('Évaluation disponible', () => pm.response.to.have.status(200));",
+              "const j = pm.response.json();",
+              "pm.test('global_verdict absent (v4)', () => pm.expect(j.global_verdict).to.be.undefined);",
+              "pm.test('average_score présent', () => pm.expect(j.average_score).to.be.a('number'));",
+              "pm.test('recommendation non vide', () => pm.expect(j.recommendation).to.not.be.empty);",
+              "console.log('Score pondéré :', j.average_score, '/10');",
+              "console.log('Décision      :', j.decision_label, j.decision_color);",
+              "console.log('Recommandation:', j.recommendation);",
+              "j.per_answer.forEach(a => console.log(`  Q${a.question_order} (×${a.weight}) : ${a.score}/10 — ${a.verdict}`));"
+            ]}
+          }],
           "request": {
             "method": "GET",
             "url": "{{base_url}}/evaluations/{{session_id}}",
@@ -1167,18 +850,14 @@
         },
         {
           "name": "STEP 7 — Check Notification",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "const json = pm.response.json();",
-                  "pm.test('Notification générée', () => pm.expect(json.unread_count).to.be.at.least(1));",
-                  "console.log('Notifications non lues :', json.unread_count);"
-                ]
-              }
-            }
-          ],
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "const j = pm.response.json();",
+              "pm.test('Au moins 1 notification', () => pm.expect(j.unread_count).to.be.at.least(1));",
+              "console.log('Notifications non lues :', j.unread_count);"
+            ]}
+          }],
           "request": {
             "method": "GET",
             "url": "{{base_url}}/notifications/unread-count",

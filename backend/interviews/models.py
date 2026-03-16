@@ -10,7 +10,7 @@ class Question(BaseModel):
     question_ar: str
     question_en: str
     question_fr: str = ""
-    max_duration_seconds: int = 120
+    max_duration_seconds: int = 90
     evaluation_criteria: List[str] = []
     weight: float = Field(
         default=1.0,
