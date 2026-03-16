@@ -42,6 +42,11 @@ LOCALIZED_TEXTS = {
         "fr": "Merci beaucoup {name} ! Vous avez répondu à toutes les questions avec succès. Votre entretien est terminé. Nous vous contacterons prochainement.",
         "en": "Thank you {name}! You have answered all questions successfully. Your interview is complete. We will contact you soon.",
     },
+    "welcome_back": {
+        "ar": "مرحباً بعودتك {name}! نستأنف مقابلتك من السؤال {current} من أصل {total}.",
+        "fr": "Bon retour {name} ! Nous reprenons votre entretien à la question {current} sur {total}.",
+        "en": "Welcome back {name}! We are resuming your interview at question {current} of {total}.",
+    },
     "followup_intro": {
         "ar": "شكراً على إجابتك. لدي سؤال إضافي:",
         "fr": "Merci pour votre réponse. J'ai une question complémentaire :",
@@ -209,10 +214,22 @@ class InterviewHandler:
             logger.info(f"Langue: {self.lang!r} | Candidat: {self.candidate_full_name}")
             await asyncio.sleep(0.2)
             self._check_connected()
-            await self._send_welcome()
-            await self._wait_for_audio_finished(120)
-            self._check_connected()
-            await self._start_interview()
+
+            # ── Reconnexion (session déjà en cours) vs premier accès ──────────
+            is_reconnection = (self.session.status == "in_progress")
+
+            if is_reconnection:
+                logger.info(
+                    f"Reconnexion détectée | Q{self.session.current_question_index + 1}"
+                    f"/{len(self.position.questions)} | session={self.session_id}"
+                )
+                await self._send_welcome_back()
+            else:
+                await self._send_welcome()
+                await self._wait_for_audio_finished(120)
+                self._check_connected()
+                await self._start_interview()
+
             await asyncio.sleep(0.1)
 
             while self.session.status == "in_progress":
@@ -297,6 +314,36 @@ class InterviewHandler:
             if manager.is_connected(self.session_id):
                 await self._send_error(str(e))
             return False
+
+    async def _send_welcome_back(self):
+        """
+        Message de reprise pour une session déjà in_progress (reconnexion).
+        Indique au candidat à quelle question on reprend, puis enchaîne
+        directement sur la question courante sans attendre audio_finished.
+        """
+        idx  = self.session.current_question_index
+        text = _get_text(
+            "welcome_back", self.lang,
+            name=self.candidate_first_name,
+            current=idx + 1,
+            total=len(self.position.questions),
+        )
+        audio = await self._synthesize_bytes(text)
+        extra = {
+            "total_questions":        len(self.position.questions),
+            "current_question_index": idx,
+            "position_title":         self.position.title,
+            "candidate_name":         self.candidate_full_name,
+            "expires_at":             self.session.expires_at.isoformat(),
+            "vocal_only":             True,
+            "language":               self.lang,
+            "is_reconnection":        True,
+        }
+        if audio:
+            await self._send_audio_chunked(audio, "welcome_back", extra)
+        else:
+            await manager.send_json(self.session_id, {"type": "welcome_back", "data": extra})
+        await self._wait_for_audio_finished(60)
 
     async def _send_welcome(self):
         text  = _get_text("welcome", self.lang,

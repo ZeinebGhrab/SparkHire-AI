@@ -1,6 +1,10 @@
 """
 Video Player Widget — Professional Light UI
 Zone vidéo sobre · barre de statut card blanche propre · indicateurs colorés
+
+CORRECTION : pygame.init() remplacé par pygame.display.init() + pygame.surfarray
+             pour éviter la double initialisation du mixer avec main_window.py.
+             Le mixer est exclusivement géré par MainWindow.
 """
 
 import cv2
@@ -74,7 +78,7 @@ class VideoPlayerWidget(QWidget):
         wrap_lay.setContentsMargins(0, 0, 0, 0)
         wrap_lay.setSpacing(0)
 
-        # ── Zone vidéo ───────────────────────────────────────────────────────
+        # ── Zone vidéo ────────────────────────────────────────────────────────
         self.avatar_display = QLabel()
         self.avatar_display.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.avatar_display.setStyleSheet(f"""
@@ -106,7 +110,6 @@ class VideoPlayerWidget(QWidget):
         bar_lay.setContentsMargins(T.SP_5, 0, T.SP_5, 0)
         bar_lay.setSpacing(T.SP_3)
 
-        # Icône badge
         self._ic_cont = QFrame()
         self._ic_cont.setFixedSize(40, 40)
         self._ic_cont.setStyleSheet(f"""
@@ -127,14 +130,13 @@ class VideoPlayerWidget(QWidget):
         ic_inner.addWidget(self._ic_lbl)
         bar_lay.addWidget(self._ic_cont)
 
-        # Texte
         text_col = QVBoxLayout()
         text_col.setSpacing(1)
         self._status_main = QLabel("Agent RH : Prêt à vous écouter")
         self._status_main.setFont(QFont(T.FONT, T.FS_BASE, QFont.Weight.Bold))
         self._status_main.setStyleSheet(f"color: {T.TEXT_800}; background: transparent;")
 
-        self._status_sub = QLabel("Intelligence Vocal Intelligence")
+        self._status_sub = QLabel("Vocal Intelligence")
         self._status_sub.setFont(QFont(T.FONT, T.FS_XS))
         self._status_sub.setStyleSheet(f"color: {T.TEXT_400}; letter-spacing: 0.5px; background: transparent;")
 
@@ -142,11 +144,9 @@ class VideoPlayerWidget(QWidget):
         text_col.addWidget(self._status_sub)
         bar_lay.addLayout(text_col, stretch=1)
 
-        # Indicateur animé
         self._dot = _Dot(T.GREEN_500)
         bar_lay.addWidget(self._dot)
 
-        # Badge état
         self._state_badge = QLabel("En attente")
         self._state_badge.setFont(QFont(T.FONT, T.FS_XS, QFont.Weight.Bold))
         self._state_badge.setStyleSheet(f"""
@@ -161,8 +161,12 @@ class VideoPlayerWidget(QWidget):
         wrap_lay.addWidget(bar)
         root.addWidget(wrapper)
 
-        # ── Init ──────────────────────────────────────────────────────────────
-        pygame.init()
+        # ── Init pygame — display et surfarray UNIQUEMENT, pas le mixer ───────
+        # Le mixer est initialisé et géré exclusivement par MainWindow pour éviter
+        # les conflits de paramètres (frequency, channels, bits).
+        if not pygame.get_init():
+            pygame.display.init()
+
         self.base_path  = Path(__file__).resolve().parent.parent.parent
         self.video_dir  = self.base_path / "assets" / "videos"
         self.video_paths = {
@@ -189,18 +193,15 @@ class VideoPlayerWidget(QWidget):
 
     def _show_placeholder(self, state: str):
         w, h = 800, 540
-        img = np.full((h, w, 3), 248, dtype=np.uint8)  # #F8FAFC
-        # Dégradé vertical léger
+        img = np.full((h, w, 3), 248, dtype=np.uint8)
         for y in range(h):
             t_ = y / h
-            img[y, :, 0] = int(239 + t_ * 16)   # R
-            img[y, :, 1] = int(246 + t_ * 9)    # G
-            img[y, :, 2] = 255                   # B
-
+            img[y, :, 0] = int(239 + t_ * 16)
+            img[y, :, 1] = int(246 + t_ * 9)
+            img[y, :, 2] = 255
         txt = f"[{state.upper()}]"
         cv2.putText(img, txt, (w // 2 - 60, h // 2), cv2.FONT_HERSHEY_SIMPLEX,
                     1.2, (71, 85, 105), 2, cv2.LINE_AA)
-
         qt = QImage(img.data, w, h, 3 * w, QImage.Format_RGB888)
         self.avatar_display.setPixmap(
             QPixmap.fromImage(qt).scaled(
@@ -306,5 +307,5 @@ class VideoPlayerWidget(QWidget):
     def closeEvent(self, e):
         self.timer.stop()
         if self.cap: self.cap.release()
-        pygame.quit()
+        # Ne pas appeler pygame.quit() ici — c'est la responsabilité de MainWindow
         super().closeEvent(e)
