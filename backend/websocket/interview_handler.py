@@ -506,12 +506,17 @@ class InterviewHandler:
         fq_audio_path.write_bytes(followup_wav)
         followup_transcript = await self._transcribe_audio(followup_wav)
 
-        thanks_audio = await self._synthesize_bytes(_get_text("followup_thanks", self.lang))
-        if thanks_audio and manager.is_connected(self.session_id):
-            await self._send_audio_chunked(
-                thanks_audio, "followup_thanks", {"question_order": question.order}
-            )
-            await self._wait_for_audio_finished(30)
+        # "Passons à la question suivante" — uniquement si ce n'est PAS la dernière question
+        is_last_question = (
+            self.session.current_question_index + 1 >= len(self.position.questions)
+        )
+        if not is_last_question:
+            thanks_audio = await self._synthesize_bytes(_get_text("followup_thanks", self.lang))
+            if thanks_audio and manager.is_connected(self.session_id):
+                await self._send_audio_chunked(
+                    thanks_audio, "followup_thanks", {"question_order": question.order}
+                )
+                await self._wait_for_audio_finished(30)
 
         final_eval = await llm.evaluate_final_with_followup(
             question=question_text, first_answer=initial_transcript,
