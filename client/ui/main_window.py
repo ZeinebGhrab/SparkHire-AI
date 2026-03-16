@@ -2,15 +2,10 @@
 Main Window — Professional Light UI
 Design · QSS complet · Palette slate/cyan/amber
 
-MODIFICATIONS v5 (Analyse faciale) :
-  + Import VideoFrameCollector
-  + Démarrage capture caméra en parallèle de l'enregistrement audio
-  + Envoi des frames JPEG via WebSocket (type: video_frame)
-  + Affichage des métriques faciales dans la status bar après évaluation
-  + Indicateur caméra dans le header (🎥 / ⚠️)
-  + Gestion gracieuse si caméra indisponible (entretien continue sans analyse)
-
-CORRECTION : initialisation pygame via pre_init() avant display.init()
+Overlay caméra PiP intégré :
+  + CameraPreviewWidget affiché dans le coin bas-gauche du VideoPlayerWidget
+  + Badge REC clignotant pendant l'enregistrement
+  + Caché entre les sessions
 """
 
 from PySide6.QtWidgets import (
@@ -31,7 +26,7 @@ from client.ui.video_player_widget import VideoPlayerWidget
 from client.ui.interview_widget import InterviewWidget
 from client.core.websocket_client import WebSocketClient
 from client.core.audio_recorder import AudioRecorder
-from client.core.video_recorder import VideoFrameCollector   # ← NOUVEAU
+from client.core.video_recorder import VideoFrameCollector
 from client.config import settings
 
 logging.basicConfig(level=logging.INFO)
@@ -249,11 +244,11 @@ class MainWindow(QMainWindow):
         self._audio_chunks: list = []
         self._audio_total_chunks = 0
 
-        # ── NOUVEAU — Capture vidéo ───────────────────────────────────────────
+        # Capture vidéo
         self._video_collector: VideoFrameCollector | None = None
         self._facial_enabled: bool = getattr(settings, "FACIAL_ANALYSIS_ENABLED", True)
         self._camera_available: bool = False
-        self._camera_lbl: QLabel | None = None   # indicateur dans le header
+        self._camera_lbl: QLabel | None = None
 
         # Vérification pygame mixer
         if not pygame.mixer.get_init():
@@ -270,12 +265,11 @@ class MainWindow(QMainWindow):
             logger.info(f"pygame mixer OK | frequency={freq} size={size} channels={ch}")
 
         self._setup_ui()
-        self._init_video_collector()   # ← NOUVEAU
+        self._init_video_collector()
 
     # ── Init VideoFrameCollector ──────────────────────────────────────────────
 
     def _init_video_collector(self):
-        """Crée le collecteur vidéo et teste la disponibilité de la caméra."""
         if not self._facial_enabled:
             logger.info("Analyse faciale désactivée (FACIAL_ANALYSIS_ENABLED=false)")
             self._update_camera_indicator(available=False)
@@ -288,22 +282,21 @@ class MainWindow(QMainWindow):
             jpeg_quality=70,
             max_width=640,
         )
-        self._video_collector.frame_captured.connect(self._on_video_frame)
         self._video_collector.camera_ready.connect(self._on_camera_ready)
         self._video_collector.camera_error.connect(self._on_camera_error)
 
-        # Tester disponibilité caméra sans la bloquer
+        # Brancher frame_captured → overlay PiP + WebSocket
+        self._video_collector.frame_captured.connect(self._on_video_frame)
+
         available = self._video_collector.is_camera_available(0)
         self._camera_available = available
         self._update_camera_indicator(available)
         logger.info(f"Caméra index=0 : {'disponible ✓' if available else 'non disponible ✗'}")
 
     def _update_camera_indicator(self, available: bool):
-        """Met à jour l'indicateur caméra dans le header."""
         if self._camera_lbl is None:
             return
         if not self._facial_enabled:
-            self._camera_lbl.setText("")
             self._camera_lbl.setVisible(False)
             return
         if available:
@@ -318,19 +311,25 @@ class MainWindow(QMainWindow):
     def _on_camera_ready(self, ok: bool):
         self._camera_available = ok
         self._update_camera_indicator(ok)
+        # Mettre à jour l'overlay si la session est déjà active
+        if ok and self._facial_enabled:
+            self.video_player.camera_preview.show()
+            self.video_player.camera_preview.reposition()
+        else:
+            self.video_player.camera_preview.set_camera_unavailable()
 
     def _on_camera_error(self, msg: str):
         logger.warning(f"Caméra : {msg}")
         self._camera_available = False
         self._update_camera_indicator(False)
 
-    # ── Frame vidéo → WebSocket ───────────────────────────────────────────────
+    # ── Frame vidéo → WebSocket + overlay PiP ────────────────────────────────
 
     def _on_video_frame(self, jpeg_bytes: bytes):
-        """
-        Appelé par VideoFrameCollector chaque fois qu'un frame est capturé.
-        Encode en base64 et envoie via WebSocket au serveur.
-        """
+        # Afficher dans l'overlay PiP
+        self.video_player.camera_preview.on_frame(jpeg_bytes)
+
+        # Envoyer au serveur pour analyse faciale
         if not self.websocket_client:
             return
         try:
@@ -398,7 +397,7 @@ class MainWindow(QMainWindow):
         left = QHBoxLayout(); left.setSpacing(14); left.addWidget(badge); left.addLayout(title_col)
         lay.addLayout(left); lay.addStretch()
 
-        # ── NOUVEAU — indicateur caméra ───────────────────────────────────────
+        # Indicateur caméra
         self._camera_lbl = QLabel("")
         self._camera_lbl.setFont(QFont("Segoe UI Emoji", 16))
         self._camera_lbl.setStyleSheet("background: transparent;")
@@ -524,13 +523,23 @@ class MainWindow(QMainWindow):
     def _build_interview_container(self):
         w = QWidget(); lay = QHBoxLayout(w)
         lay.setContentsMargins(T.SP_4, T.SP_4, T.SP_4, T.SP_4); lay.setSpacing(T.SP_4)
-        self.video_player = VideoPlayerWidget(); lay.addWidget(self.video_player, stretch=2)
+
+        self.video_player = VideoPlayerWidget()
+        lay.addWidget(self.video_player, stretch=2)
+
+        # Brancher frame_captured → overlay PiP (le signal WebSocket est dans _on_video_frame)
+        if self._video_collector:
+            self._video_collector.frame_captured.connect(
+                self.video_player.camera_preview.on_frame
+            )
+
         self.interview_widget = InterviewWidget(language=self._language)
         self.interview_widget.setMaximumWidth(460)
         self.interview_widget.start_recording.connect(self._on_start_recording)
         self.interview_widget.stop_recording.connect(self._on_stop_recording)
         self.interview_widget.end_interview.connect(self._on_end_interview)
-        lay.addWidget(self.interview_widget, stretch=1); return w
+        lay.addWidget(self.interview_widget, stretch=1)
+        return w
 
     def _setup_statusbar(self):
         self.statusBar().setFixedHeight(28)
@@ -583,9 +592,13 @@ class MainWindow(QMainWindow):
             self._tmp_audio_path = None
 
     def _reset_ui_for_new_session(self):
-        # ── NOUVEAU — arrêter la capture vidéo ───────────────────────────────
+        # Arrêter la capture vidéo
         if self._video_collector and self._video_collector.is_capturing:
             self._video_collector.stop_capture()
+
+        # Cacher et réinitialiser l'overlay caméra
+        self.video_player.camera_preview.hide()
+        self.video_player.camera_preview.set_recording(False)
 
         self.stacked.setVisible(True); self.stacked.setCurrentIndex(0)
         self.interview_container.setVisible(False)
@@ -705,7 +718,6 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(self.t("answer_saved"))
             self.video_player.set_idle(); self.status_chip.set_state("connected"); return
 
-        # ── NOUVEAU — affichage métriques faciales ────────────────────────────
         if mt == "answer_evaluated":
             facial = md.get("facial")
             if facial and facial.get("frames_with_face", 0) > 0:
@@ -721,6 +733,7 @@ class MainWindow(QMainWindow):
     def _finalize_msg(self, mt, md):
         if mt == "welcome":
             self._on_session_started(md)
+
         elif mt == "welcome_back":
             self.is_connecting = False
             self.status_chip.lbl_main.setText(self.t("status_connected"))
@@ -739,6 +752,12 @@ class MainWindow(QMainWindow):
                 })
             self.video_player.set_speaking()
             self.statusBar().showMessage(self.t("welcome_back_status"))
+
+            # Afficher l'overlay caméra PiP
+            if self._camera_available and self._facial_enabled:
+                self.video_player.camera_preview.show()
+                self.video_player.camera_preview.reposition()
+
         elif mt == "question":
             max_dur = md.get("max_duration", 90)
             self.interview_widget.set_max_recording_seconds(max_dur)
@@ -746,8 +765,9 @@ class MainWindow(QMainWindow):
             self.interview_widget.set_audio_playing()
             self.video_player.set_speaking()
             self.statusBar().showMessage(self.t("question_status"))
+
         elif mt == "interview_completed":
-            # ── Arrêter la capture vidéo à la fin de l'entretien ─────────────
+            # Arrêter la capture vidéo
             if self._video_collector and self._video_collector.is_capturing:
                 self._video_collector.stop_capture()
             self._show_info(self.t("interview_complete"), self.t("thanks_message"))
@@ -765,6 +785,11 @@ class MainWindow(QMainWindow):
             self.audio_recorder.audio_chunk_ready.connect(self._on_audio_chunk)
         self.video_player.set_speaking()
         self.statusBar().showMessage(self.t("welcome_status"))
+
+        # Afficher l'overlay caméra PiP dès que la session démarre
+        if self._camera_available and self._facial_enabled:
+            self.video_player.camera_preview.show()
+            self.video_player.camera_preview.reposition()
 
     def _play_pcm(self, pcm: bytes):
         try:
@@ -819,16 +844,12 @@ class MainWindow(QMainWindow):
     # ── Enregistrement audio + capture vidéo ─────────────────────────────────
 
     def _on_start_recording(self):
-        """
-        Déclenché quand le candidat commence à répondre.
-        Lance l'enregistrement audio ET la capture vidéo simultanément.
-        """
         if self.audio_recorder:
             self.audio_recorder.start_recording()
             self.video_player.set_listening()
             self.statusBar().showMessage("● Enregistrement…")
 
-        # ── NOUVEAU — démarrer la capture caméra ──────────────────────────────
+        # Démarrer la capture caméra
         if (
             self._video_collector
             and self._facial_enabled
@@ -841,19 +862,20 @@ class MainWindow(QMainWindow):
             else:
                 logger.warning("Impossible de démarrer la capture vidéo")
 
+        # Badge REC sur l'overlay PiP
+        self.video_player.camera_preview.set_recording(True)
+
     def _on_stop_recording(self):
-        """
-        Déclenché quand le candidat arrête de répondre.
-        Arrête l'enregistrement audio ET la capture vidéo.
-        Le serveur analysera les frames collectés après réception de answer_complete.
-        """
         if self.audio_recorder:
             self.audio_recorder.stop_recording()
 
-        # ── NOUVEAU — arrêter la capture vidéo ───────────────────────────────
+        # Arrêter la capture caméra
         if self._video_collector and self._video_collector.is_capturing:
             self._video_collector.stop_capture()
             logger.info("Capture vidéo arrêtée")
+
+        # Éteindre badge REC
+        self.video_player.camera_preview.set_recording(False)
 
         if self.websocket_client:
             self.websocket_client.send_message({"type": "answer_complete"})
@@ -871,7 +893,6 @@ class MainWindow(QMainWindow):
         r = QMessageBox.question(self, self.t("end_title"), self.t("end_confirm"),
                                  QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
         if r == QMessageBox.StandardButton.Yes and self.websocket_client:
-            # Arrêter la caméra avant de terminer
             if self._video_collector and self._video_collector.is_capturing:
                 self._video_collector.stop_capture()
             self.websocket_client.send_message({"type": "end_interview"})
@@ -903,10 +924,8 @@ class MainWindow(QMainWindow):
         b.setWindowTitle(title); b.setText(msg); b.exec()
 
     def closeEvent(self, event):
-        # ── NOUVEAU — nettoyage VideoFrameCollector ───────────────────────────
         if self._video_collector:
             self._video_collector.cleanup()
-
         if self.websocket_client:
             try:
                 self.websocket_client.disconnected.disconnect()

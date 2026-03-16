@@ -1,10 +1,9 @@
 """
 Video Player Widget — Professional Light UI
-Zone vidéo sobre · barre de statut card blanche propre · indicateurs colorés
+Avec overlay caméra picture-in-picture (coin bas-gauche)
 
-CORRECTION : pygame.init() remplacé par pygame.display.init() + pygame.surfarray
-             pour éviter la double initialisation du mixer avec main_window.py.
-             Le mixer est exclusivement géré par MainWindow.
+MODIFICATION : ajout _camera_preview (CameraPreviewWidget) comme enfant.
+Le resizeEvent repositionne automatiquement l'overlay.
 """
 
 import cv2
@@ -31,7 +30,6 @@ def _sh(blur=20, dy=5, alpha=25, r=100, g=116, b=139):
 
 
 class _Dot(QWidget):
-    """Petit point animé."""
     def __init__(self, color: str, parent=None):
         super().__init__(parent)
         self._c = QColor(color); self._a = 255; self._d = -5
@@ -55,7 +53,7 @@ class _Dot(QWidget):
 
 
 class VideoPlayerWidget(QWidget):
-    """Lecteur avatar + barre de statut card blanche propre."""
+    """Lecteur avatar + barre de statut + overlay caméra PiP."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -138,7 +136,9 @@ class VideoPlayerWidget(QWidget):
 
         self._status_sub = QLabel("Vocal Intelligence")
         self._status_sub.setFont(QFont(T.FONT, T.FS_XS))
-        self._status_sub.setStyleSheet(f"color: {T.TEXT_400}; letter-spacing: 0.5px; background: transparent;")
+        self._status_sub.setStyleSheet(
+            f"color: {T.TEXT_400}; letter-spacing: 0.5px; background: transparent;"
+        )
 
         text_col.addWidget(self._status_main)
         text_col.addWidget(self._status_sub)
@@ -161,14 +161,12 @@ class VideoPlayerWidget(QWidget):
         wrap_lay.addWidget(bar)
         root.addWidget(wrapper)
 
-        # ── Init pygame — display et surfarray UNIQUEMENT, pas le mixer ───────
-        # Le mixer est initialisé et géré exclusivement par MainWindow pour éviter
-        # les conflits de paramètres (frequency, channels, bits).
+        # ── Init pygame ───────────────────────────────────────────────────────
         if not pygame.get_init():
             pygame.display.init()
 
-        self.base_path  = Path(__file__).resolve().parent.parent.parent
-        self.video_dir  = self.base_path / "assets" / "videos"
+        self.base_path   = Path(__file__).resolve().parent.parent.parent
+        self.video_dir   = self.base_path / "assets" / "videos"
         self.video_paths = {
             "idle":      str(self.video_dir / "rh_idle.mp4"),
             "speaking":  str(self.video_dir / "rh_speaking.mp4"),
@@ -178,7 +176,19 @@ class VideoPlayerWidget(QWidget):
         self.timer         = QTimer()
         self.timer.timeout.connect(self._update_frame)
         self.current_state = "idle"
+
+        # ── Overlay caméra PiP ────────────────────────────────────────────────
+        from client.ui.camera_preview_widget import CameraPreviewWidget
+        self._camera_preview = CameraPreviewWidget(parent=self)
+        self._camera_preview.hide()   # caché jusqu'à la connexion
+
         self.set_idle()
+
+    # ── Propriété accès overlay ───────────────────────────────────────────────
+
+    @property
+    def camera_preview(self):
+        return self._camera_preview
 
     # ── Video ─────────────────────────────────────────────────────────────────
 
@@ -229,23 +239,22 @@ class VideoPlayerWidget(QWidget):
                     Qt.TransformationMode.SmoothTransformation,
                 )
             )
-        except Exception as e: print(f"[video] {e}")
+        except Exception as e:
+            print(f"[video] {e}")
+
+    # ── resizeEvent — repositionne l'overlay ──────────────────────────────────
+
+    def resizeEvent(self, e):
+        super().resizeEvent(e)
+        if hasattr(self, "_camera_preview"):
+            self._camera_preview.reposition()
 
     # ── Helpers d'état ────────────────────────────────────────────────────────
 
     def _apply_state(
-        self,
-        icon_pix,
-        main_text: str,
-        main_color: str,
-        badge_text: str,
-        badge_color: str,
-        badge_bg: str,
-        badge_border: str,
-        dot_color: str,
-        ic_bg0: str,
-        ic_bg1: str,
-        ic_border: str,
+        self, icon_pix, main_text, main_color,
+        badge_text, badge_color, badge_bg, badge_border,
+        dot_color, ic_bg0, ic_bg1, ic_border,
     ):
         self._ic_lbl.setPixmap(icon_pix)
         self._ic_cont.setStyleSheet(f"""
@@ -277,8 +286,7 @@ class VideoPlayerWidget(QWidget):
             StarkIcons.user_check(T.GREEN_600).pixmap(QSize(22, 22)),
             "Agent RH : Prêt à vous écouter", T.TEXT_800,
             "Disponible", T.GREEN_700, T.GREEN_50, T.GREEN_100,
-            T.GREEN_500,
-            T.GREEN_50, "#DCFCE7", T.GREEN_100,
+            T.GREEN_500, T.GREEN_50, "#DCFCE7", T.GREEN_100,
         )
         self._load_video("idle")
 
@@ -287,8 +295,7 @@ class VideoPlayerWidget(QWidget):
             StarkIcons.message_circle(T.CYAN_600).pixmap(QSize(22, 22)),
             "Agent RH : Analyse de votre profil…", T.CYAN_700,
             "En cours", T.CYAN_700, T.CYAN_50, T.CYAN_200,
-            T.CYAN_500,
-            T.CYAN_50, T.BLUE_50, T.CYAN_200,
+            T.CYAN_500, T.CYAN_50, T.BLUE_50, T.CYAN_200,
         )
         self._load_video("speaking")
 
@@ -297,15 +304,11 @@ class VideoPlayerWidget(QWidget):
             StarkIcons.headphones(T.AMBER_500).pixmap(QSize(22, 22)),
             "Agent RH : Écoute attentive en cours…", T.TEXT_800,
             "Écoute…", T.AMBER_500, T.AMBER_50, T.AMBER_100,
-            T.AMBER_500,
-            T.AMBER_50, "#FEF3C7", T.AMBER_100,
+            T.AMBER_500, T.AMBER_50, "#FEF3C7", T.AMBER_100,
         )
         self._load_video("listening")
-
-    def resizeEvent(self, e): super().resizeEvent(e)
 
     def closeEvent(self, e):
         self.timer.stop()
         if self.cap: self.cap.release()
-        # Ne pas appeler pygame.quit() ici — c'est la responsabilité de MainWindow
         super().closeEvent(e)
