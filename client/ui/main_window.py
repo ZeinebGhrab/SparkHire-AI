@@ -599,6 +599,11 @@ class MainWindow(QMainWindow):
                 ch   = md.get("channels", _MIXER_CHANNELS)
                 bits = md.get("bits_per_sample", 16)
                 self._ensure_audio_format(sr, ch, bits)
+                # Mettre à jour la durée max dès réception du header de la question
+                if mt == "question":
+                    max_dur = md.get("max_duration", 90)
+                    self.interview_widget.set_max_recording_seconds(max_dur)
+                    self.interview_widget.enable_recording(False)
                 return
             ab = md.get("audio_data")
             if ab: self._play_bytes_direct(base64.b64decode(ab))
@@ -644,6 +649,8 @@ class MainWindow(QMainWindow):
             self.video_player.set_speaking()
             self.statusBar().showMessage(self.t("welcome_back_status"))
         elif mt == "question":
+            max_dur = md.get("max_duration", 90)
+            self.interview_widget.set_max_recording_seconds(max_dur)
             self.interview_widget.update_question(md.get("progress", {}))
             self.interview_widget.set_audio_playing()
             self.video_player.set_speaking()
