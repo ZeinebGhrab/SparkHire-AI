@@ -239,6 +239,8 @@ class InterviewWidget(QWidget):
         db_lay.addWidget(self._max_dur_lbl)
         dur_badge.setStyleSheet(f"QFrame {{ background: {T.AMBER_50}; border: 1px solid {T.AMBER_100}; border-radius: {T.R_FULL}px; }}")
         dur_row.addWidget(dur_badge); lay.addLayout(dur_row)
+        dur_badge.setVisible(False)   # caché jusqu'à la première question
+        self._dur_badge = dur_badge
 
         lay.addSpacing(T.SP_2)
 
@@ -387,6 +389,7 @@ class InterviewWidget(QWidget):
         self._max_recording_secs = max(10, seconds)
         self._remaining_secs     = self._max_recording_secs
         self._update_max_duration_label()
+        self._dur_badge.setVisible(True)   # afficher dès la première question
 
     def update_question(self, progress: dict):
         """Appelé dès que la question commence à se charger. Désactive le bouton."""
