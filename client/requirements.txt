@@ -45,7 +45,7 @@ vosk==0.3.45
 torch
 
 # ── TTS — Edge-TTS (Microsoft, moteur principal) ─────────────────
-edge-tts==6.1.12
+edge-tts==7.2.7
 
 # ── TTS — gTTS (Google, fallback automatique) ────────────────────
 gTTS==2.5.3
