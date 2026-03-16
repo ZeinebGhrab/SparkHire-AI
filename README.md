@@ -1,8 +1,9 @@
 # 🎤 SparkHire AI — Intelligent Voice Interview Platform
 
-Complete recruitment platform with automated voice interviews via AI avatar.
+Complete recruitment platform with automated voice interviews via AI avatar, real-time facial behavior analysis, and weighted LLM scoring.
 
-> **Pipeline:** Candidate speaks → Whisper ASR (GPU CUDA) → Llama 3.2 LLM (GPU) → Weighted Score + Real-time Feedback
+> **Pipeline:** Candidate speaks → Whisper ASR (GPU CUDA) → Llama 3.2 LLM (GPU) → Weighted Score + Real-time Feedback  
+> **Facial Pipeline:** Webcam → MediaPipe FaceMesh (478 landmarks) + DeepFace VGG CNN → Confidence / Stress / Engagement scores
 
 ---
 
@@ -15,12 +16,14 @@ Complete recruitment platform with automated voice interviews via AI avatar.
 - 📝 **Strict AI evaluation** via Ollama + Llama 3.2 (score 0–10, rigorous grading scale)
 - 🔁 **Intelligent follow-up questions** if the answer is insufficient (score < 8) — synchronous pipeline
 - 📊 **Global interview report** with final hiring decision (Accepted / On Hold / Rejected)
+- 😊 **Facial behavior analysis** — real-time emotion detection + post-answer metrics
+- 🎥 **Camera PiP overlay** — live webcam preview with REC badge + real-time metric bars
 - 🔔 **Automatic recruiter notification** — one notification per completed interview
 - 🗓️ **Interview scheduling** with 30-minute late access window
 - 🔄 **Welcome back on reconnection** — session resumes at the current question if `in_progress`
-- 🎛️ **Auto-start recording** — recording begins automatically after each question audio ends; candidate stops when ready
+- 🎛️ **Auto-start recording** — recording begins automatically after each question audio ends
 - ⏱️ **Per-question response timer** — configurable max duration (default 1 min 30 s) with countdown and auto-stop
-- 🔊 **Text-to-speech** via Edge-TTS (Microsoft) — primary engine, instant
+- 🔊 **Text-to-speech** via Edge-TTS 7.x (Microsoft) — primary engine, instant, retry on 403
 - 🔁 **Automatic TTS fallback** via gTTS (Google) if Edge-TTS is unavailable
 - ⚡ **Real-time WebSocket** (chunked PCM audio)
 - ⚡ **TTS prefetch** — next question audio generated while candidate answers current one
@@ -101,20 +104,34 @@ pip install -r requirements.txt
 pip install -r client/requirements.txt
 ```
 
-### 6. Verify GPU support
+### 6. ⚠️ Critical — Protobuf version for facial analysis
+
+MediaPipe requires `protobuf<5`. Run this **after** all other installs:
+
+```bash
+pip install "protobuf>=4.25.3,<5.0.0"
+```
+
+> The `pip` resolver will warn about a conflict with TensorFlow — this is safe to ignore.  
+> DeepFace works with `tf-keras` only (TensorFlow is not required and can be uninstalled):
+> ```bash
+> pip uninstall tensorflow -y
+> ```
+
+### 7. Verify GPU support
 
 ```bash
 python -c "import torch; print('CUDA:', torch.cuda.is_available(), '| Version:', torch.version.cuda)"
 python -c "import ctranslate2; print('cuDNN compute types:', ctranslate2.get_supported_compute_types('cuda'))"
 ```
 
-### 7. Configure `.env`
+### 8. Configure `.env`
 
 ```bash
 cp .env.example .env
 ```
 
-### 8. Download the Whisper model
+### 9. Download the Whisper model
 
 ```bash
 python scripts/download_whisper.py medium
@@ -128,14 +145,14 @@ python scripts/download_whisper.py medium
 | **medium** | **1.5 GB** | ✅ **recommended** |
 | large-v3 | 3.1 GB | GPU only (6 GB+ VRAM) |
 
-### 9. Ollama LLM model
+### 10. Ollama LLM model
 
 ```bash
 ollama serve
 ollama pull llama3.2
 ```
 
-### 10. Database setup
+### 11. Database setup
 
 ```bash
 python scripts/create_admin.py
@@ -150,6 +167,15 @@ python scripts/seed_job_positions.py
 
 ```bash
 uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+**Expected startup logs:**
+```
+✅ Whisper 'medium' prêt sur CUDA
+✅ Edge-TTS initialisé avec voix féminine naturelle
+✅ MediaPipe FaceMesh | 478 landmarks + iris | EAR + solvePnP | CPU
+✅ DeepFace CNN Emotion | VGG ~73% AffectNet | poids chargés
+✅ LLM Ollama disponible | modèle=llama3.2
 ```
 
 ### PySide6 Client
@@ -167,7 +193,90 @@ python -m client.main
 | Whisper ASR (medium) | 5–10 s | **~1–3 s** |
 | Ollama LLM (llama3.2) | 15–30 s | **~2–8 s** |
 | Edge-TTS | ~1 s | ~1 s (network) |
+| DeepFace (emotion CNN) | ~40 ms/frame | ~15 ms/frame |
+| MediaPipe (landmarks) | ~8 ms/frame | ~8 ms/frame (CPU only) |
 | **Total per question** | **25–45 s** | **~5–12 s** |
+
+---
+
+## 😊 Facial Behavior Analysis
+
+### Pipeline
+
+```
+Webcam (2 fps)
+  │
+  ├─► MediaPipe FaceMesh ──► 478 landmarks + iris landmarks (468-477)
+  │     • EAR — Eye Aspect Ratio → blink detection (threshold 0.20)
+  │     • Iris offset (lm 468/473) → precise gaze / eye contact
+  │     • solvePnP 6-point → real yaw/pitch/roll angles
+  │     • Lip corner ratio → smile detection
+  │     • Brow raise/frown → Action Units AU1/2/4
+  │
+  └─► DeepFace VGG CNN ──► 7 emotions (~73% AffectNet precision)
+        angry · disgust · fear · happy · sad · surprise · neutral
+        ↓ fallback if unavailable
+        FACS heuristics ──► 6 Action Units from landmarks
+```
+
+### Metrics produced per answer
+
+| Metric | Range | Description |
+|---|---|---|
+| `confidence_score` | 0–10 | Eye contact + stability + smile − stress |
+| `stress_score` | 0–10 | Brow frown + gaze avoidance + blink anomaly |
+| `engagement_score` | 0–10 | Eye contact + expressiveness + brow raise |
+| `eye_contact_ratio` | 0–1 | % of frames with gaze directed at camera |
+| `head_stability` | 0–1 | 1.0 = perfectly stable, based on yaw/pitch std |
+| `smile_ratio` | 0–1 | % of frames with detected smile |
+| `blink_rate` | /min | Normal 15–20; >30 = stress; <5 = fixation |
+| `dominant_emotion` | string | Most frequent emotion across the answer |
+
+### Client-side PiP overlay
+
+The **Camera Preview Widget** displays in the bottom-left corner of the video player:
+- Live webcam feed (mirror-flipped) with green face detection border
+- 4 real-time progress bars: Confidence · Stress · Eye Contact · Stability
+- Emotion emoji updated live
+- **● REC** blinking red badge during recording
+- Post-evaluation metrics update after each answer
+
+### Emotion accuracy comparison
+
+| Backend | Method | Accuracy |
+|---|---|---|
+| FACS heuristics (fallback) | 6 Action Units from landmarks | ~60% |
+| **DeepFace VGG CNN (active)** | **CNN trained on AffectNet** | **~73%** |
+
+### DeepFace model weights
+
+Downloaded automatically at first launch (~6 MB):
+```
+~/.deepface/weights/facial_expression_model_weights.h5
+```
+Or manually from:
+```
+https://github.com/serengil/deepface_models/releases/download/v1.0/facial_expression_model_weights.h5
+```
+
+---
+
+## 🔊 TTS Engine (Edge-TTS 7.x)
+
+Version 7.x fixes the **HTTP 403 errors** that affected version 6.1.x (revoked Microsoft token).
+
+**Changes in 7.x API:**
+```python
+# 6.x (deprecated)
+communicate = edge_tts.Communicate(text, voice)
+
+# 7.x (current)
+communicate = edge_tts.Communicate(text, voice, rate="+0%", pitch="+0Hz")
+```
+
+**Retry logic:** automatic retry ×3 with progressive backoff on any network/403 error.
+
+**Fallback chain:** Edge-TTS → gTTS (Google) — transparent, no interruption.
 
 ---
 
@@ -175,163 +284,27 @@ python -m client.main
 
 Each question carries a configurable `weight` (default `1.0`, range `0.1–10.0`).
 
-The final `average_score` is the **weighted average**:
-
 ```
 average_score = Σ(score_i × weight_i) / Σ(weight_i)
 ```
 
-The weight is defined per question when creating a job position and is stored in each answer evaluation for full auditability.
-
-**Example with 3 questions (weights 1, 2, 3) :**
+**Example with 3 questions (weights 1, 2, 3):**
 
 | Question | Score | Weight | Contribution |
 |---|---|---|---|
 | Q1 — Presentation | 8/10 | 1.0 | 8 |
 | Q2 — ML tools | 6/10 | 2.0 | 12 |
 | Q3 — Missing data | 7/10 | 3.0 | 21 |
-| **Total** | | **6.0** | **41** |
-| **Weighted avg** | | | **41/6 = 6.83** |
+| **Weighted avg** | | **6.0** | **41/6 = 6.83** |
 
 ---
 
 ## ⏱️ Response Timer
 
-Each question has a configurable `max_duration_seconds` (default **90 seconds = 1 min 30 s**).
-
+- Default: **90 seconds** per question (configurable via `max_duration_seconds`)
 - Recording **starts automatically** when the question audio finishes
-- A countdown is displayed during recording (grey → orange ≤ 30 s → red ≤ 10 s)
-- Recording **stops automatically** at 0 s
-- The candidate can **stop manually at any time** by clicking the stop button
-- The duration badge is shown only when a question is active (hidden during welcome / welcome back)
-
----
-
-## 📝 Usage
-
-### 1. Create a job position with weighted questions (API)
-
-```bash
-curl -X POST http://localhost:8000/auth/login \
-  -d "username=rh@stark.tn&password=admin123"
-
-curl -X POST http://localhost:8000/interviews/positions \
-  -H "Authorization: Bearer <token>" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "title": "Data Scientist",
-    "department": "Tech",
-    "location": "Sfax",
-    "is_active": true,
-    "questions": [
-      {
-        "order": 1,
-        "weight": 1.0,
-        "max_duration_seconds": 90,
-        "question_fr": "Parlez-moi de vous et de votre expérience en data science.",
-        "question_en": "Tell me about yourself and your data science experience.",
-        "question_ar": "أخبرني عن نفسك وعن تجربتك في علم البيانات.",
-        "evaluation_criteria": ["clarté", "expérience", "motivation"]
-      },
-      {
-        "order": 2,
-        "weight": 2.0,
-        "max_duration_seconds": 90,
-        "question_fr": "Quels outils ML avez-vous utilisés ? Donnez un exemple concret.",
-        "question_en": "What ML tools have you used? Give a concrete example.",
-        "question_ar": "ما هي أدوات تعلم الآلة التي استخدمتها؟",
-        "evaluation_criteria": ["maîtrise technique", "exemples concrets"]
-      },
-      {
-        "order": 3,
-        "weight": 3.0,
-        "max_duration_seconds": 90,
-        "question_fr": "Comment gérez-vous les données manquantes ?",
-        "question_en": "How do you handle missing data?",
-        "question_ar": "كيف تتعامل مع البيانات المفقودة؟",
-        "evaluation_criteria": ["méthodes", "justification"]
-      }
-    ]
-  }'
-```
-
-### 2. Create a session
-
-```bash
-curl -X POST http://localhost:8000/interviews/sessions \
-  -H "Authorization: Bearer <token>" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "candidate_id": "<id>",
-    "job_position_id": "<id>",
-    "language": "fr"
-  }'
-```
-
-### 3. Take the interview (Client)
-
-1. `python -m client.main`
-2. Select interview language
-3. Enter the `session_id`
-4. Click **Start Interview**
-5. Listen to the avatar — recording starts automatically when the question ends
-6. Answer — click **Stop** when done (or let the 90 s timer stop automatically)
-7. Score, verdict and feedback appear in real time
-8. If score < 8 → a follow-up question is automatically asked
-9. Global report with hiring decision displayed at the end
-
-> **Reconnection:** if the connection drops mid-interview, reconnect with the same `session_id`. The platform resumes at the current question with a "Welcome back" message.
-
----
-
-## 📊 Evaluation Document
-
-```json
-{
-  "session_id": "session_xxx",
-  "candidate_name": "Ahmed Ben Ali",
-  "position_title": "Data Scientist",
-  "language": "fr",
-  "total_questions": 3,
-  "answered_questions": 3,
-  "average_score": 6.83,
-  "decision": "pending",
-  "decision_label": "En attente",
-  "decision_color": "#F59E0B",
-  "decision_reason": "Moyenne pondérée de 6.83/10 sur 3 question(s).",
-  "recommendation": "En attente",
-  "key_strengths": ["..."],
-  "key_improvements": ["..."],
-  "summary": "...",
-  "per_answer": [
-    {
-      "question_order": 1,
-      "score": 8.0,
-      "weight": 1.0,
-      "verdict": "Très bien",
-      "feedback": "...",
-      "had_followup": false
-    }
-  ]
-}
-```
-
-> **Note:** `global_verdict` has been removed — `average_score` + `decision` + `decision_label` carry all necessary information without redundancy.
-
----
-
-## 📊 Evaluation Grading Scale
-
-| Score | Verdict | Meaning |
-|---|---|---|
-| 9–10 | Excellent | Exceptional answer, precise, with concrete examples |
-| 7–8 | Very Good | Good answer but lacking depth or specific examples |
-| 5–6 | Acceptable | Superficial or vague, notable inaccuracies |
-| 3–4 | Poor | Weak answer, errors or partial understanding |
-| 0–2 | Insufficient | Incorrect, off-topic, or empty |
-
-> A score below **8** automatically triggers a follow-up question (synchronous pipeline).
-> The follow-up "Let's move to the next question" message is **not played after the last question**.
+- Countdown: grey → orange (≤30s) → red (≤10s)
+- Auto-stop at 0s; candidate can stop manually at any time
 
 ---
 
@@ -358,21 +331,22 @@ sparkhire-ai/
 │   ├── candidates/
 │   ├── interviews/
 │   │   ├── crud.py            ← _send_completion_notification()
-│   │   ├── models.py          ← Question.weight + max_duration_seconds=90
+│   │   ├── models.py          ← Question.weight + FacialAnalysisData
 │   │   └── routes.py
 │   ├── evaluation/
-│   │   ├── models.py          ← GlobalEvaluation (no global_verdict)
-│   │   ├── service.py         ← weighted average + guaranteed fields
+│   │   ├── models.py          ← GlobalEvaluation + decision labels
+│   │   ├── service.py         ← weighted average + facial integration
 │   │   └── routes.py
 │   ├── services/
-│   │   ├── asr_service.py
-│   │   ├── tts_service.py
-│   │   ├── edge_tts_engine.py
-│   │   ├── llm_service.py     ← generate_global_summary (weighted, no global_verdict)
-│   │   └── avatar_service.py  ← simple | did only (wav2lip/liveportrait removed)
+│   │   ├── asr_service.py     ← Whisper GPU + CPU fallback
+│   │   ├── tts_service.py     ← Edge-TTS 7.x + gTTS fallback
+│   │   ├── edge_tts_engine.py ← retry ×3 + 7.x API
+│   │   ├── llm_service.py     ← evaluate_with_facial()
+│   │   ├── facial_analysis_service.py  ← v3.1 MediaPipe + DeepFace
+│   │   └── avatar_service.py
 │   ├── websocket/
 │   │   ├── connection_manager.py
-│   │   └── interview_handler.py  ← welcome_back + no followup_thanks on last Q
+│   │   └── interview_handler.py  ← video_frame + facial pipeline
 │   ├── notifications/
 │   ├── analytics/
 │   └── export/
@@ -381,10 +355,15 @@ sparkhire-ai/
 │   ├── config.py
 │   ├── main.py
 │   ├── core/
+│   │   ├── audio_recorder.py
+│   │   ├── video_recorder.py  ← VideoFrameCollector 2fps JPEG
+│   │   └── websocket_client.py
 │   └── ui/
-│       ├── main_window.py         ← pre_init pygame + welcome_back handling
-│       ├── interview_widget.py    ← auto-start recording + countdown 90 s
-│       └── video_player_widget.py ← no bare pygame.init()
+│       ├── main_window.py         ← PiP overlay + facial metrics
+│       ├── interview_widget.py    ← facial results panel
+│       ├── video_player_widget.py ← resizeEvent → reposition overlay
+│       ├── camera_preview_widget.py  ← PiP + real-time analysis
+│       └── stark_theme.py
 │
 ├── scripts/
 ├── models/
@@ -422,8 +401,13 @@ OLLAMA_MODEL=llama3.2
 OLLAMA_TIMEOUT=120.0
 
 # ── Avatar ────────────────────────────────────────────────
-# Valeurs valides : simple | did
+# Valid values : simple | did
 AVATAR_PROVIDER=simple
+
+# ── Facial Analysis ───────────────────────────────────────
+FACIAL_ANALYSIS_ENABLED=true
+FACIAL_CAPTURE_FPS=2.0      # frames per second sent from client
+FACIAL_DEVICE=cpu           # cpu (MediaPipe is always CPU)
 
 # ── Client ────────────────────────────────────────────────
 WEBSOCKET_URL=ws://localhost:8000
@@ -443,13 +427,51 @@ KMP_DUPLICATE_LIB_OK=TRUE
 | Database | MongoDB 7 / PyMongo 4.10 | Data persistence |
 | ASR | faster-whisper 1.0.3 + ctranslate2 4.4.0 | GPU transcription (~1–3 s) |
 | cuDNN | nvidia-cudnn-cu12 8.9.7.29 | cuDNN 8 DLLs for Windows GPU |
-| TTS | Edge-TTS 6.1 | Microsoft TTS — primary engine |
+| TTS | Edge-TTS **7.2.7** | Microsoft TTS — primary engine (fixed 403) |
 | TTS | gTTS 2.5.3 | Google TTS — automatic fallback |
 | LLM | Ollama + Llama 3.2 | AI answer evaluation (GPU) |
+| Facial | MediaPipe 0.10.14 | 478 landmarks + iris gaze + solvePnP |
+| Facial | DeepFace 0.0.99 + tf-keras | CNN emotion detection ~73% AffectNet |
 | Auth | python-jose + bcrypt 4.2 | JWT + password hashing |
 | Client | PySide6 6.7 | Qt GUI framework |
-| Client | pygame 2.6 + OpenCV 4.10 | Audio playback + avatar video |
+| Client | pygame 2.6 + OpenCV 4.10 | Audio playback + avatar video + camera |
 | Audio | PyAudio 0.2 + pydub 0.25 | Microphone capture + conversion |
+
+---
+
+## 🐛 Common Issues
+
+| Error | Cause | Fix |
+|---|---|---|
+| `# channels not specified` | Double pygame mixer init | Fixed via `pygame.mixer.pre_init()` at module level |
+| `Could not locate cudnn_ops_infer64_8.dll` | cuDNN 8 missing | Included via `nvidia-cudnn-cu12==8.9.7.29` |
+| `float16 compute type not supported` | CPU with `float16` | Set `WHISPER_COMPUTE_TYPE=int8` for CPU |
+| `OMP: Error #15` | OpenMP conflict | Set `KMP_DUPLICATE_LIB_OK=TRUE` in `.env` |
+| `torch.cuda.is_available() = False` | PyTorch without CUDA | `pip install torch --index-url https://download.pytorch.org/whl/cu121` |
+| `Edge-TTS 403 Forbidden` | edge-tts 6.x revoked token | **Upgrade: `pip install edge-tts==7.2.7`** |
+| `MediaPipe init: FieldDescriptor has no attribute 'label'` | protobuf>=5 conflict | **`pip install "protobuf>=4.25.3,<5.0.0"`** |
+| `Analyse faciale timeout (N frames)` | MediaPipe failing silently | Fix protobuf above, then restart server |
+| `données faciales: absentes` | MediaPipe or DeepFace not initialized | Check startup logs for ✅ messages |
+| `DeepFace: download weights failed` | No internet at first launch | Download manually to `~/.deepface/weights/` |
+| `PyAudio: No module found` | PortAudio missing | Windows: `pipwin install pyaudio` |
+| `ffmpeg not found` | FFmpeg absent | Windows: extract to `models/ffmpeg-*/` |
+| `Connection refused :11434` | Ollama stopped | Run `ollama serve` in a separate terminal |
+| `MongoDB timeout` | Service stopped | Windows: `net start MongoDB` |
+| `Empty transcription` | Audio too short | Speak clearly for at least 1 second |
+
+---
+
+## 📊 Evaluation Grading Scale
+
+| Score | Verdict | Meaning |
+|---|---|---|
+| 9–10 | Excellent | Exceptional answer, precise, with concrete examples |
+| 7–8 | Very Good | Good answer but lacking depth or specific examples |
+| 5–6 | Acceptable | Superficial or vague, notable inaccuracies |
+| 3–4 | Poor | Weak answer, errors or partial understanding |
+| 0–2 | Insufficient | Incorrect, off-topic, or empty |
+
+> A score below **8** automatically triggers a follow-up question.
 
 ---
 
@@ -459,7 +481,7 @@ KMP_DUPLICATE_LIB_OK=TRUE
 |---|---|---|
 | `GET /export/candidates/csv` | CSV | All candidates with skills, languages, certifications |
 | `GET /export/interviews/csv` | CSV | All sessions with weighted average score |
-| `GET /export/interviews/{id}/json` | JSON | Full details of one interview (includes weights) |
+| `GET /export/interviews/{id}/json` | JSON | Full details of one interview (includes facial metrics) |
 | `GET /export/evaluations/csv` | CSV | All LLM evaluations per question |
 
 ---
@@ -492,25 +514,6 @@ When a candidate completes an interview, the platform automatically notifies the
 
 ---
 
-## 🐛 Common Issues
-
-| Error | Cause | Fix |
-|---|---|---|
-| `# channels not specified` | Double pygame mixer init | Fixed via `pygame.mixer.pre_init()` at module level in `main_window.py` |
-| `Could not locate cudnn_ops_infer64_8.dll` | cuDNN 8 missing | Included via `nvidia-cudnn-cu12==8.9.7.29` in `requirements.txt` |
-| `float16 compute type not supported` | CPU with `float16` | Set `WHISPER_COMPUTE_TYPE=int8` for CPU |
-| `OMP: Error #15` | OpenMP conflict | Set `KMP_DUPLICATE_LIB_OK=TRUE` in `.env` |
-| `torch.cuda.is_available() = False` | PyTorch without CUDA | `pip install torch --index-url https://download.pytorch.org/whl/cu121` |
-| `PyAudio: No module found` | PortAudio missing | Windows: `pipwin install pyaudio` |
-| `ffmpeg not found` | FFmpeg absent | Windows: extract to `models/ffmpeg-*/` |
-| `Connection refused :11434` | Ollama stopped | Run `ollama serve` in a separate terminal |
-| `MongoDB timeout` | Service stopped | Windows: `net start MongoDB` |
-| `Empty transcription` | Audio too short | Speak clearly for at least 1 second |
-| `Notification not created` | `created_by` empty (old sessions) | Fallback active — all recruiters notified |
-| `LLM JSON parse warning` | llama3.2 truncates response | Set `OLLAMA_TIMEOUT=120.0` in `.env` |
-
----
-
 ## 🧪 Tests
 
 ```bash
@@ -530,10 +533,11 @@ python scripts/debug_notification.py
 
 This project was developed as a **Final Year Project** for the **2nd year of an Engineering Degree in Data Engineering & Decisional Systems** at ENET'Com Sfax.
 
-- **Data Engineering** — real-time audio pipeline, MongoDB data modeling, REST API design with FastAPI
-- **AI** — speech recognition (Whisper GPU), large language model evaluation (Llama 3.2 via Ollama GPU), text-to-speech synthesis (Edge-TTS)
-- **Decisional Systems** — weighted scoring engine, follow-up question generation, global hiring decision
-- **Software Engineering** — WebSocket communication, TTS prefetch, synchronous follow-up pipeline, JWT authentication, automatic recruiter notifications
+- **Data Engineering** — real-time audio/video pipeline, MongoDB data modeling, REST API design with FastAPI
+- **AI** — speech recognition (Whisper GPU), LLM evaluation (Llama 3.2 via Ollama GPU), TTS synthesis (Edge-TTS 7.x), facial emotion CNN (DeepFace VGG)
+- **Computer Vision** — MediaPipe FaceMesh (478 landmarks + iris), Eye Aspect Ratio, solvePnP head pose, gaze estimation
+- **Decisional Systems** — weighted scoring engine, follow-up question generation, global hiring decision, behavioral scoring
+- **Software Engineering** — WebSocket communication, TTS prefetch, JWT authentication, automatic recruiter notifications, PiP camera overlay
 
 ---
 
