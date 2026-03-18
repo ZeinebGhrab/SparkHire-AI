@@ -55,14 +55,29 @@ from typing import Optional
 import numpy as np
 
 logger = logging.getLogger(__name__)
-os.environ.setdefault("GLOG_minloglevel", "3")
+logger.setLevel(logging.DEBUG)   # ← TEMPORAIRE diagnostic eye_contact — retirer après
 os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
 
 # ── Constantes ────────────────────────────────────────────────────────────────
-_EAR_BLINK_THRESHOLD  = 0.20
-_IRIS_CONTACT_X       = 0.35
-_IRIS_CONTACT_Y       = 0.28
-MAX_FRAMES_TO_ANALYZE = 25
+# Calibrés pour setup laptop (caméra intégrée sous l'écran, visage à 60-80cm)
+#
+# EAR_BLINK : seuil Eye Aspect Ratio pour détecter un clignement.
+#   0.20 était trop bas → manque les clignements quand le visage est loin.
+#   0.22 capture correctement les clignements à distance normale d'interview.
+#
+# IRIS_CONTACT_X/Y : tolérance offset iris par rapport au centre de l'œil.
+#   Avec une caméra sous l'écran, regarder l'écran = regard légèrement vers
+#   le haut → iris_offset_y systématiquement > 0.28 → contact=0% toujours.
+#   On compense avec des seuils plus larges.
+#
+# YAW/PITCH : angles de tête tolérés pour le contact visuel.
+#   Légèrement augmentés pour permettre un léger mouvement naturel.
+_EAR_BLINK_THRESHOLD   = 0.22   # 0.20 → 0.22  (+10%)
+_IRIS_CONTACT_X        = 0.45   # 0.35 → 0.45  (latéral)
+_IRIS_CONTACT_Y        = 0.40   # 0.28 → 0.40  (vertical — compense caméra basse)
+_EYE_CONTACT_MAX_YAW   = 25.0   # 20°  → 25°
+_EYE_CONTACT_MAX_PITCH = 20.0   # 15°  → 20°
+MAX_FRAMES_TO_ANALYZE  = 25
 
 _MODEL_POINTS_3D = np.array([
     [  0.0,    0.0,    0.0  ],
@@ -213,15 +228,17 @@ class _HSEmotionBackend(_EmotionBackend):
 
         self._device = "cuda" if (device == "cuda" and torch.cuda.is_available()) else "cpu"
 
-        # enet_b2_8 : meilleure précision (~82% AffectNet8)
-        # enet_b0_8_best_afew : optimisé in-the-wild (légèrement moins précis mais
-        #                        plus robuste aux conditions d'éclairage variées)
-        model_name = "enet_b2_8"
+        # enet_b0_8_best_afew : optimisé in-the-wild (AFEW dataset = vidéos réelles).
+        # Moins biaisé vers fear/angry en conditions d'éclairage intérieur
+        # par rapport à enet_b2_8 (pur AffectNet8, plus précis en labo mais
+        # trop sensible à la tension faciale normale en interview).
+        model_name = "enet_b0_8_best_afew"
+        self._model_name = model_name
         self._fer = HSEmotionRecognizer(model_name=model_name, device=self._device)
 
         logger.info(
             f"✅ HSEmotion | modèle={model_name} | "
-            f"device={self._device.upper()} | précision≈82% AffectNet8"
+            f"device={self._device.upper()} | optimisé in-the-wild"
         )
 
     def predict(self, face_bgr: np.ndarray) -> dict[str, float] | None:
@@ -277,7 +294,7 @@ class _HSEmotionBackend(_EmotionBackend):
 
     @property
     def source_label(self) -> str:
-        return f"hsemotion_b2_{self._device}"
+        return f"hsemotion_{self._model_name}_{self._device}"
 
 
 class _DeepFaceBackend(_EmotionBackend):
@@ -630,17 +647,39 @@ class FacialAnalysisService:
             result.ear_right = self._ear(lm, 386, 374, 263, 362)
             result.is_blink  = (result.ear_left + result.ear_right) / 2 < _EAR_BLINK_THRESHOLD
 
-            # 3. Contact visuel iris
+            # 3. Contact visuel — détection par solvePnP (yaw/pitch) uniquement
+            #
+            # Pourquoi on abandonne iris_offset comme critère primaire :
+            #   La caméra laptop est ~10cm sous l'écran → quand on regarde l'écran,
+            #   iris_offset_y est structurellement positif (regard "vers le haut"
+            #   du point de vue caméra). Aucun seuil fixe ne peut compenser ça
+            #   sans calibration par session.
+            #
+            # solvePnP donne les angles de tête (yaw/pitch) en coordonnées absolues
+            #   indépendamment de la position de la caméra → signal fiable.
+            #   yaw  : rotation gauche/droite  (< 25° = face caméra)
+            #   pitch: rotation haut/bas        (< 20° = face caméra)
+            #
+            # iris_offset est conservé pour le logging et les métriques fines,
+            # mais n'est plus un critère bloquant pour eye_contact.
             ox_l, oy_l = self._iris_offset(lm, 468,  33, 133, 159, 145)
             ox_r, oy_r = self._iris_offset(lm, 473, 263, 362, 386, 374)
             result.iris_offset_x = (ox_l + ox_r) / 2
             result.iris_offset_y = (oy_l + oy_r) / 2
-            result.eye_contact   = (
-                abs(result.iris_offset_x) < _IRIS_CONTACT_X
-                and abs(result.iris_offset_y) < _IRIS_CONTACT_Y
-                and not result.is_blink
-                and abs(result.yaw)   < 20
-                and abs(result.pitch) < 15
+
+            result.eye_contact = (
+                not result.is_blink
+                and abs(result.yaw)   < _EYE_CONTACT_MAX_YAW
+                and abs(result.pitch) < _EYE_CONTACT_MAX_PITCH
+                and abs(result.iris_offset_x) < _IRIS_CONTACT_X
+            )
+
+            # DEBUG TEMPORAIRE — à retirer une fois les seuils calibrés
+            # Affiche les valeurs brutes pour comprendre pourquoi contact=0%
+            logger.debug(
+                f"[eye_debug] yaw={result.yaw:+.1f}° pitch={result.pitch:+.1f}° "
+                f"iris_x={result.iris_offset_x:+.3f} iris_y={result.iris_offset_y:+.3f} "
+                f"blink={result.is_blink} → contact={result.eye_contact}"
             )
 
             # 4. Bouche
@@ -835,36 +874,41 @@ class FacialAnalysisService:
         metrics.dominant_emotion = max(metrics.emotion_scores, key=metrics.emotion_scores.get)
 
         # Scores synthétiques
+        # Formules rééquilibrées v5.1 :
+        #   - Poids émotions CNN réduits (prédictions frame-level bruitées)
+        #   - Stabilité et contact contribuent plus positivement
+        #   - Pénalité blink_stress supprimée (clign. rare en mode concentré ≠ stress)
         if metrics.behavioral_metrics_reliable:
-            blink_stress = min(1.0, max(0.0,
-                (metrics.blink_rate - 20) / 20 if metrics.blink_rate > 20 else 0.0))
+            # Confidence : composante comportementale forte, émotions en nuance légère
             metrics.confidence_score = round(max(0.0, min(10.0,
-                metrics.eye_contact_ratio * 3.5
-                + metrics.head_stability  * 2.5
-                + metrics.smile_ratio     * 2.0
-                + (1 - blink_stress)      * 1.0
-                - emo_avgs["angry"]       * 3.0
-                - emo_avgs["fear"]        * 2.0
-                - abs(metrics.avg_yaw / 30) * 0.5
+                metrics.eye_contact_ratio * 4.0    # contact visuel = signal fort
+                + metrics.head_stability  * 3.0    # posture stable = assurance
+                + metrics.smile_ratio     * 1.5    # sourire = à l'aise
+                + 1.5                              # baseline (personne présente)
+                - emo_avgs["angry"] * 1.5          # réduit vs avant (3.0)
+                - emo_avgs["fear"]  * 1.0          # réduit vs avant (2.0)
+                - abs(metrics.avg_yaw / 45) * 0.5  # tête tournée = légère pénalité
             )), 1)
+
             brow_frown_avg = _avg([f.brow_frown for f in valid if f.landmarks_available])
-            blink_anomaly  = min(1.0, abs(metrics.blink_rate - 17) / 17)
+            # Stress : sourcils froncés + instabilité posturale comme signaux principaux
             metrics.stress_score = round(max(0.0, min(10.0,
-                brow_frown_avg                    * 3.5
-                + (1 - metrics.eye_contact_ratio) * 2.0
-                + (1 - metrics.head_stability)    * 2.0
-                + blink_anomaly                   * 1.0
-                + emo_avgs["fear"]                * 3.0
-                + emo_avgs["angry"]               * 2.0
-                - emo_avgs["happy"]               * 1.5
+                brow_frown_avg                    * 4.0   # sourcils = signal stress fiable
+                + (1 - metrics.head_stability)    * 2.5   # agitation posturale
+                + (1 - metrics.eye_contact_ratio) * 1.5   # évitement regard
+                + emo_avgs["fear"]                * 1.5   # réduit vs avant (3.0)
+                + emo_avgs["angry"]               * 1.0   # réduit vs avant (2.0)
+                - emo_avgs["happy"]               * 1.5   # sourire = antistress
             )), 1)
+
             brow_raise_avg = _avg([f.brow_raise for f in valid if f.landmarks_available])
             expressiveness = 1.0 - emo_avgs.get("neutral", 1.0)
+            # Engagement : contact + expressivité + stabilité
             metrics.engagement_score = round(max(0.0, min(10.0,
                 metrics.eye_contact_ratio * 3.5
                 + expressiveness          * 2.0
-                + metrics.smile_ratio     * 2.0
-                + metrics.head_stability  * 1.5
+                + metrics.smile_ratio     * 1.5
+                + metrics.head_stability  * 2.0   # augmenté vs avant (1.5)
                 + brow_raise_avg          * 1.0
             )), 1)
         else:
