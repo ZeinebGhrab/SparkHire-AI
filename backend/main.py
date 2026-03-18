@@ -4,6 +4,46 @@ Pipeline : Voix → Whisper → Llama 3 → Score / Feedback
           Vidéo → MediaPipe + DeepFace → Métriques comportementales
 """
 
+# ══════════════════════════════════════════════════════════════════════════════
+# IMPORT MEDIAPIPE EN PREMIER — CRITIQUE — NE PAS DÉPLACER
+# ──────────────────────────────────────────────────────────────────────────────
+# Sur Windows Python 3.11, tf-keras (requis par deepface) importe TensorFlow
+# lors du chargement du serveur. TF charge ensuite protobuf >= 5, ce qui rend
+# mediapipe.tasks inutilisable (conflit de version protobuf).
+#
+# Solution : précharger mediapipe.python.solutions AVANT tout import TF/deepface,
+# et injecter des modules factices pour mediapipe.tasks afin d'éviter que
+# mediapipe/__init__.py n'essaie d'importer tensorflow via mediapipe.tasks.
+#
+# Cet ordre doit impérativement précéder tous les autres imports du projet.
+# ══════════════════════════════════════════════════════════════════════════════
+import sys
+import types as _types
+
+# Injecter des modules factices pour mediapipe.tasks AVANT l'import mediapipe
+# → empêche mediapipe/__init__.py d'importer tensorflow via mediapipe.tasks
+for _mod_name in [
+    "mediapipe.tasks",
+    "mediapipe.tasks.python",
+    "mediapipe.tasks.python.audio",
+    "mediapipe.tasks.python.core",
+    "mediapipe.tasks.python.vision",
+    "mediapipe.tasks.python.text",
+]:
+    if _mod_name not in sys.modules:
+        sys.modules[_mod_name] = _types.ModuleType(_mod_name)
+
+# Précharger mediapipe.python.solutions maintenant, avant tout import TF
+_mp_preloaded = False
+try:
+    import mediapipe as _mp_preload  # noqa: F401
+    import mediapipe.python.solutions.face_mesh as _fm_preload  # noqa: F401
+    _mp_preloaded = True
+    print("[startup] ✅ MediaPipe préchargé avant TensorFlow")
+except Exception as _mp_err:
+    print(f"[startup] ⚠️  MediaPipe préchargement échoué : {_mp_err}")
+# ══════════════════════════════════════════════════════════════════════════════
+
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket
 from fastapi.staticfiles import StaticFiles
@@ -66,7 +106,7 @@ async def lifespan(app: FastAPI):
         logger.error(f" Avatar : {e}")
         ih._avatar_service = None
 
-    # ── Facial Analysis — warm-up au démarrage ────────────────────────────────
+    # ── Facial Analysis ───────────────────────────────────────────────────────
     # Le warm-up est CRITIQUE : sans lui, DeepFace charge ses poids (~6 Mo)
     # lors du premier appel en entretien → timeout de 15-20s sur Q1.
     try:
@@ -74,29 +114,38 @@ async def lifespan(app: FastAPI):
         facial_svc = get_facial_service()
         status     = facial_svc.status
 
-        if status["mediapipe"]:
-            logger.info(" MediaPipe FaceMesh | 478 landmarks + iris | EAR + solvePnP")
+        if status.get("mediapipe"):
+            logger.info(
+                "✅ MediaPipe FaceMesh v4 | 478 landmarks + iris | "
+                "EAR + solvePnP + iris gaze | CPU"
+            )
         else:
             logger.warning(
-                " MediaPipe indisponible — mode dégradé (émotions DeepFace uniquement)\n"
+                "⚠️  MediaPipe indisponible — mode dégradé (émotions DeepFace uniquement)\n"
                 "  Fix : pip install \"protobuf>=4.25.3,<5.0.0\""
             )
 
-        if status["deepface"]:
+        if status.get("deepface"):
             warmup_ok = facial_svc.warmup_deepface()
             if warmup_ok:
-                logger.info(" DeepFace warm-up OK — poids en mémoire")
+                logger.info("✅ DeepFace CNN Emotion | VGG ~73% AffectNet | poids chargés")
             else:
-                logger.warning(" DeepFace warm-up différé — chargement au 1er appel")
+                logger.warning("⚠️  DeepFace warm-up différé — chargement au 1er appel")
         else:
             logger.warning(
-                " DeepFace indisponible — fallback heuristiques FACS\n"
+                "⚠️  DeepFace indisponible — fallback heuristiques FACS\n"
                 "  Fix : pip install deepface tf-keras"
             )
 
-        mode = "full (MediaPipe + DeepFace)"      if status["full_pipeline"]  else \
-               "dégradé (DeepFace émotions only)" if status["deepface"]       else \
-               "minimal (FACS heuristiques)"
+        if status.get("full_pipeline"):
+            mode = "full (MediaPipe + DeepFace)"
+        elif status.get("mediapipe"):
+            mode = "comportemental (MediaPipe + FACS heuristiques)"
+        elif status.get("deepface"):
+            mode = "dégradé (DeepFace émotions only)"
+        else:
+            mode = "minimal (FACS heuristiques)"
+
         logger.info(f" Facial Analysis | mode={mode}")
 
     except Exception as e:
@@ -231,7 +280,10 @@ async def api_info():
     return {
         "api_name": settings.API_TITLE,
         "version":  settings.API_VERSION,
-        "pipeline": "Voice → Whisper ASR → Llama3 LLM → Score/Feedback | Video → MediaPipe + DeepFace → Behavioral metrics",
+        "pipeline": (
+            "Voice → Whisper ASR → Llama3 LLM → Score/Feedback | "
+            "Video → MediaPipe + DeepFace → Behavioral metrics"
+        ),
         "endpoints": {
             "auth":          "/auth",
             "candidates":    "/candidates",

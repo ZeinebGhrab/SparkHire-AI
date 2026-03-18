@@ -7,6 +7,31 @@ CameraPreviewWidget — Overlay caméra PiP entièrement contenu dans le cadre v
 • Badge REC clignotant rouge
 """
 
+import sys
+import types as _types
+
+# ── Isolation mediapipe — même stratégie que facial_analysis_service.py ──────
+# Bloque mediapipe.tasks AVANT tout import de mediapipe.
+# Sans ce patch, sur Windows Python 3.11, mediapipe tente de charger
+# tensorflow/_pywrap_tensorflow_internal.dll → DLL init failure → ImportError.
+# Le patch remplace les sous-modules problématiques par des modules vides
+# avant que mediapipe ne tente de les charger.
+for _mod in [
+    "mediapipe.tasks", "mediapipe.tasks.python",
+    "mediapipe.tasks.python.audio", "mediapipe.tasks.python.core",
+    "mediapipe.tasks.python.vision", "mediapipe.tasks.python.text",
+]:
+    if _mod not in sys.modules:
+        sys.modules[_mod] = _types.ModuleType(_mod)
+
+_mp_preloaded = None
+try:
+    import mediapipe as _mp_mod
+    _mp_preloaded = _mp_mod
+except Exception:
+    pass
+# ─────────────────────────────────────────────────────────────────────────────
+
 import numpy as np
 import cv2
 import threading
@@ -99,17 +124,37 @@ class CameraPreviewWidget(QWidget):
     # ── MediaPipe ─────────────────────────────────────────────────────────────
 
     def _init_mediapipe(self):
+        """
+        Initialise MediaPipe FaceMesh en utilisant le module préchargé.
+        Le préchargement en tête de module garantit que mediapipe.tasks
+        est déjà patché avant l'appel à cette méthode, évitant le
+        chargement de TensorFlow et l'erreur DLL sur Windows.
+        """
         try:
-            import mediapipe as mp
+            # Utiliser le module préchargé en tête de fichier — si disponible,
+            # il a été importé APRÈS le patch sys.modules donc sans TF.
+            mp = _mp_preloaded
+            if mp is None:
+                # Dernier recours : tenter l'import direct (peut échouer si TF
+                # n'est pas correctement installé, mais l'exception est capturée)
+                import mediapipe as mp  # noqa: F811
+
             self._face_mesh = mp.solutions.face_mesh.FaceMesh(
-                static_image_mode=False, max_num_faces=1,
+                static_image_mode=False,
+                max_num_faces=1,
                 refine_landmarks=True,
                 min_detection_confidence=0.5,
                 min_tracking_confidence=0.5,
             )
             self._mp_ready = True
+            print("[CameraPreview] MediaPipe FaceMesh prêt — analyse temps réel active")
+        except ImportError:
+            print("[CameraPreview] MediaPipe non installé → pip install mediapipe==0.10.14")
         except Exception as e:
-            print(f"[CameraPreview] MediaPipe non dispo : {e}")
+            # Affiche l'erreur réelle sans le traceback TF complet
+            first_line = str(e).split("\n")[0][:120]
+            print(f"[CameraPreview] MediaPipe non dispo : {first_line}")
+            print("[CameraPreview] Fix → pip install \"protobuf>=4.25.3,<5.0.0\" puis redémarrer")
 
     # ── Build ─────────────────────────────────────────────────────────────────
 
@@ -152,7 +197,7 @@ class CameraPreviewWidget(QWidget):
 
         # ── Bandeau métriques overlay (DANS le cadre, pas en dehors) ─────────
         metrics_bar = QFrame()
-        metrics_bar.setFixedSize(_W - 4, _BH + 18)   # barre statut + mini-métriques
+        metrics_bar.setFixedSize(_W - 4, _BH + 18)
         metrics_bar.setStyleSheet("""
             QFrame {
                 background: rgba(10, 15, 30, 0.92);
@@ -227,10 +272,6 @@ class CameraPreviewWidget(QWidget):
     # ── Analyse temps réel ────────────────────────────────────────────────────
 
     def _analyze_frame_rt(self, frame_bgr: np.ndarray) -> dict:
-        """
-        Analyse temps réel alignée avec facial_analysis_service v2.
-        Utilise EAR pour clignements et iris offset pour contact visuel.
-        """
         if not self._mp_ready or self._face_mesh is None:
             return {}
         try:
@@ -245,7 +286,6 @@ class CameraPreviewWidget(QWidget):
                 return {"face": False}
             lm = result.multi_face_landmarks[0].landmark
 
-            # EAR (Eye Aspect Ratio)
             def ear(top, bot, outer, inner):
                 h_ = abs(lm[top].y - lm[bot].y)
                 w_ = abs(lm[outer].x - lm[inner].x) + 1e-6
@@ -254,7 +294,6 @@ class CameraPreviewWidget(QWidget):
             ear_r  = ear(386, 374, 263, 362)
             is_blink = (ear_l + ear_r) / 2 < 0.20
 
-            # Iris offset (contact visuel précis)
             def iris_offset(iris, outer, inner, top, bot):
                 cx = (lm[outer].x + lm[inner].x) / 2
                 cy = (lm[top].y   + lm[bot].y)   / 2
@@ -266,11 +305,9 @@ class CameraPreviewWidget(QWidget):
             oy = (oy_l + oy_r) / 2
             eye_contact = abs(ox) < 0.35 and abs(oy) < 0.28 and not is_blink
 
-            # Pose tête simplifiée (sans solvePnP pour la perf temps réel)
             yaw_approx = abs(lm[454].x - lm[234].x - 0.5) * 60
             stab = max(0.0, min(1.0, 1.0 - yaw_approx / 30))
 
-            # Émotion
             eye_dist   = abs(lm[33].x - lm[263].x) + 1e-6
             lip_mid_y  = (lm[13].y + lm[14].y) / 2
             corner_avg = (lm[61].y + lm[291].y) / 2
@@ -281,14 +318,12 @@ class CameraPreviewWidget(QWidget):
                 ((lm[159].y - lm[107].y) + (lm[386].y - lm[336].y)) / eye_dist * 2))
             mar = abs(lm[13].y - lm[14].y) / (abs(lm[61].x - lm[291].x) + 1e-6)
 
-            if corner_up > 0.25:                emotion = "happy"
-            elif brow_frown > 0.30:             emotion = "angry"
-            elif brow_raise > 0.40 and mar > 0.25: emotion = "surprise"
-            elif brow_raise > 0.30:             emotion = "fear"
-            else:                               emotion = "neutral"
+            if corner_up > 0.25:                        emotion = "happy"
+            elif brow_frown > 0.30:                     emotion = "angry"
+            elif brow_raise > 0.40 and mar > 0.25:      emotion = "surprise"
+            elif brow_raise > 0.30:                     emotion = "fear"
+            else:                                       emotion = "neutral"
 
-            # Scores synthétiques
-            blink_factor = 1.0  # temps réel : pas assez de frames pour blink_rate
             confidence = min(10.0, max(0.0,
                 (1 if eye_contact else 0) * 3.5 + stab * 2.5
                 + corner_up * 2.0 - brow_frown * 3.0))
@@ -314,21 +349,18 @@ class CameraPreviewWidget(QWidget):
 
     @Slot(bytes)
     def on_frame(self, jpeg_bytes: bytes):
-        """Reçoit un frame JPEG depuis VideoFrameCollector."""
         try:
             buf   = np.frombuffer(jpeg_bytes, dtype=np.uint8)
             frame = cv2.imdecode(buf, cv2.IMREAD_COLOR)
             if frame is None:
                 return
 
-            # Analyse dans un thread daemon
             frame_copy = frame.copy()
             threading.Thread(
                 target=self._run_analysis_thread,
                 args=(frame_copy,), daemon=True
             ).start()
 
-            # Flip miroir + affichage
             frame = cv2.flip(frame, 1)
             rgb   = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             h, w, c = rgb.shape
@@ -338,7 +370,6 @@ class CameraPreviewWidget(QWidget):
             nw, nh  = int(w * ratio), int(h * ratio)
             resized = cv2.resize(rgb, (nw, nh), interpolation=cv2.INTER_AREA)
 
-            # Contour vert si visage détecté
             with self._rt_lock:
                 face_ok = self._last_metrics.get("face", False)
             color = (34, 197, 94) if face_ok else (71, 85, 105)
@@ -377,7 +408,6 @@ class CameraPreviewWidget(QWidget):
                 self._dot.set_color(T.GREEN_500)
 
     def set_facial_result(self, metrics: dict):
-        """Métriques post-évaluation reçues du serveur."""
         self._eval_metrics = metrics
         self._refresh_metrics_overlay()
 
@@ -436,7 +466,6 @@ class CameraPreviewWidget(QWidget):
         self._img_lbl.setPixmap(QPixmap.fromImage(qt))
 
     def reposition(self):
-        """Place l'overlay dans le coin bas-gauche du parent."""
         if self.parent():
             self.move(_MARGIN, self.parent().height() - self.height() - _MARGIN)
 

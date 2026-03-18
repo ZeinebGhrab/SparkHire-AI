@@ -562,13 +562,13 @@ class FacialAnalysisService:
             metrics.eye_contact_ratio = round(
                 sum(1 for f in lm_v if f.eye_contact) / m, 3
             )
-            yaw_v   = [f.yaw   for f in lm_v]
-            pitch_v = [f.pitch for f in lm_v]
+            yaw_v   = [y for y in yaw_v   if abs(y)   < 60]   # exclure les valeurs aberrantes solvePnP
+            pitch_v = [p for p in pitch_v if abs(p)   < 45]
             yaw_std = stdev(yaw_v)   if len(yaw_v)   > 1 else 0.0
             pit_std = stdev(pitch_v) if len(pitch_v) > 1 else 0.0
             metrics.avg_yaw        = round(_avg(yaw_v),   1)
             metrics.avg_pitch      = round(_avg(pitch_v), 1)
-            metrics.head_stability = round(max(0.0, 1.0 - (yaw_std+pit_std)/30.0), 3)
+            metrics.head_stability = round(max(0.0, 1.0 - (yaw_std + pit_std) / 60.0), 3)
             metrics.smile_ratio    = round(
                 sum(1 for f in lm_v if f.lip_corner_up > 0.25) / m, 3
             )
