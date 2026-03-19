@@ -4,9 +4,7 @@ Audio → Whisper (ASR) → Ollama/Llama3 (LLM) → Score + Feedback
 
 Moyenne pondérée :
   average_score = Σ(score_i × weight_i) / Σ(weight_i)
-
-Le weight est copié depuis Question.weight dans chaque AnswerEvaluation
-afin d'être auto-portant dans MongoDB (pas besoin de rejoindre job_positions).
+  
 """
 
 import asyncio
@@ -17,6 +15,7 @@ from typing import Optional
 
 from backend.evaluation.models import (
     AnswerEvaluation, GlobalEvaluation,
+    FacialSummary, GlobalFacialSummary,
     compute_decision, DECISION_LABELS, DECISION_COLORS
 )
 from backend.services.llm_service import OllamaLLMService
@@ -133,6 +132,70 @@ class EvaluationService:
 
         per_answer: list[AnswerEvaluation] = await asyncio.gather(*tasks)
 
+        # ── Injection métriques faciales depuis BD ────────────────────────
+        # Les métriques ont déjà été analysées et sauvegardées pendant l'entretien
+        # dans answers[n].evaluation.facial_analysis — on les récupère ici
+        facial_map: dict[int, dict] = {}
+        for ans in answers:
+            q_order  = ans.get("question_order", 0)
+            eval_doc = ans.get("evaluation", {}) or {}
+            facial   = eval_doc.get("facial_analysis")
+            if facial:
+                facial_map[q_order] = facial
+
+        # Injecter dans chaque AnswerEvaluation
+        enriched_answers = []
+        for ae in per_answer:
+            f = facial_map.get(ae.question_order)
+            if f:
+                try:
+                    facial_obj = FacialSummary(
+                        dominant_emotion  = f.get("dominant_emotion",  "neutral"),
+                        emotion_scores    = f.get("emotion_scores",    {}),
+                        eye_contact_ratio = f.get("eye_contact_ratio", 0.0),
+                        head_stability    = f.get("head_stability",    1.0),
+                        smile_ratio       = f.get("smile_ratio",       0.0),
+                        confidence_score  = f.get("confidence_score",  5.0),
+                        stress_score      = f.get("stress_score",      5.0),
+                        engagement_score  = f.get("engagement_score",  5.0),
+                        frames_analyzed   = f.get("frames_analyzed",   0),
+                        frames_with_face  = f.get("frames_with_face",  0),
+                        face_detection_rate = f.get("face_detection_rate", 0.0),
+                    )
+                    ae = ae.model_copy(update={"facial": facial_obj})
+                except Exception as e:
+                    logger.warning(f"Injection faciale Q{ae.question_order} : {e}")
+            enriched_answers.append(ae)
+        per_answer = enriched_answers
+
+        # ── Calcul GlobalFacialSummary ────────────────────────────────────
+        facial_answers = [ae for ae in per_answer if ae.facial is not None]
+        global_facial: Optional[GlobalFacialSummary] = None
+        if facial_answers:
+            def _avg(vals): return round(sum(vals) / len(vals), 3) if vals else 0.0
+            emotion_counts: dict[str, int] = {}
+            for ae in facial_answers:
+                e = ae.facial.dominant_emotion
+                emotion_counts[e] = emotion_counts.get(e, 0) + 1
+            dominant = max(emotion_counts, key=emotion_counts.get)
+            global_facial = GlobalFacialSummary(
+                avg_confidence     = _avg([ae.facial.confidence_score  for ae in facial_answers]),
+                avg_stress         = _avg([ae.facial.stress_score       for ae in facial_answers]),
+                avg_engagement     = _avg([ae.facial.engagement_score   for ae in facial_answers]),
+                avg_eye_contact    = _avg([ae.facial.eye_contact_ratio  for ae in facial_answers]),
+                avg_head_stability = _avg([ae.facial.head_stability     for ae in facial_answers]),
+                dominant_emotion   = dominant,
+                facial_available   = True,
+            )
+            logger.info(
+                f"GlobalFacialSummary | "
+                f"confiance={global_facial.avg_confidence}/10 | "
+                f"stress={global_facial.avg_stress}/10 | "
+                f"engagement={global_facial.avg_engagement}/10 | "
+                f"contact={round(global_facial.avg_eye_contact*100)}% | "
+                f"émotion={dominant}"
+            )
+
         # ── Moyenne pondérée ───────────────────────────────────────────────
         avg_score = _weighted_avg([(a.score, a.weight) for a in per_answer])
         logger.info(
@@ -170,6 +233,7 @@ class EvaluationService:
             summary=global_raw.get("summary", ""),
             per_answer=per_answer,
             llm_model=self.llm.model,
+            facial_summary=global_facial,
         )
 
         evaluation = self._fill_missing_fields(evaluation, per_answer, lang)

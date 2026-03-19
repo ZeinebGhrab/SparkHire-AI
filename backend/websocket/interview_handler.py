@@ -577,7 +577,8 @@ class InterviewHandler:
                         "had_followup":      False,
                         "followup_question": "",
                         "is_initial":        True,
-                        "facial":            facial_data.model_dump() if facial_data else None,
+                        # facial_data intentionnellement absent :
+                        # métriques faciales réservées au backend/RH uniquement
                     },
                 })
 
@@ -804,7 +805,8 @@ class InterviewHandler:
                     "followup_transcript": followup_transcript,
                     "had_followup":        True,
                     "score_delta":         round(final_score - initial_score, 1),
-                    "facial":              facial_data.model_dump() if facial_data else None,
+                    # facial_data intentionnellement absent :
+                    # métriques faciales réservées au backend/RH uniquement
                 },
             })
 

@@ -7,6 +7,39 @@ from pydantic import BaseModel, Field
 from datetime import datetime
 
 
+class FacialSummary(BaseModel):
+    """
+    Métriques faciales agrégées pour une réponse — extraites depuis
+    answers[n].evaluation.facial_analysis déjà persisté en BD.
+    Incluses dans le rapport final RH uniquement (pas envoyées au candidat).
+    """
+    dominant_emotion:  str   = "neutral"
+    emotion_scores:    dict  = Field(default_factory=dict)
+    eye_contact_ratio: float = 0.0
+    head_stability:    float = 1.0
+    smile_ratio:       float = 0.0
+    confidence_score:  float = 5.0
+    stress_score:      float = 5.0
+    engagement_score:  float = 5.0
+    frames_analyzed:   int   = 0
+    frames_with_face:  int   = 0
+    face_detection_rate: float = 0.0
+
+
+class GlobalFacialSummary(BaseModel):
+    """
+    Agrégation des métriques faciales sur toutes les réponses de la session.
+    Incluse dans GlobalEvaluation pour le rapport RH final.
+    """
+    avg_confidence:     float = 0.0
+    avg_stress:         float = 0.0
+    avg_engagement:     float = 0.0
+    avg_eye_contact:    float = 0.0
+    avg_head_stability: float = 0.0
+    dominant_emotion:   str   = "neutral"   # émotion la plus fréquente
+    facial_available:   bool  = False       # False si caméra inaccessible
+
+
 class AnswerEvaluation(BaseModel):
     """Évaluation LLM d'une réponse unique."""
     question_order: int
@@ -26,6 +59,8 @@ class AnswerEvaluation(BaseModel):
         le=10.0,
         description="Poids de la question dans la moyenne pondérée",
     )
+    # ── Métriques faciales ── récupérées depuis BD, réservées au rapport RH
+    facial: Optional[FacialSummary] = None
 
 
 # ── Seuils de décision ───────────────────────────────────────────────────────
@@ -94,6 +129,8 @@ class GlobalEvaluation(BaseModel):
     per_answer: List[AnswerEvaluation] = []
     evaluated_at: datetime = Field(default_factory=datetime.utcnow)
     llm_model: str = ""
+    # ── Analyse comportementale (faciale) — rapport RH uniquement ───────────
+    facial_summary: Optional[GlobalFacialSummary] = None
 
     @property
     def score_100(self) -> float:
