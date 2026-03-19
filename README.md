@@ -347,7 +347,7 @@ Client                        Backend                      MongoDB
 
 ## Facial Behavior Analysis
 
-### Detection pipeline (v5.2)
+### Detection pipeline 
 
 ```
 Webcam frames (2fps, JPEG)
