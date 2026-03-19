@@ -353,55 +353,54 @@ Client                        Backend                      MongoDB
 
 <img src="docs/Database Schema.png" alt="Database Schema"/>
 
----
 
 ### Sequence Diagram — Full Interview Flow
 <p align="center">
 <img src="docs/Sequence Diagram.png" alt="Sequence Diagram"/>
 </p>
----
+
 
 ### Flow 1 — Session Access Validation
 <p align="center">
 <img src="docs/1.3 Session Access Validation.png" width="50%" alt="Session Access Validation"/>
 </p>
----
+
 
 ### Flow 2 — Real-Time Interview
 <p align="center">
 <img src="docs/2.3 Real-Time Interview.png" width="60%" alt="Real-Time Interview"/>
 </p>
----
+
 
 ### Flow 3 — Global Evaluation & Hiring Decision
 <p align="center">
   <img src="docs/3.3 Global Evaluation & Hiring Decision.png" width="50%" alt="Global Evaluation and Hiring Decision"/>
 </p>
----
+
 
 ### Activity A1 — Facial Analysis Pipeline
 <p align="center">
   <img src="docs/A1. Facial Analysis Pipeline.png" width="50%" alt="Facial Analysis Pipeline"/>
 </p>
----
+
 
 ### Activity A2 — ASR + LLM Evaluation
 <p align="center">
   <img src="docs/A2. ASR + LLM Evaluation.png" width="50%" alt="ASR + LLM Evaluation"/>
 </p>
----
+
 
 ### Activity A3 — TTS Synthesis
 <p align="center">
   <img src="docs/A3. TTS Synthesis.png" width="40%" alt="TTS Synthesis"/>
 </p>
----
+
 
 ### Activity A4 — Global Evaluation & HR Report
 <p align="center">
   <img src="docs/A4. Global Evaluation & HR Report.png" width="50%" alt="Global Evaluation and HR Report"/>
 </p>
----
+
 
 ## Facial Behavior Analysis
 
