@@ -1,6 +1,6 @@
 """
 Interview Widget — Professional Light UI
-Avec panneau d'analyse faciale post-évaluation.
+
 """
 
 from PySide6.QtWidgets import (
@@ -33,13 +33,6 @@ TEXTS = {
         "end":           "إنهاء المقابلة",
         "recording_left":"{s} ث متبقية",
         "time_up":       "انتهى الوقت — توقف التسجيل تلقائياً",
-        "facial_title":  "تحليل السلوك",
-        "confidence":    "الثقة",
-        "stress":        "التوتر",
-        "contact":       "التواصل",
-        "stability":     "الثبات",
-        "score":         "النتيجة",
-        "verdict":       "الحكم",
     },
     "fr": {
         "section":       "MODE VOCAL",
@@ -55,13 +48,6 @@ TEXTS = {
         "end":           "Terminer l'entretien",
         "recording_left":"{s} s restantes",
         "time_up":       "Temps écoulé — enregistrement arrêté automatiquement",
-        "facial_title":  "Analyse comportementale",
-        "confidence":    "Confiance",
-        "stress":        "Stress",
-        "contact":       "Contact visuel",
-        "stability":     "Stabilité",
-        "score":         "Score",
-        "verdict":       "Verdict",
     },
     "en": {
         "section":       "VOCAL MODE",
@@ -77,36 +63,10 @@ TEXTS = {
         "end":           "End interview",
         "recording_left":"{s} s left",
         "time_up":       "Time's up — recording stopped automatically",
-        "facial_title":  "Behavioral analysis",
-        "confidence":    "Confidence",
-        "stress":        "Stress",
-        "contact":       "Eye contact",
-        "stability":     "Stability",
-        "score":         "Score",
-        "verdict":       "Verdict",
     },
 }
 
 DEFAULT_MAX_RECORDING_SECONDS = 90
-
-_EMOTION_FR = {
-    "happy":   "Détendu",  "neutral": "Neutre",   "surprise": "Surpris",
-    "sad":     "Triste",   "angry":   "Stressé",  "fear":     "Nerveux",
-    "disgust": "Inconfort",
-}
-_EMOTION_EN = {
-    "happy":   "Relaxed",  "neutral": "Neutral",  "surprise": "Surprised",
-    "sad":     "Sad",      "angry":   "Stressed", "fear":     "Nervous",
-    "disgust": "Discomfort",
-}
-_EMOTION_AR = {
-    "happy": "مرتاح", "neutral": "محايد", "surprise": "مندهش",
-    "sad": "حزين", "angry": "متوتر", "fear": "خائف", "disgust": "غير مرتاح",
-}
-_EMOJI = {
-    "happy": "😊", "neutral": "😐", "surprise": "😮",
-    "sad": "😟", "angry": "😠", "fear": "😨", "disgust": "🤢",
-}
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -189,7 +149,6 @@ class InterviewWidget(QWidget):
         root.addWidget(self._make_header_badge())
         root.addWidget(self._make_progress_card())
         root.addWidget(self._make_instruction_card())
-        root.addWidget(self._make_facial_card())
         root.addStretch()
         self.record_btn = self._make_record_btn()
         root.addWidget(self.record_btn)
@@ -212,7 +171,6 @@ class InterviewWidget(QWidget):
         self._update_max_duration_label()
         self.record_btn.setText(self.t("stop") if self.is_recording else self.t("start"))
         self.end_btn.setText(self.t("end"))
-        self._facial_title_lbl.setText(self.t("facial_title"))
         self._set_status("waiting")
         ltr = Qt.LayoutDirection.RightToLeft if self._lang == "ar" else Qt.LayoutDirection.LeftToRight
         self.setLayoutDirection(ltr)
@@ -305,106 +263,6 @@ class InterviewWidget(QWidget):
         self._countdown_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._countdown_lbl.setVisible(False); lay.addWidget(self._countdown_lbl)
 
-        return card
-
-    # ── Build facial card ─────────────────────────────────────────────────────
-
-    def _make_facial_card(self):
-        """Panneau d'analyse comportementale — affiché après chaque évaluation."""
-        card = QFrame(); card.setObjectName("facialCard")
-        card.setStyleSheet(f"""
-            #facialCard {{
-                background: {T.BG_CARD};
-                border: 1px solid {T.BORDER};
-                border-radius: {T.R_LG}px;
-            }}
-        """)
-        card.setGraphicsEffect(_sh(16, 3))
-        lay = QVBoxLayout(card); lay.setContentsMargins(T.SP_4, T.SP_4, T.SP_4, T.SP_4); lay.setSpacing(T.SP_3)
-
-        # Header
-        hdr = QHBoxLayout()
-        cam_icon = QLabel("📷"); cam_icon.setFont(QFont("Segoe UI Emoji", 14))
-        cam_icon.setStyleSheet("background: transparent;"); hdr.addWidget(cam_icon)
-        self._facial_title_lbl = _lbl("Analyse comportementale", T.FS_SM, bold=True, color=T.TEXT_600)
-        hdr.addWidget(self._facial_title_lbl); hdr.addStretch()
-        self._facial_emotion_lbl = QLabel(""); self._facial_emotion_lbl.setFont(QFont("Segoe UI Emoji", 18))
-        self._facial_emotion_lbl.setStyleSheet("background: transparent;"); hdr.addWidget(self._facial_emotion_lbl)
-        lay.addLayout(hdr)
-
-        lay.addWidget(_sep())
-
-        # Grille 2×2 métriques
-        grid = QHBoxLayout(); grid.setSpacing(T.SP_4)
-
-        left_col = QVBoxLayout(); left_col.setSpacing(T.SP_2)
-        right_col = QVBoxLayout(); right_col.setSpacing(T.SP_2)
-
-        # Confiance
-        c_row = QVBoxLayout(); c_row.setSpacing(2)
-        c_hdr = QHBoxLayout()
-        c_hdr.addWidget(_lbl("Confiance", T.FS_XS, color=T.TEXT_400))
-        self._conf_val = _lbl("—", T.FS_XS, bold=True, color=T.CYAN_600)
-        c_hdr.addStretch(); c_hdr.addWidget(self._conf_val)
-        c_row.addLayout(c_hdr); self._conf_bar = _mini_bar(T.CYAN_500)
-        c_row.addWidget(self._conf_bar); left_col.addLayout(c_row)
-
-        # Stress
-        s_row = QVBoxLayout(); s_row.setSpacing(2)
-        s_hdr = QHBoxLayout()
-        s_hdr.addWidget(_lbl("Stress", T.FS_XS, color=T.TEXT_400))
-        self._stress_val = _lbl("—", T.FS_XS, bold=True, color=T.RED_600)
-        s_hdr.addStretch(); s_hdr.addWidget(self._stress_val)
-        s_row.addLayout(s_hdr); self._stress_bar = _mini_bar(T.RED_500)
-        s_row.addWidget(self._stress_bar); left_col.addLayout(s_row)
-
-        # Contact visuel
-        e_row = QVBoxLayout(); e_row.setSpacing(2)
-        e_hdr = QHBoxLayout()
-        e_hdr.addWidget(_lbl("Contact visuel", T.FS_XS, color=T.TEXT_400))
-        self._contact_val = _lbl("—", T.FS_XS, bold=True, color=T.GREEN_600)
-        e_hdr.addStretch(); e_hdr.addWidget(self._contact_val)
-        e_row.addLayout(e_hdr); self._contact_bar = _mini_bar(T.GREEN_500)
-        e_row.addWidget(self._contact_bar); right_col.addLayout(e_row)
-
-        # Stabilité
-        st_row = QVBoxLayout(); st_row.setSpacing(2)
-        st_hdr = QHBoxLayout()
-        st_hdr.addWidget(_lbl("Stabilité", T.FS_XS, color=T.TEXT_400))
-        self._stab_val = _lbl("—", T.FS_XS, bold=True, color=T.AMBER_500)
-        st_hdr.addStretch(); st_hdr.addWidget(self._stab_val)
-        st_row.addLayout(st_hdr); self._stab_bar = _mini_bar(T.AMBER_500)
-        st_row.addWidget(self._stab_bar); right_col.addLayout(st_row)
-
-        grid.addLayout(left_col); grid.addLayout(right_col)
-        lay.addLayout(grid)
-
-        # Score LLM + verdict
-        score_row = QHBoxLayout(); score_row.setSpacing(T.SP_3)
-        self._score_badge = QFrame(); self._score_badge.setFixedSize(52, 52)
-        self._score_badge.setStyleSheet(f"""
-            QFrame {{ background: {T.CYAN_50}; border: 2px solid {T.CYAN_200};
-                      border-radius: 26px; }}
-        """)
-        sb_lay = QVBoxLayout(self._score_badge); sb_lay.setContentsMargins(0,0,0,0)
-        sb_lay.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._score_lbl = _lbl("—", T.FS_LG, bold=True, color=T.CYAN_700)
-        self._score_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        sb_lay.addWidget(self._score_lbl); score_row.addWidget(self._score_badge)
-
-        verdict_col = QVBoxLayout(); verdict_col.setSpacing(2)
-        self._verdict_lbl = _lbl("En attente d'évaluation", T.FS_SM, bold=True, color=T.TEXT_600)
-        self._verdict_lbl.setWordWrap(True)
-        self._feedback_lbl = _lbl("", T.FS_XS, color=T.TEXT_400)
-        self._feedback_lbl.setWordWrap(True)
-        verdict_col.addWidget(self._verdict_lbl)
-        verdict_col.addWidget(self._feedback_lbl)
-        score_row.addLayout(verdict_col, stretch=1)
-        lay.addLayout(score_row)
-
-        # Caché par défaut — visible après la 1ère évaluation
-        card.setVisible(False)
-        self._facial_card = card
         return card
 
     # ── Buttons ───────────────────────────────────────────────────────────────
@@ -549,58 +407,3 @@ class InterviewWidget(QWidget):
             self.record_btn.setEnabled(False)
             self._set_status("waiting")
 
-    def show_evaluation(self, eval_data: dict):
-        """
-        Affiche le résultat complet d'une évaluation dans le panneau facial.
-        eval_data contient : score, verdict, feedback + optionnellement facial {...}
-        """
-        score   = eval_data.get("score")
-        verdict = eval_data.get("verdict", "")
-        feedback= eval_data.get("feedback", "")
-        facial  = eval_data.get("facial")
-
-        # Score + verdict (toujours)
-        if score is not None:
-            self._score_lbl.setText(f"{score:.0f}")
-            score_color = T.GREEN_600 if score >= 7 else (T.AMBER_500 if score >= 5 else T.RED_600)
-            badge_bg    = T.GREEN_50  if score >= 7 else (T.AMBER_50  if score >= 5 else T.RED_50)
-            badge_border= T.GREEN_100 if score >= 7 else (T.AMBER_100 if score >= 5 else T.RED_100)
-            self._score_lbl.setStyleSheet(f"color: {score_color}; background: transparent; font-weight: 700;")
-            self._score_badge.setStyleSheet(f"""
-                QFrame {{ background: {badge_bg}; border: 2px solid {badge_border}; border-radius: 26px; }}
-            """)
-        self._verdict_lbl.setText(verdict)
-        self._feedback_lbl.setText(feedback[:120] + "…" if len(feedback) > 120 else feedback)
-
-        # Données faciales (si disponibles)
-        if facial and facial.get("frames_with_face", 0) > 0:
-            conf    = facial.get("confidence_score",  5.0)
-            stress  = facial.get("stress_score",      5.0)
-            contact = facial.get("eye_contact_ratio", 0.0) * 100
-            stab    = facial.get("head_stability",    1.0) * 100
-            emotion = facial.get("dominant_emotion",  "neutral")
-
-            self._conf_bar.setValue(int(conf * 10))
-            self._stress_bar.setValue(int(stress * 10))
-            self._contact_bar.setValue(int(contact))
-            self._stab_bar.setValue(int(stab))
-
-            self._conf_val.setText(f"{conf:.1f}/10")
-            self._stress_val.setText(f"{stress:.1f}/10")
-            self._contact_val.setText(f"{int(contact)}%")
-            self._stab_val.setText(f"{int(stab)}%")
-
-            # Emoji émotion
-            self._facial_emotion_lbl.setText(
-                {"happy":"😊","neutral":"😐","surprise":"😮","sad":"😟",
-                 "angry":"😠","fear":"😨","disgust":"🤢"}.get(emotion, "😐")
-            )
-        else:
-            # Pas de données faciales — afficher uniquement score/verdict
-            self._conf_bar.setValue(0); self._stress_bar.setValue(0)
-            self._contact_bar.setValue(0); self._stab_bar.setValue(0)
-            self._conf_val.setText("—"); self._stress_val.setText("—")
-            self._contact_val.setText("—"); self._stab_val.setText("—")
-            self._facial_emotion_lbl.setText("")
-
-        self._facial_card.setVisible(True)

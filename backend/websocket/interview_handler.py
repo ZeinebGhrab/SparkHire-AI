@@ -567,18 +567,9 @@ class InterviewHandler:
                 await manager.send_json(self.session_id, {
                     "type": "answer_evaluated",
                     "data": {
-                        "question_order":    question.order,
-                        "weight":            question.weight,
-                        "score":             initial_eval.get("score"),
-                        "verdict":           initial_eval.get("verdict", ""),
-                        "feedback":          initial_eval.get("feedback", ""),
-                        "strengths":         initial_eval.get("strengths", []),
-                        "improvements":      initial_eval.get("improvements", []),
-                        "had_followup":      False,
-                        "followup_question": "",
-                        "is_initial":        True,
-                        # facial_data intentionnellement absent :
-                        # métriques faciales réservées au backend/RH uniquement
+                        "question_order": question.order,
+                        "had_followup":   False,
+                        "is_initial":     True,
                     },
                 })
 
@@ -793,20 +784,8 @@ class InterviewHandler:
             await manager.send_json(self.session_id, {
                 "type": "answer_followup_completed",
                 "data": {
-                    "question_order":      question.order,
-                    "weight":              question.weight,
-                    "initial_score":       initial_score,
-                    "initial_verdict":     initial_verdict,
-                    "initial_feedback":    initial_eval.get("feedback", ""),
-                    "final_score":         final_score,
-                    "final_verdict":       final_verdict,
-                    "final_feedback":      final_eval.get("feedback", ""),
-                    "followup_question":   followup_question,
-                    "followup_transcript": followup_transcript,
-                    "had_followup":        True,
-                    "score_delta":         round(final_score - initial_score, 1),
-                    # facial_data intentionnellement absent :
-                    # métriques faciales réservées au backend/RH uniquement
+                    "question_order": question.order,
+                    "had_followup":   True,
                 },
             })
 
@@ -936,16 +915,9 @@ class InterviewHandler:
                 await manager.send_json(self.session_id, {
                     "type": "global_evaluation",
                     "data": {
-                        "average_score":      result.average_score,
-                        "average_score_100":  result.score_100,
                         "decision":           result.decision,
                         "decision_label":     result.decision_label,
                         "decision_color":     result.decision_color,
-                        "decision_reason":    result.decision_reason,
-                        "recommendation":     result.recommendation,
-                        "key_strengths":      result.key_strengths,
-                        "key_improvements":   result.key_improvements,
-                        "summary":            result.summary,
                         "candidate_name":     self.candidate_full_name,
                         "position_title":     self.position.title,
                         "total_questions":    result.total_questions,

@@ -1,10 +1,6 @@
 """
 CameraPreviewWidget — Overlay caméra PiP entièrement contenu dans le cadre vidéo
-==================================================================================
-• Tout tient dans _W x _H — rien ne déborde en dehors
-• Métriques affichées en overlay DANS le frame (bandeau bas semi-transparent)
-• Analyse faciale temps réel MediaPipe dans un thread daemon
-• Badge REC clignotant rouge
+
 """
 
 import sys
@@ -163,7 +159,6 @@ class CameraPreviewWidget(QWidget):
         root.setContentsMargins(2, 2, 2, 2)
         root.setSpacing(0)
 
-        # Cadre principal (tout le widget)
         self._frame = QFrame()
         self._frame.setFixedSize(_W, _H)
         self._frame.setStyleSheet(f"""
@@ -190,82 +185,22 @@ class CameraPreviewWidget(QWidget):
                 background: transparent;
                 border-top-left-radius:  {_RADIUS - 2}px;
                 border-top-right-radius: {_RADIUS - 2}px;
+                border-bottom-left-radius:  {_RADIUS - 2}px;
+                border-bottom-right-radius: {_RADIUS - 2}px;
             }}
         """)
-        self._img_lbl.setFixedSize(_W - 4, _VH)
+        self._img_lbl.setFixedSize(_W - 4, _H - 4)
         inner.addWidget(self._img_lbl, alignment=Qt.AlignmentFlag.AlignCenter)
 
-        # ── Bandeau métriques overlay (DANS le cadre, pas en dehors) ─────────
-        metrics_bar = QFrame()
-        metrics_bar.setFixedSize(_W - 4, _BH + 18)
-        metrics_bar.setStyleSheet("""
-            QFrame {
-                background: rgba(10, 15, 30, 0.92);
-                border-bottom-left-radius: 10px;
-                border-bottom-right-radius: 10px;
-            }
-        """)
-        mb_lay = QVBoxLayout(metrics_bar)
-        mb_lay.setContentsMargins(8, 3, 8, 4)
-        mb_lay.setSpacing(3)
-
-        # Ligne 1 : statut + émotion + REC
-        row1 = QHBoxLayout(); row1.setSpacing(5)
-        self._dot = _Dot(T.GREEN_500)
-        row1.addWidget(self._dot)
-
-        self._face_lbl = QLabel("Caméra active")
-        self._face_lbl.setFont(QFont(T.FONT, 7, QFont.Weight.DemiBold))
-        self._face_lbl.setStyleSheet("color: rgba(255,255,255,0.80); background: transparent;")
-        row1.addWidget(self._face_lbl, stretch=1)
-
-        self._emotion_lbl = QLabel("")
-        self._emotion_lbl.setFont(QFont("Segoe UI Emoji, Apple Color Emoji", 11))
-        self._emotion_lbl.setStyleSheet("background: transparent;")
-        row1.addWidget(self._emotion_lbl)
-
-        self._rec_badge = QLabel(" ● REC ")
+        # ── Badge REC (overlay direct sur la vidéo) ───────────────────────────
+        self._rec_badge = QLabel(" ● REC ", self._img_lbl)
         self._rec_badge.setFont(QFont(T.FONT, 6, QFont.Weight.Bold))
         self._rec_badge.setStyleSheet(f"""
             color: white; background: {T.RED_600};
             border-radius: 4px; padding: 1px 4px;
         """)
+        self._rec_badge.move(6, 6)
         self._rec_badge.setVisible(False)
-        row1.addWidget(self._rec_badge)
-        mb_lay.addLayout(row1)
-
-        # Ligne 2 : 4 mini-barres côte à côte
-        row2 = QHBoxLayout(); row2.setSpacing(6)
-
-        def _mini(color):
-            b = QProgressBar()
-            b.setRange(0, 100); b.setValue(0)
-            b.setTextVisible(False); b.setFixedHeight(4)
-            b.setStyleSheet(f"""
-                QProgressBar {{ background: rgba(255,255,255,0.15);
-                                border-radius: 2px; border: none; }}
-                QProgressBar::chunk {{ background: {color}; border-radius: 2px; }}
-            """)
-            return b
-
-        col_data = [
-            ("Conf.",    T.CYAN_500,  "_conf_bar"),
-            ("Stress",   T.RED_500,   "_stress_bar"),
-            ("Contact",  T.GREEN_500, "_contact_bar"),
-            ("Stab.",    T.AMBER_500, "_stab_bar"),
-        ]
-        for label, color, attr in col_data:
-            col = QVBoxLayout(); col.setSpacing(1)
-            lbl = QLabel(label)
-            lbl.setFont(QFont(T.FONT, 5))
-            lbl.setStyleSheet("color: rgba(255,255,255,0.45); background: transparent;")
-            bar = _mini(color)
-            setattr(self, attr, bar)
-            col.addWidget(lbl); col.addWidget(bar)
-            row2.addLayout(col)
-
-        mb_lay.addLayout(row2)
-        inner.addWidget(metrics_bar, alignment=Qt.AlignmentFlag.AlignCenter)
 
         root.addWidget(self._frame)
 
@@ -382,8 +317,6 @@ class CameraPreviewWidget(QWidget):
             if self._no_signal:
                 self._no_signal  = False
                 self._has_camera = True
-                self._face_lbl.setText("Analyse active")
-                self._dot.set_color(T.GREEN_500)
 
         except Exception:
             pass
@@ -398,14 +331,9 @@ class CameraPreviewWidget(QWidget):
         self._rec_badge.setVisible(recording)
         if recording:
             self._blink_timer.start()
-            self._face_lbl.setText("Enregistrement…")
-            self._dot.set_color(T.RED_500)
         else:
             self._blink_timer.stop()
             self._rec_badge.setVisible(False)
-            if self._has_camera:
-                self._face_lbl.setText("Analyse active")
-                self._dot.set_color(T.GREEN_500)
 
     def set_facial_result(self, metrics: dict):
         self._eval_metrics = metrics
@@ -413,39 +341,15 @@ class CameraPreviewWidget(QWidget):
 
     def set_camera_unavailable(self):
         self._has_camera = False
-        self._face_lbl.setText("Pas de caméra")
-        self._dot.set_color(T.TEXT_400)
         self._show_placeholder()
 
     # ── Mise à jour overlay métriques ─────────────────────────────────────────
 
     def _refresh_metrics_overlay(self):
-        if self._eval_metrics:
-            m       = self._eval_metrics
-            conf    = int(m.get("confidence_score",  5.0) * 10)
-            contact = int(m.get("eye_contact_ratio", 0.0) * 100)
-            stress  = int(m.get("stress_score",      5.0) * 10)
-            stab    = int(m.get("head_stability",     1.0) * 100)
-            emotion = m.get("dominant_emotion", "neutral")
-        else:
-            with self._rt_lock:
-                m = dict(self._last_metrics)
-            if not m.get("face"):
-                self._conf_bar.setValue(0); self._stress_bar.setValue(0)
-                self._contact_bar.setValue(0); self._stab_bar.setValue(0)
-                self._emotion_lbl.setText("")
-                return
-            conf    = int(m.get("confidence", 5.0) * 10)
-            contact = 100 if m.get("eye_contact") else 0
-            stress  = int(m.get("stress",     0.0) * 10)
-            stab    = int(m.get("stability",  1.0) * 100)
-            emotion = m.get("emotion", "neutral")
+        pass  # métriques faciales supprimées de l'UI client
 
-        self._conf_bar.setValue(conf)
-        self._stress_bar.setValue(stress)
-        self._contact_bar.setValue(contact)
-        self._stab_bar.setValue(stab)
-        self._emotion_lbl.setText(_EMOJI.get(emotion, "😐"))
+    def set_facial_result(self, metrics: dict):
+        pass  # métriques réservées au backend/RH
 
     def _toggle_blink(self):
         self._blink = not self._blink

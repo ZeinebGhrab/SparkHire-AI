@@ -66,7 +66,7 @@ UI_TEXTS = {
         "error_title": "خطأ", "end_title": "إنهاء", "back_btn": "رجوع", "confirm_btn": "تأكيد",
         "welcome_back_status": "مرحباً بعودتك — نستأنف المقابلة",
         "camera_ok": "الكاميرا جاهزة", "camera_off": "الكاميرا غير متوفرة",
-        "facial_score": "الثقة: {c}/10 | التوتر: {s}/10 | التواصل: {e}%",
+        "facial_score": "",
     },
     "fr": {
         "app_title": "STARK RECRUITMENT AI", "app_subtitle": "Entretien vocal intelligent",
@@ -85,7 +85,7 @@ UI_TEXTS = {
         "error_title": "Erreur", "end_title": "Terminer", "back_btn": "Retour", "confirm_btn": "Confirmer",
         "welcome_back_status": "Bon retour — reprise de l'entretien",
         "camera_ok": "Caméra active 🎥", "camera_off": "Caméra non disponible ⚠️",
-        "facial_score": "Confiance: {c}/10 | Stress: {s}/10 | Contact: {e}%",
+        "facial_score": "",
     },
     "en": {
         "app_title": "STARK RECRUITMENT AI", "app_subtitle": "AI-powered voice interview",
@@ -104,7 +104,7 @@ UI_TEXTS = {
         "error_title": "Error", "end_title": "End Interview", "back_btn": "Back", "confirm_btn": "Confirm",
         "welcome_back_status": "Welcome back — resuming interview",
         "camera_ok": "Camera active 🎥", "camera_off": "Camera unavailable ⚠️",
-        "facial_score": "Confidence: {c}/10 | Stress: {s}/10 | Contact: {e}%",
+        "facial_score": "",
     },
 }
 
@@ -712,19 +712,7 @@ class MainWindow(QMainWindow):
             self.video_player.set_idle(); self.status_chip.set_state("connected"); return
 
         if mt == "answer_evaluated":
-            # Afficher le résultat dans le panneau interview_widget
-            self.interview_widget.show_evaluation(md)
-            # Transmettre les métriques faciales à l'overlay PiP
-            facial = md.get("facial")
-            if facial and facial.get("frames_with_face", 0) > 0:
-                self.video_player.camera_preview.set_facial_result(facial)
-                msg = self.t(
-                    "facial_score",
-                    c=facial.get("confidence_score", 0),
-                    s=facial.get("stress_score", 0),
-                    e=int(facial.get("eye_contact_ratio", 0) * 100),
-                )
-                self.statusBar().showMessage(f"✓ {self.t('answer_saved')} | {msg}")
+            self.statusBar().showMessage(self.t("answer_saved"))
             return
 
     def _finalize_msg(self, mt, md):
