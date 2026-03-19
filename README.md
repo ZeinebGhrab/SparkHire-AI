@@ -205,7 +205,7 @@ uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
 
 Expected startup output:
 ```
-✅ MediaPipe FaceMesh v5.2 | 478 landmarks + iris | CPU
+✅ MediaPipe FaceMesh | 478 landmarks + iris | CPU
 ✅ HSEmotion | model=enet_b0_8_best_afew | device=CPU
 ✅ Whisper 'medium' ready on CPU
 ✅ Edge-TTS initialized
@@ -366,7 +366,7 @@ Webcam frames (2fps, JPEG)
         3. FACS heuristics             ~60%   landmarks only      ← fallback 2
 ```
 
-### Metrics stored per answer (MongoDB only)
+### Metrics stored per answer 
 
 | Metric | Range | Description |
 |---|---|---|
@@ -379,14 +379,6 @@ Webcam frames (2fps, JPEG)
 | `blink_rate` | bpm | Estimated at 10fps; returns 0.0 if < 5 frames |
 | `dominant_emotion` | string | Most frequent emotion across all frames |
 
-### v5.2 formula changes
-
-| Issue in v5.1 | Fix in v5.2 |
-|---|---|
-| Eye contact dominated confidence (4.0 pts) — staring blankly scored high | Reduced to 2.5 pts; positive emotions contribute 2.0 pts |
-| `sad` not penalizing confidence or engagement | `sad` now reduces both confidence and engagement |
-| `stress_score` ignored `sad` and `surprise` | Both now contribute to stress |
-| `blink_rate` assumed 2fps → 0.0 bpm on short answers | Corrected to 10fps sampling |
 
 ### Global facial summary in HR report
 
