@@ -1,6 +1,6 @@
 """
-Service d'analyse du langage corporel facial — SparkHire AI  (v5)
-==================================================================
+Service d'analyse du langage corporel facial — SparkHire AI  (v5.2)
+====================================================================
 
 Améliorations v5 vs v4 :
   • Emotion backend remplacé : DeepFace VGG (~73%) → HSEmotion EfficientNet-B0 (~82%)
@@ -16,12 +16,18 @@ Fix v5.1 :
   • Normalisation angles euler après decomposeProjectionMatrix
     pitch ≈ ±165-180° → ramené dans [-90, +90] pour un visage de face
     Résultat : contact visuel enfin détecté correctement
-  • Compatibilité timm==0.6.13 requise
-    pip install timm==0.6.13
+  • Compatibilité timm==0.9.2 requise (0.6.13 manque timm.layers)
+
+Fix v5.2 — Recalibration formules de scoring :
+  • confidence_score : eye_contact réduit (4.0→2.5), émotions positives/négatives
+    mieux équilibrées — évite qu'un regard fixe compense une émotion sad/fear
+  • stress_score : intègre sad + surprise (ignorés en v5.1)
+  • engagement_score : pénalise sad + disgust (ignorés en v5.1)
+  • blink_rate : FPS corrigé (2fps→10fps), clamp sur min 5 frames
 
 Installation :
-  pip install timm==0.6.13
-  pip install hsemotion
+  pip install timm==0.9.2
+  pip install hsemotion efficientnet_pytorch
   pip install mediapipe==0.10.14
   pip install "protobuf>=4.25.3,<5.0.0"
 """
@@ -178,7 +184,7 @@ class _HSEmotionBackend(_EmotionBackend):
     ~82% de précision vs ~73% pour DeepFace VGG.
 
     Prérequis OBLIGATOIRES :
-      pip install timm==0.6.13          ← timm>=0.9 supprime conv_s2d
+      pip install timm==0.9.2           ← 0.6.13 manque timm.layers
       pip install efficientnet_pytorch  ← requis par enet_b0_8_best_afew
       pip install hsemotion
 
@@ -230,7 +236,7 @@ class _HSEmotionBackend(_EmotionBackend):
             raise ImportError(
                 f"Aucun modèle HSEmotion disponible. "
                 f"Dernière erreur : {type(last_err).__name__}: {last_err}\n"
-                f"Fix : pip install timm==0.6.13 efficientnet_pytorch"
+                f"Fix : pip install timm==0.9.2 efficientnet_pytorch"
             )
 
     def predict(self, face_bgr: np.ndarray) -> dict[str, float] | None:
@@ -373,7 +379,7 @@ class FacialAnalysisService:
         except ImportError as e:
             logger.warning(
                 f"HSEmotion ImportError : {e}\n"
-                f"  Fix : pip install timm==0.6.13 efficientnet_pytorch hsemotion\n"
+                f"  Fix : pip install timm==0.9.2 efficientnet_pytorch hsemotion\n"
                 f"  Fallback : DeepFace VGG (~73%)"
             )
         except Exception as e:
@@ -807,8 +813,12 @@ class FacialAnalysisService:
                 sum(1 for f in lm_v if f.lip_corner_up > 0.25) / m, 3
             )
             blink_n        = sum(1 for f in lm_v if f.is_blink)
-            dur_min        = max(0.01, m / (2.0 * 60))
-            metrics.blink_rate = round(blink_n / dur_min, 1)
+            # Durée estimée : ~10 fps après échantillonnage (MAX_FRAMES_TO_ANALYZE=25)
+            # Clamp min à 0.1 min pour éviter taux aberrants sur courtes séquences
+            dur_min        = max(0.1, m / (10.0 * 60))
+            raw_blink_rate = blink_n / dur_min
+            # Sous 5 frames : taux non fiable → 0.0
+            metrics.blink_rate = round(raw_blink_rate, 1) if m >= 5 else 0.0
         else:
             metrics.eye_contact_ratio = 0.5
             metrics.head_stability    = 0.5
@@ -824,36 +834,66 @@ class FacialAnalysisService:
         metrics.emotion_scores   = {k: round(v / t * 100, 1) for k, v in emo_avgs.items()}
         metrics.dominant_emotion = max(metrics.emotion_scores, key=metrics.emotion_scores.get)
 
-        # Scores synthétiques
+        # Scores synthétiques — v5.2 (formules recalibrées)
+        #
+        # Problèmes v5 identifiés :
+        #   1. confidence trop dominée par eye_contact (4.0/10pts) → quelqu'un
+        #      qui regarde la caméra fixement en disant "je ne sais pas" → score élevé
+        #   2. sad/neutral avaient trop peu de poids négatif sur confidence
+        #   3. stress_score ignorait sad et neutral (signes de désengagement/stress)
+        #   4. engagement_score ignorait sad (peut signifier désintérêt)
+        #
+        # Nouvelle logique :
+        #   - confidence : équilibre regard / stabilité / émotions positives vs négatives
+        #   - stress     : intègre sad + surprise en plus de fear/angry
+        #   - engagement : pénalise sad + neutral fortement
         if metrics.behavioral_metrics_reliable:
+            # Score émotionnel positif (0→1) : happy + surprise légère
+            emo_positive = min(1.0, emo_avgs["happy"] * 1.2 + emo_avgs["surprise"] * 0.3)
+            # Score émotionnel négatif (0→1) : angry + fear + sad + disgust
+            emo_negative = min(1.0,
+                emo_avgs["angry"]   * 1.0
+                + emo_avgs["fear"]  * 1.0
+                + emo_avgs["sad"]   * 0.8
+                + emo_avgs["disgust"] * 0.5
+            )
+            # Pénalité neutral : neutral élevé = manque d'engagement/expressivité
+            neutral_penalty = emo_avgs["neutral"] * 0.3
+
             metrics.confidence_score = round(max(0.0, min(10.0,
-                metrics.eye_contact_ratio * 4.0
-                + metrics.head_stability  * 3.0
-                + metrics.smile_ratio     * 1.5
-                + 1.5
-                - emo_avgs["angry"] * 1.5
-                - emo_avgs["fear"]  * 1.0
+                metrics.eye_contact_ratio * 2.5   # réduit de 4.0 → 2.5
+                + metrics.head_stability  * 2.0   # réduit de 3.0 → 2.0
+                + emo_positive            * 2.0   # nouveau : émotions positives
+                + metrics.smile_ratio     * 1.0
+                + 2.5                             # base offset
+                - emo_negative            * 2.5   # augmenté : émotions négatives pénalisent plus
+                - neutral_penalty                 # nouveau : neutral pénalise légèrement
                 - abs(metrics.avg_yaw / 45) * 0.5
             )), 1)
 
             brow_frown_avg = _avg([f.brow_frown for f in valid if f.landmarks_available])
             metrics.stress_score = round(max(0.0, min(10.0,
-                brow_frown_avg                    * 4.0
-                + (1 - metrics.head_stability)    * 2.5
-                + (1 - metrics.eye_contact_ratio) * 1.5
+                brow_frown_avg                    * 3.5
+                + (1 - metrics.head_stability)    * 2.0
+                + (1 - metrics.eye_contact_ratio) * 1.0
                 + emo_avgs["fear"]                * 1.5
                 + emo_avgs["angry"]               * 1.0
+                + emo_avgs["sad"]                 * 1.0   # nouveau : sad → stress
+                + emo_avgs["surprise"]            * 0.5   # nouveau : surprise → stress léger
                 - emo_avgs["happy"]               * 1.5
             )), 1)
 
             brow_raise_avg = _avg([f.brow_raise for f in valid if f.landmarks_available])
             expressiveness = 1.0 - emo_avgs.get("neutral", 1.0)
             metrics.engagement_score = round(max(0.0, min(10.0,
-                metrics.eye_contact_ratio * 3.5
+                metrics.eye_contact_ratio * 3.0   # réduit légèrement
                 + expressiveness          * 2.0
                 + metrics.smile_ratio     * 1.5
-                + metrics.head_stability  * 2.0
-                + brow_raise_avg          * 1.0
+                + metrics.head_stability  * 1.5
+                + brow_raise_avg          * 0.5
+                + emo_avgs["happy"]       * 1.0   # nouveau : happy booste engagement
+                - emo_avgs["sad"]         * 1.5   # nouveau : sad pénalise engagement
+                - emo_avgs["disgust"]     * 1.0   # nouveau : disgust pénalise engagement
             )), 1)
         else:
             expressiveness = 1.0 - emo_avgs.get("neutral", 1.0)
