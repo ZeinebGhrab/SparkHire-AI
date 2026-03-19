@@ -1,5 +1,5 @@
 # ═══════════════════════════════════════════════════════════════
-# SPARKHIRE AI — requirements.txt (Backend stable)
+# SPARKHIRE AI — requirements.txt 
 # Python 3.10 / 3.11
 # ═══════════════════════════════════════════════════════════════
 
@@ -34,6 +34,9 @@ nvidia-cudnn-cu12==8.9.7.29
 vosk==0.3.45
 
 # ── GPU PyTorch ──────────────────────────────────────────────────
+# CUDA 12.x → pip install torch --index-url https://download.pytorch.org/whl/cu121
+# CUDA 11.x → pip install torch --index-url https://download.pytorch.org/whl/cu118
+# CPU only  → pip install torch
 torch
 
 # ── TTS ──────────────────────────────────────────────────────────
@@ -49,6 +52,14 @@ pydub==0.25.1
 # ── Video ────────────────────────────────────────────────────────
 opencv-python==4.10.0.84
 pillow==10.2.0
+
+# ── Facial Analysis — HSEmotion pipeline (~82% précision) ────────
+# timm==0.9.2 requis : 0.6.13 manque timm.layers, >=0.9.7 peut casser
+timm==0.9.2
+efficientnet_pytorch
+hsemotion
+mediapipe==0.10.14
+protobuf>=4.25.3,<5.0.0
 
 # ── Utils ────────────────────────────────────────────────────────
 python-dateutil==2.9.0
