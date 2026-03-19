@@ -5,12 +5,6 @@ Handler WebSocket — AUDIO PCM PUR EN CHUNKS — MULTILINGUE AR/FR/EN
 Pipeline enrichi :
   Voix  → Whisper (ASR) → Llama 3 (LLM) → Score / Feedback
   Vidéo → MediaPipe FaceMesh + DeepFace CNN → FacialMetrics → injectées dans LLM
-
-Correctifs v4 :
-  - analyze_frames_batch() avec échantillonnage max 25 frames
-  - Timeout adaptatif (5s + 2s par tranche de 5 frames, max 45s)
-  - detector_backend='mtcnn' en mode dégradé (>opencv)
-  - Import facial_analysis_service en premier dans le module
 """
 
 # ── Import facial en premier pour garantir l'ordre protobuf ──────────────────
@@ -514,7 +508,7 @@ class InterviewHandler:
             if not await llm.is_available():
                 raise RuntimeError("LLM non disponible")
 
-            # Évaluation LLM enrichie avec données faciales
+            # Évaluation LLM enrichie avec données faciales + durée
             if hasattr(llm, "evaluate_with_facial"):
                 initial_eval = await llm.evaluate_with_facial(
                     question=question_text,
@@ -522,6 +516,8 @@ class InterviewHandler:
                     language=self.lang,
                     position_title=self.position.title,
                     facial_metrics=facial_metrics,
+                    duration_seconds=duration,
+                    max_duration_seconds=float(question.max_duration_seconds or 0),
                 )
             else:
                 initial_eval = await llm.evaluate_with_followup(

@@ -217,7 +217,7 @@ def get_tts_service() -> TTSService:
 
     service = TTSService(primary, fallback, cache_dir=settings.TTS_CACHE_DIR)
     logger.info(
-        f"🎙️ TTS Service prêt | primaire={type(primary).__name__} "
+        f"TTS Service prêt | primaire={type(primary).__name__} "
         f"| fallback={type(fallback).__name__ if fallback else 'aucun'}"
     )
     return service

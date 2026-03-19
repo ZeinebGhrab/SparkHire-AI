@@ -61,17 +61,17 @@ def _send_completion_notification(session_id: str) -> None:
         # ── Destinataires ─────────────────────────────────────────────────────
         if created_by and "@" in str(created_by):
             emails = [created_by]
-            logger.info(f"🔔 Notification → created_by : {created_by}")
+            logger.info(f"Notification → created_by : {created_by}")
         else:
             all_recruiters = list(db.recruiters.find({}, {"email": 1}))
             emails = [r["email"] for r in all_recruiters if r.get("email")]
             logger.warning(
-                f"🔔 created_by absent pour {session_id} — "
+                f"created_by absent pour {session_id} — "
                 f"fallback {len(emails)} recruteur(s) : {emails}"
             )
 
         if not emails:
-            logger.error("🔔 Aucun recruteur trouvé — notification annulée")
+            logger.error("Aucun recruteur trouvé — notification annulée")
             return
 
         # ── Candidat ──────────────────────────────────────────────────────────
@@ -134,19 +134,19 @@ def _send_completion_notification(session_id: str) -> None:
             }
             result = db.notifications.insert_one(doc)
             logger.info(
-                f"🔔 Notification insérée | _id={result.inserted_id} | "
+                f"Notification insérée | _id={result.inserted_id} | "
                 f"recipient={email} | message='{message}'"
             )
             ok += 1
 
         logger.info(
-            f"✅ {ok}/{len(emails)} notification(s) créée(s) | session={session_id} | "
+            f"{ok}/{len(emails)} notification(s) créée(s) | session={session_id} | "
             f"candidat={candidate_name} | poste={position_title}"
         )
 
     except Exception as e:
         logger.error(
-            f"❌ _send_completion_notification ERREUR | session={session_id} | {e}",
+            f"_send_completion_notification ERREUR | session={session_id} | {e}",
             exc_info=True,
         )
 
@@ -302,16 +302,16 @@ class InterviewSessionCRUD:
         try:
             session = InterviewSessionCRUD.get_by_session_id(session_id)
         except HTTPException:
-            return None, False, "❌ Session ID invalide ou introuvable."
+            return None, False, "Session ID invalide ou introuvable."
 
         now          = datetime.utcnow()
         scheduled_at = getattr(session, "scheduled_at", None)
         deadline     = getattr(session, "late_access_deadline", None)
 
         if session.status == "completed":
-            return session, False, "✅ Cet entretien est déjà terminé."
+            return session, False, "Cet entretien est déjà terminé."
         if session.status == "cancelled":
-            return session, False, "🚫 Cette session a été annulée."
+            return session, False, "Cette session a été annulée."
 
         if scheduled_at:
             if now < scheduled_at:
@@ -319,20 +319,20 @@ class InterviewSessionCRUD:
                 hrs, mins = divmod(delta_min, 60)
                 human = f"{hrs}h{mins:02d}" if hrs else f"{mins} min"
                 return session, False, (
-                    f"⏰ Entretien non encore disponible. Il commence dans {human} "
+                    f"Entretien non encore disponible. Il commence dans {human} "
                     f"(prévu le {scheduled_at.strftime('%d/%m/%Y à %H:%M')} UTC)."
                 )
             if deadline and now > deadline:
                 delay_min = int((now - scheduled_at).total_seconds() / 60)
                 return session, False, (
-                    f"⌛ Retard trop important ({delay_min} min). "
+                    f"Retard trop important ({delay_min} min). "
                     f"Délai max {LATE_ACCESS_MINUTES} min après "
                     f"{scheduled_at.strftime('%d/%m/%Y à %H:%M')} UTC."
                 )
         elif now > session.expires_at:
             delay = int((now - session.expires_at).total_seconds() / 60)
             return session, False, (
-                f"⏰ Session expirée depuis {delay} minutes."
+                f"Session expirée depuis {delay} minutes."
             )
 
         return session, True, ""
@@ -384,7 +384,7 @@ class InterviewSessionCRUD:
 
         # ── Notification automatique quand l'entretien se termine ─────────────
         if status == "completed":
-            logger.info(f"🔔 Déclenchement notification (update_status completed) | {session_id}")
+            logger.info(f"Déclenchement notification (update_status completed) | {session_id}")
             _send_completion_notification(session_id)
 
         return InterviewSessionCRUD.get_by_session_id(session_id)

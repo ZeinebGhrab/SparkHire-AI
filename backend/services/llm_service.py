@@ -351,6 +351,83 @@ _EMOTION_LABELS = {
     },
 }
 
+# ── Contexte durée de réponse ─────────────────────────────────────────────────
+
+_DURATION_CONTEXT_PROMPT = {
+    "fr": """\
+
+Durée de la réponse : {duration_str} (limite autorisée : {max_str})
+Ratio d'utilisation : {ratio_pct}%
+
+Instructions pour la durée :
+  - Une réponse très courte (< 20% du temps alloué) indique souvent un manque de développement → pénalise le score de -1 à -2 points si le contenu est pauvre.
+  - Une réponse équilibrée (40–90% du temps alloué) est idéale → pas d'impact.
+  - Une réponse qui utilise 90–100% du temps alloué avec un contenu riche est positive → bonus possible de +0.5 point.
+  - Ne pénalise PAS si la réponse est courte mais précise et complète.
+  - Mentionne la durée dans le feedback uniquement si elle est significativement trop courte ou si le candidat a semblé à court d'idées.
+""",
+    "en": """\
+
+Answer duration: {duration_str} (allowed limit: {max_str})
+Usage ratio: {ratio_pct}%
+
+Duration instructions:
+  - A very short answer (< 20% of allocated time) often indicates lack of development → penalize score by -1 to -2 points if content is poor.
+  - A balanced answer (40–90% of allocated time) is ideal → no impact.
+  - An answer using 90–100% of allocated time with rich content is positive → possible +0.5 point bonus.
+  - Do NOT penalize if the answer is short but precise and complete.
+  - Mention duration in feedback only if it is significantly too short or the candidate seemed to run out of ideas.
+""",
+    "ar": """\
+
+مدة الإجابة : {duration_str} (الحد المسموح به : {max_str})
+نسبة الاستخدام : {ratio_pct}%
+
+تعليمات المدة :
+  - الإجابة القصيرة جداً (< 20% من الوقت المخصص) تشير غالباً إلى نقص في التطوير → اخصم من -1 إلى -2 نقطة إذا كان المحتوى ضعيفاً.
+  - الإجابة المتوازنة (40-90% من الوقت) مثالية → لا تأثير.
+  - الإجابة التي تستخدم 90-100% من الوقت مع محتوى غني إيجابية → مكافأة محتملة +0.5 نقطة.
+  - لا تعاقب إذا كانت الإجابة قصيرة لكن دقيقة وكاملة.
+  - اذكر المدة في التغذية الراجعة فقط إذا كانت قصيرة بشكل ملحوظ أو بدا المرشح نافد الأفكار.
+""",
+}
+
+
+def _build_duration_context(
+    duration_seconds: float,
+    max_duration_seconds: float,
+    language: str,
+) -> str:
+    """
+    Construit le bloc de contexte durée à injecter dans le prompt LLM.
+
+    Retourne une chaîne vide si :
+      - duration_seconds <= 0
+      - max_duration_seconds <= 0
+
+    Le ratio d'utilisation guide le LLM pour moduler le score :
+      < 20%  → pénalité possible si contenu pauvre
+      40–90% → neutre (idéal)
+      > 90%  → léger bonus si contenu riche
+    """
+    if duration_seconds <= 0 or max_duration_seconds <= 0:
+        return ""
+
+    lang  = language if language in ("ar", "fr", "en") else "fr"
+    ratio = min(1.0, duration_seconds / max_duration_seconds)
+    ratio_pct = int(ratio * 100)
+
+    def _fmt(secs: float) -> str:
+        m, s = int(secs) // 60, int(secs) % 60
+        return f"{m}m{s:02d}s" if m > 0 else f"{s}s"
+
+    tpl = _DURATION_CONTEXT_PROMPT.get(lang, _DURATION_CONTEXT_PROMPT["fr"])
+    return tpl.format(
+        duration_str = _fmt(duration_seconds),
+        max_str      = _fmt(max_duration_seconds),
+        ratio_pct    = ratio_pct,
+    )
+
 
 def _build_facial_context(facial_metrics, language: str) -> str:
     """
@@ -534,23 +611,24 @@ class OllamaLLMService:
         language: str = "fr",
         position_title: str = "",
         facial_metrics=None,
+        duration_seconds: float = 0.0,
+        max_duration_seconds: float = 0.0,
     ) -> dict:
         """
-        Évalue une réponse en intégrant les données du langage corporel facial.
+        Évalue une réponse en intégrant les données du langage corporel facial
+        ET la durée de réponse du candidat.
 
         Le contenu de la réponse reste prioritaire (80%).
-        Les données faciales enrichissent le feedback et les axes d'amélioration (20%).
-
-        Si facial_metrics est None ou de qualité insuffisante (face_detection_rate < 0.3),
-        cette méthode se comporte exactement comme evaluate_with_followup().
+        Les données faciales enrichissent le feedback (20%).
+        La durée module le score selon le ratio d'utilisation du temps alloué :
+          - < 20% du temps → pénalité possible si contenu pauvre
+          - 40–90%         → neutre (idéal)
+          - > 90%          → bonus possible si contenu riche
 
         Paramètres :
-            facial_metrics : FacialMetrics | None
-                Instance de backend.services.facial_analysis_service.FacialMetrics
-                Contient : dominant_emotion, confidence_score, stress_score,
-                           engagement_score, eye_contact_ratio, head_stability,
-                           smile_ratio, frames_analyzed, frames_with_face,
-                           face_detection_rate
+            facial_metrics       : FacialMetrics | None
+            duration_seconds     : float — durée réelle de la réponse en secondes
+            max_duration_seconds : float — durée maximale autorisée pour cette question
         """
         lang = language if language in ("ar", "fr", "en") else "fr"
 
@@ -564,11 +642,12 @@ class OllamaLLMService:
             })
             return result
 
-        # Construire le contexte facial (chaîne vide si données insuffisantes)
-        facial_context = _build_facial_context(facial_metrics, lang)
+        # Construire les contextes additionnels
+        duration_context = _build_duration_context(duration_seconds, max_duration_seconds, lang)
+        facial_context   = _build_facial_context(facial_metrics, lang)
 
-        # Injecter le contexte facial à la fin du system prompt
-        system = _SYSTEM_PROMPT_FOLLOWUP[lang] + facial_context
+        # Injecter durée + facial à la fin du system prompt
+        system = _SYSTEM_PROMPT_FOLLOWUP[lang] + duration_context + facial_context
 
         user = _USER_PROMPT[lang].format(question=question, answer=answer)
         if position_title:
@@ -584,12 +663,18 @@ class OllamaLLMService:
         parsed["llm_model"] = self.model
         parsed["evaluated"] = True
 
-        # Log enrichi si données faciales disponibles
+        # Log enrichi
+        dur_info = (
+            f"durée={int(duration_seconds)}s/{int(max_duration_seconds)}s "
+            f"({int(min(1.0, duration_seconds / max_duration_seconds) * 100) if max_duration_seconds > 0 else '?'}%)"
+            if duration_seconds > 0 else "durée=n/a"
+        )
         if facial_metrics and getattr(facial_metrics, "frames_with_face", 0) > 0:
             logger.info(
                 f"Évaluation+Facial [{lang}] | "
                 f"score={parsed['score']}/10 | "
                 f"needs_followup={parsed['needs_followup']} | "
+                f"{dur_info} | "
                 f"émotion={getattr(facial_metrics, 'dominant_emotion', 'n/a')} | "
                 f"confiance={getattr(facial_metrics, 'confidence_score', 0)}/10 | "
                 f"stress={getattr(facial_metrics, 'stress_score', 0)}/10 | "
@@ -599,6 +684,7 @@ class OllamaLLMService:
             logger.info(
                 f"Évaluation+Facial [{lang}] | "
                 f"score={parsed['score']}/10 | "
+                f"{dur_info} | "
                 f"données faciales: absentes ou qualité insuffisante"
             )
 

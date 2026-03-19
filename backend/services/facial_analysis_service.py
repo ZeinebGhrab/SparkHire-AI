@@ -1,30 +1,6 @@
 """
-Service d'analyse du langage corporel facial — SparkHire AI  (v5.2)
+Service d'analyse du langage corporel facial — SparkHire AI  
 ====================================================================
-
-Améliorations v5 vs v4 :
-  • Emotion backend remplacé : DeepFace VGG (~73%) → HSEmotion EfficientNet-B0 (~82%)
-  • Framework : TensorFlow → PyTorch natif (CUDA direct RTX 4050)
-  • Inference ~3× plus rapide : ~40ms/frame → ~8ms/frame sur GPU
-  • Batch inference PyTorch : torch.no_grad() + stack de tenseurs
-  • 8 classes AffectNet8 (+ contempt) vs 7 auparavant
-  • Warm-up instantané (pas de chargement poids TF au 1er appel)
-  • Fallback DeepFace conservé si HSEmotion absent
-  • Fallback FACS heuristiques si les deux sont absents
-
-Fix v5.1 :
-  • Normalisation angles euler après decomposeProjectionMatrix
-    pitch ≈ ±165-180° → ramené dans [-90, +90] pour un visage de face
-    Résultat : contact visuel enfin détecté correctement
-  • Compatibilité timm==0.9.2 requise (0.6.13 manque timm.layers)
-
-Fix v5.2 — Recalibration formules de scoring :
-  • confidence_score : eye_contact réduit (4.0→2.5), émotions positives/négatives
-    mieux équilibrées — évite qu'un regard fixe compense une émotion sad/fear
-  • stress_score : intègre sad + surprise (ignorés en v5.1)
-  • engagement_score : pénalise sad + disgust (ignorés en v5.1)
-  • blink_rate : FPS corrigé (2fps→10fps), clamp sur min 5 frames
-
 Installation :
   pip install timm==0.9.2
   pip install hsemotion efficientnet_pytorch
@@ -223,7 +199,7 @@ class _HSEmotionBackend(_EmotionBackend):
                 self._fer = HSEmotionRecognizer(model_name=model_name, device=self._device)
                 self._model_name = model_name
                 logger.info(
-                    f"✅ HSEmotion | modèle={model_name} | "
+                    f"HSEmotion | modèle={model_name} | "
                     f"device={self._device.upper()} | chargé avec succès"
                 )
                 break
@@ -294,7 +270,7 @@ class _DeepFaceBackend(_EmotionBackend):
                 detector_backend="skip",
                 enforce_detection=False, silent=True,
             )
-            logger.info("✅ DeepFace CNN | poids chargés (warm-up)")
+            logger.info("DeepFace CNN | poids chargés (warm-up)")
             return True
         except Exception as e:
             logger.warning(f"DeepFace warm-up : {e}")
@@ -363,7 +339,7 @@ class FacialAnalysisService:
             )
             self._mp_ready = True
             logger.info(
-                "✅ MediaPipe FaceMesh v5 | 478 landmarks + iris | "
+                "MediaPipe FaceMesh v5 | 478 landmarks + iris | "
                 "EAR + solvePnP + iris gaze | CPU"
             )
         except ImportError:
@@ -408,7 +384,7 @@ class FacialAnalysisService:
                 dummy = np.full((64, 64, 3), 128, dtype=np.uint8)
                 self._emotion_backend.predict(dummy)
                 logger.info(
-                    f"✅ HSEmotion warm-up OK | "
+                    f"HSEmotion warm-up OK | "
                     f"device={self._emotion_backend._device.upper()}"
                 )
                 return True
@@ -459,10 +435,6 @@ class FacialAnalysisService:
     def _head_pose(lm, img_w, img_h):
         """
         Calcule les angles de pose de tête (yaw, pitch, roll) via solvePnP.
-
-        Fix v5.1 : decomposeProjectionMatrix retourne parfois pitch ≈ ±165–180°
-        pour un visage parfaitement de face (valeur réelle ≈ 0°).
-        On normalise yaw et pitch dans [-90, +90] pour corriger ce comportement.
         """
         try:
             import cv2
@@ -491,7 +463,7 @@ class FacialAnalysisService:
             pitch = float(euler[0, 0])
             roll  = float(euler[2, 0])
 
-            # ── FIX v5.1 — Normalisation angles ───────────────────────────────
+            # ── Normalisation angles ───────────────────────────────
             # decomposeProjectionMatrix peut retourner pitch ≈ ±165–180° pour
             # un visage de face (valeur attendue ≈ 0°).
             # On ramène yaw et pitch dans [-90, +90].
@@ -674,7 +646,7 @@ class FacialAnalysisService:
 
     def analyze_frames_batch(self, frames_bgr: list[np.ndarray]) -> list[FrameResult]:
         """
-        Pipeline optimisé v5 :
+        Pipeline optimisé :
           1. Échantillonnage max MAX_FRAMES_TO_ANALYZE frames
           2. MediaPipe sur chaque frame (CPU — séquentiel)
           3. Extraction crops visages depuis landmarks
@@ -834,16 +806,8 @@ class FacialAnalysisService:
         metrics.emotion_scores   = {k: round(v / t * 100, 1) for k, v in emo_avgs.items()}
         metrics.dominant_emotion = max(metrics.emotion_scores, key=metrics.emotion_scores.get)
 
-        # Scores synthétiques — v5.2 (formules recalibrées)
+        # Scores synthétiques (formules)
         #
-        # Problèmes v5 identifiés :
-        #   1. confidence trop dominée par eye_contact (4.0/10pts) → quelqu'un
-        #      qui regarde la caméra fixement en disant "je ne sais pas" → score élevé
-        #   2. sad/neutral avaient trop peu de poids négatif sur confidence
-        #   3. stress_score ignorait sad et neutral (signes de désengagement/stress)
-        #   4. engagement_score ignorait sad (peut signifier désintérêt)
-        #
-        # Nouvelle logique :
         #   - confidence : équilibre regard / stabilité / émotions positives vs négatives
         #   - stress     : intègre sad + surprise en plus de fear/angry
         #   - engagement : pénalise sad + neutral fortement
@@ -878,8 +842,8 @@ class FacialAnalysisService:
                 + (1 - metrics.eye_contact_ratio) * 1.0
                 + emo_avgs["fear"]                * 1.5
                 + emo_avgs["angry"]               * 1.0
-                + emo_avgs["sad"]                 * 1.0   # nouveau : sad → stress
-                + emo_avgs["surprise"]            * 0.5   # nouveau : surprise → stress léger
+                + emo_avgs["sad"]                 * 1.0   # sad → stress
+                + emo_avgs["surprise"]            * 0.5   # surprise → stress léger
                 - emo_avgs["happy"]               * 1.5
             )), 1)
 
@@ -891,9 +855,9 @@ class FacialAnalysisService:
                 + metrics.smile_ratio     * 1.5
                 + metrics.head_stability  * 1.5
                 + brow_raise_avg          * 0.5
-                + emo_avgs["happy"]       * 1.0   # nouveau : happy booste engagement
-                - emo_avgs["sad"]         * 1.5   # nouveau : sad pénalise engagement
-                - emo_avgs["disgust"]     * 1.0   # nouveau : disgust pénalise engagement
+                + emo_avgs["happy"]       * 1.0   # happy booste engagement
+                - emo_avgs["sad"]         * 1.5   # sad pénalise engagement
+                - emo_avgs["disgust"]     * 1.0   # disgust pénalise engagement
             )), 1)
         else:
             expressiveness = 1.0 - emo_avgs.get("neutral", 1.0)

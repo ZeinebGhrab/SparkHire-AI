@@ -2,8 +2,6 @@
 Video Player Widget — Professional Light UI
 Avec overlay caméra picture-in-picture (coin bas-gauche)
 
-MODIFICATION : ajout _camera_preview (CameraPreviewWidget) comme enfant.
-Le resizeEvent repositionne automatiquement l'overlay.
 """
 
 import cv2

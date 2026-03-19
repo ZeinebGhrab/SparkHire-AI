@@ -366,7 +366,7 @@ class EvaluationService:
                 }},
             )
             logger.info(
-                f"💾 Évaluation persistée | session={session_id} | "
+                f"Évaluation persistée | session={session_id} | "
                 f"average_score={evaluation.average_score}/10 | decision={evaluation.decision}"
             )
         except Exception as e:
