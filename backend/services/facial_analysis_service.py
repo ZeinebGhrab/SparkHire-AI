@@ -3,7 +3,7 @@ Service d'analyse du langage corporel facial — SparkHire AI  (v5)
 ==================================================================
 
 Améliorations v5 vs v4 :
-  • Emotion backend remplacé : DeepFace VGG (~73%) → HSEmotion EfficientNet-B2 (~82%)
+  • Emotion backend remplacé : DeepFace VGG (~73%) → HSEmotion EfficientNet-B0 (~82%)
   • Framework : TensorFlow → PyTorch natif (CUDA direct RTX 4050)
   • Inference ~3× plus rapide : ~40ms/frame → ~8ms/frame sur GPU
   • Batch inference PyTorch : torch.no_grad() + stack de tenseurs
@@ -12,13 +12,18 @@ Améliorations v5 vs v4 :
   • Fallback DeepFace conservé si HSEmotion absent
   • Fallback FACS heuristiques si les deux sont absents
 
+Fix v5.1 :
+  • Normalisation angles euler après decomposeProjectionMatrix
+    pitch ≈ ±165-180° → ramené dans [-90, +90] pour un visage de face
+    Résultat : contact visuel enfin détecté correctement
+  • Compatibilité timm==0.6.13 requise
+    pip install timm==0.6.13
+
 Installation :
-  pip install hsemotion          ← moteur principal (EfficientNet PyTorch)
+  pip install timm==0.6.13
+  pip install hsemotion
   pip install mediapipe==0.10.14
   pip install "protobuf>=4.25.3,<5.0.0"
-
-Note : TensorFlow / deepface ne sont plus requis mais restent supportés
-       comme fallback si hsemotion n'est pas installé.
 """
 
 from __future__ import annotations
@@ -55,28 +60,15 @@ from typing import Optional
 import numpy as np
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)   # ← TEMPORAIRE diagnostic eye_contact — retirer après
+logger.setLevel(logging.DEBUG)
 os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
 
 # ── Constantes ────────────────────────────────────────────────────────────────
-# Calibrés pour setup laptop (caméra intégrée sous l'écran, visage à 60-80cm)
-#
-# EAR_BLINK : seuil Eye Aspect Ratio pour détecter un clignement.
-#   0.20 était trop bas → manque les clignements quand le visage est loin.
-#   0.22 capture correctement les clignements à distance normale d'interview.
-#
-# IRIS_CONTACT_X/Y : tolérance offset iris par rapport au centre de l'œil.
-#   Avec une caméra sous l'écran, regarder l'écran = regard légèrement vers
-#   le haut → iris_offset_y systématiquement > 0.28 → contact=0% toujours.
-#   On compense avec des seuils plus larges.
-#
-# YAW/PITCH : angles de tête tolérés pour le contact visuel.
-#   Légèrement augmentés pour permettre un léger mouvement naturel.
-_EAR_BLINK_THRESHOLD   = 0.22   # 0.20 → 0.22  (+10%)
-_IRIS_CONTACT_X        = 0.45   # 0.35 → 0.45  (latéral)
-_IRIS_CONTACT_Y        = 0.40   # 0.28 → 0.40  (vertical — compense caméra basse)
-_EYE_CONTACT_MAX_YAW   = 25.0   # 20°  → 25°
-_EYE_CONTACT_MAX_PITCH = 20.0   # 15°  → 20°
+_EAR_BLINK_THRESHOLD   = 0.22
+_IRIS_CONTACT_X        = 0.45
+_IRIS_CONTACT_Y        = 0.40
+_EYE_CONTACT_MAX_YAW   = 25.0
+_EYE_CONTACT_MAX_PITCH = 20.0
 MAX_FRAMES_TO_ANALYZE  = 25
 
 _MODEL_POINTS_3D = np.array([
@@ -89,23 +81,9 @@ _MODEL_POINTS_3D = np.array([
 ], dtype=np.float64)
 _MODEL_LM_IDX = [4, 152, 33, 263, 61, 291]
 
-# ── Mapping HSEmotion AffectNet8 → 7 classes standard ────────────────────────
-# HSEmotion 8 classes : anger, contempt, disgust, fear, happiness, neutral, sadness, surprise
-# contempt est mergé dans disgust (le plus proche sémantiquement)
-_HSEMO_IDX = {
-    "angry":    0,
-    "contempt": 1,   # → fusionné dans disgust
-    "disgust":  2,
-    "fear":     3,
-    "happy":    4,
-    "neutral":  5,
-    "sad":      6,
-    "surprise": 7,
-}
-
 
 # ═════════════════════════════════════════════════════════════════════════════
-#  DATA CLASSES (inchangés)
+#  DATA CLASSES
 # ═════════════════════════════════════════════════════════════════════════════
 
 @dataclass
@@ -177,19 +155,16 @@ class FacialMetrics:
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-#  EMOTION BACKENDS — abstraction propre
+#  EMOTION BACKENDS
 # ═════════════════════════════════════════════════════════════════════════════
 
 class _EmotionBackend:
-    """Interface commune pour tous les backends d'émotions."""
     name: str = "base"
 
     def predict(self, face_bgr: np.ndarray) -> dict[str, float] | None:
-        """Retourne dict {emotion: proba 0-1} ou None si échec."""
         raise NotImplementedError
 
     def predict_batch(self, faces_bgr: list[np.ndarray]) -> list[dict[str, float] | None]:
-        """Batch inference — par défaut appelle predict() sur chaque frame."""
         return [self.predict(f) for f in faces_bgr]
 
     @property
@@ -199,17 +174,18 @@ class _EmotionBackend:
 
 class _HSEmotionBackend(_EmotionBackend):
     """
-    HSEmotion EfficientNet-B2 entraîné sur AffectNet8.
+    HSEmotion EfficientNet entraîné sur AffectNet8 / AFEW.
     ~82% de précision vs ~73% pour DeepFace VGG.
-    PyTorch natif → CUDA direct sur RTX 4050.
 
-    Installation : pip install hsemotion
+    Prérequis OBLIGATOIRES :
+      pip install timm==0.6.13          ← timm>=0.9 supprime conv_s2d
+      pip install efficientnet_pytorch  ← requis par enet_b0_8_best_afew
+      pip install hsemotion
+
+    Ordre de tentative : enet_b0_8_best_afew → enet_b2_8_best_vgaf
     """
-    name = "hsemotion_efficientnet_b2"
+    name = "hsemotion_efficientnet"
 
-    # Correspondance index → clé standard (7 classes)
-    # HSEmotion ordre : anger(0) contempt(1) disgust(2) fear(3)
-    #                   happiness(4) neutral(5) sadness(6) surprise(7)
     _IDX_MAP = [
         "angry",    # 0
         "disgust",  # 1 contempt → disgust
@@ -222,30 +198,45 @@ class _HSEmotionBackend(_EmotionBackend):
     ]
     _KEYS7 = ["angry", "disgust", "fear", "happy", "neutral", "sad", "surprise"]
 
+    _MODEL_CANDIDATES = [
+        "enet_b0_8_best_afew",   # léger, in-the-wild (recommandé)
+        "enet_b2_8_best_vgaf",   # plus lourd, AffectNet
+    ]
+
     def __init__(self, device: str = "cpu"):
         import torch
         from hsemotion.facial_emotions import HSEmotionRecognizer
 
         self._device = "cuda" if (device == "cuda" and torch.cuda.is_available()) else "cpu"
+        self._fer = None
+        self._model_name = None
 
-        # enet_b0_8_best_afew : optimisé in-the-wild (AFEW dataset = vidéos réelles).
-        # Moins biaisé vers fear/angry en conditions d'éclairage intérieur
-        # par rapport à enet_b2_8 (pur AffectNet8, plus précis en labo mais
-        # trop sensible à la tension faciale normale en interview).
-        model_name = "enet_b0_8_best_afew"
-        self._model_name = model_name
-        self._fer = HSEmotionRecognizer(model_name=model_name, device=self._device)
+        last_err = None
+        for model_name in self._MODEL_CANDIDATES:
+            try:
+                self._fer = HSEmotionRecognizer(model_name=model_name, device=self._device)
+                self._model_name = model_name
+                logger.info(
+                    f"✅ HSEmotion | modèle={model_name} | "
+                    f"device={self._device.upper()} | chargé avec succès"
+                )
+                break
+            except Exception as e:
+                last_err = e
+                logger.warning(f"HSEmotion modèle '{model_name}' échoué : {type(e).__name__}: {e}")
+                continue
 
-        logger.info(
-            f"✅ HSEmotion | modèle={model_name} | "
-            f"device={self._device.upper()} | optimisé in-the-wild"
-        )
+        if self._fer is None:
+            raise ImportError(
+                f"Aucun modèle HSEmotion disponible. "
+                f"Dernière erreur : {type(last_err).__name__}: {last_err}\n"
+                f"Fix : pip install timm==0.6.13 efficientnet_pytorch"
+            )
 
     def predict(self, face_bgr: np.ndarray) -> dict[str, float] | None:
         if face_bgr is None or face_bgr.size == 0:
             return None
         try:
-            # HSEmotion attend BGR (comme OpenCV), taille libre
             _, scores = self._fer.predict_emotions(face_bgr, logits=False)
             return self._scores_to_dict(scores)
         except Exception as e:
@@ -253,24 +244,10 @@ class _HSEmotionBackend(_EmotionBackend):
             return None
 
     def predict_batch(self, faces_bgr: list[np.ndarray]) -> list[dict[str, float] | None]:
-        """
-        Batch inference HSEmotion.
-
-        Strategy : appelle predict_emotions() de la lib séquentiellement sous
-        torch.no_grad() pour éviter le gradient overhead, sans passer par
-        model(batch) directement — ce chemin déclenche un bug 'conv_s2d' dans
-        certaines versions de timm/efficientnet_pytorch.
-
-        Le gain GPU vient du fait que les poids sont déjà chargés en VRAM et
-        que torch.no_grad() supprime le calcul du graphe d'autograd.
-        """
         if not faces_bgr:
             return []
-
         import torch
-
         results: list[dict[str, float] | None] = [None] * len(faces_bgr)
-
         with torch.no_grad():
             for i, face in enumerate(faces_bgr):
                 if face is None or face.size == 0:
@@ -281,11 +258,9 @@ class _HSEmotionBackend(_EmotionBackend):
                 except Exception as e:
                     logger.debug(f"HSEmotion predict [{i}] : {e}")
                     results[i] = None
-
         return results
 
     def _scores_to_dict(self, scores: np.ndarray) -> dict[str, float]:
-        """Convertit le vecteur 8-classes en dict 7-classes normalisé."""
         merged: dict[str, float] = {k: 0.0 for k in self._KEYS7}
         for i, key in enumerate(self._IDX_MAP):
             merged[key] += float(scores[i])
@@ -298,10 +273,6 @@ class _HSEmotionBackend(_EmotionBackend):
 
 
 class _DeepFaceBackend(_EmotionBackend):
-    """
-    DeepFace VGG (~73% AffectNet7) — fallback si HSEmotion non installé.
-    Conservé pour compatibilité.
-    """
     name = "deepface_vgg"
 
     def __init__(self):
@@ -345,11 +316,9 @@ class _DeepFaceBackend(_EmotionBackend):
 
 
 class _FACSBackend(_EmotionBackend):
-    """Heuristiques FACS depuis landmarks MediaPipe — dernier recours."""
     name = "facs_heuristic"
 
     def predict(self, face_bgr: np.ndarray) -> dict[str, float] | None:
-        # Sans landmarks le FACS ne peut rien faire ici
         return None
 
     @property
@@ -368,9 +337,8 @@ class FacialAnalysisService:
         self._mp_ready    = False
         self._face_mesh   = None
 
-        # Emotion backend — ordre de priorité
         self._emotion_backend: _EmotionBackend = _FACSBackend()
-        self._df_backend: Optional[_DeepFaceBackend] = None   # conservé pour warmup compat
+        self._df_backend: Optional[_DeepFaceBackend] = None
 
         self._init_mediapipe()
         self._init_emotion_backend(device)
@@ -398,25 +366,20 @@ class FacialAnalysisService:
             logger.error(f"MediaPipe init : {e}")
 
     def _init_emotion_backend(self, device: str):
-        """
-        Tente d'initialiser les backends dans l'ordre de priorité :
-          1. HSEmotion EfficientNet-B2 (meilleur)
-          2. DeepFace VGG (fallback)
-          3. FACS heuristiques (dernier recours)
-        """
-        # ── Priorité 1 : HSEmotion ────────────────────────────────────────────
+        # Priorité 1 : HSEmotion (requiert timm==0.6.13)
         try:
             self._emotion_backend = _HSEmotionBackend(device=device)
             return
-        except ImportError:
+        except ImportError as e:
             logger.warning(
-                "HSEmotion non installé → pip install hsemotion\n"
-                "  Fallback : DeepFace VGG (~73%)"
+                f"HSEmotion ImportError : {e}\n"
+                f"  Fix : pip install timm==0.6.13 efficientnet_pytorch hsemotion\n"
+                f"  Fallback : DeepFace VGG (~73%)"
             )
         except Exception as e:
-            logger.warning(f"HSEmotion init échoué ({e}) → fallback DeepFace")
+            logger.warning(f"HSEmotion init échoué ({type(e).__name__}: {e}) → fallback DeepFace")
 
-        # ── Priorité 2 : DeepFace ─────────────────────────────────────────────
+        # Priorité 2 : DeepFace
         try:
             backend = _DeepFaceBackend()
             self._df_backend      = backend
@@ -430,18 +393,11 @@ class FacialAnalysisService:
         except Exception as e:
             logger.warning(f"DeepFace init échoué ({e}) → FACS heuristiques")
 
-        # ── Priorité 3 : FACS (déjà défaut) ──────────────────────────────────
+        # Priorité 3 : FACS (déjà défaut)
         logger.warning("Mode minimal : émotions FACS heuristiques uniquement")
 
     def warmup_deepface(self) -> bool:
-        """
-        Compatibilité API v4.
-        Pour HSEmotion : warm-up PyTorch (inférence rapide, pas de chargement lazy).
-        Pour DeepFace  : warm-up classique.
-        """
         if isinstance(self._emotion_backend, _HSEmotionBackend):
-            # HSEmotion se charge entièrement à l'init — pas de warm-up nécessaire
-            # On fait quand même un appel factice pour forcer le JIT CUDA si besoin
             try:
                 dummy = np.full((64, 64, 3), 128, dtype=np.uint8)
                 self._emotion_backend.predict(dummy)
@@ -476,7 +432,7 @@ class FacialAnalysisService:
             "full_pipeline":   self._mp_ready and not isinstance(self._emotion_backend, _FACSBackend),
         }
 
-    # ── Helpers landmarks (inchangés) ─────────────────────────────────────────
+    # ── Helpers landmarks ─────────────────────────────────────────────────────
 
     @staticmethod
     def _ear(lm, top, bot, outer, inner) -> float:
@@ -495,6 +451,13 @@ class FacialAnalysisService:
 
     @staticmethod
     def _head_pose(lm, img_w, img_h):
+        """
+        Calcule les angles de pose de tête (yaw, pitch, roll) via solvePnP.
+
+        Fix v5.1 : decomposeProjectionMatrix retourne parfois pitch ≈ ±165–180°
+        pour un visage parfaitement de face (valeur réelle ≈ 0°).
+        On normalise yaw et pitch dans [-90, +90] pour corriger ce comportement.
+        """
         try:
             import cv2
             img_pts = np.array(
@@ -512,11 +475,33 @@ class FacialAnalysisService:
             )
             if not ok:
                 return 0.0, 0.0, 0.0
+
             rmat, _ = cv2.Rodrigues(rvec)
             _, _, _, _, _, _, euler = cv2.decomposeProjectionMatrix(
                 np.hstack((rmat, tvec))
             )
-            return float(euler[1, 0]), float(euler[0, 0]), float(euler[2, 0])
+
+            yaw   = float(euler[1, 0])
+            pitch = float(euler[0, 0])
+            roll  = float(euler[2, 0])
+
+            # ── FIX v5.1 — Normalisation angles ───────────────────────────────
+            # decomposeProjectionMatrix peut retourner pitch ≈ ±165–180° pour
+            # un visage de face (valeur attendue ≈ 0°).
+            # On ramène yaw et pitch dans [-90, +90].
+            if pitch > 90:
+                pitch -= 180
+            elif pitch < -90:
+                pitch += 180
+
+            if yaw > 90:
+                yaw -= 180
+            elif yaw < -90:
+                yaw += 180
+            # ──────────────────────────────────────────────────────────────────
+
+            return yaw, pitch, roll
+
         except Exception:
             return 0.0, 0.0, 0.0
 
@@ -561,7 +546,7 @@ class FacialAnalysisService:
         y2 = min(img_h, int((max(ys) + ph) * img_h))
         return frame_bgr if (x2 <= x1 or y2 <= y1) else frame_bgr[y1:y2, x1:x2]
 
-    # ── Échantillonnage (inchangé) ────────────────────────────────────────────
+    # ── Échantillonnage ───────────────────────────────────────────────────────
 
     @staticmethod
     def _sample_frames(frames: list, max_n: int) -> list:
@@ -574,30 +559,19 @@ class FacialAnalysisService:
     # ── Mode dégradé (sans MediaPipe) ────────────────────────────────────────
 
     def _analyze_frame_no_landmarks(self, frame_bgr: np.ndarray) -> FrameResult:
-        """
-        Analyse avec uniquement le backend émotions (sans landmarks MediaPipe).
-        Face detection via le backend choisi (HSEmotion n'a pas de détecteur
-        intégré → on utilise un détecteur OpenCV simple).
-        """
         result = FrameResult(landmarks_available=False)
-
         import cv2
-        gray   = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
-        # Haar cascade — rapide, suffisant en mode dégradé
+        gray        = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
         cascade_path = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
-        cascade = cv2.CascadeClassifier(cascade_path)
-        faces   = cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(80, 80))
-
+        cascade     = cv2.CascadeClassifier(cascade_path)
+        faces       = cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(80, 80))
         if len(faces) == 0:
             return result
-
         x, y, w, h = max(faces, key=lambda r: r[2] * r[3])
-        face_roi = frame_bgr[y:y + h, x:x + w]
-
-        emo_scores = self._emotion_backend.predict(face_roi)
+        face_roi    = frame_bgr[y:y + h, x:x + w]
+        emo_scores  = self._emotion_backend.predict(face_roi)
         if emo_scores is None:
             return result
-
         result.has_face         = True
         result.emotion_angry    = emo_scores.get("angry",    0.0)
         result.emotion_disgust  = emo_scores.get("disgust",  0.0)
@@ -610,10 +584,9 @@ class FacialAnalysisService:
         result.emotion_source   = self._emotion_backend.source_label
         return result
 
-    # ── Analyse frame principal (MediaPipe + emotion backend) ─────────────────
+    # ── Analyse frame principal ───────────────────────────────────────────────
 
     def analyze_frame(self, frame_bgr: np.ndarray) -> FrameResult:
-        """Analyse un seul frame — comportemental + émotions."""
         import cv2
 
         if frame_bgr is None or frame_bgr.size == 0:
@@ -635,11 +608,11 @@ class FacialAnalysisService:
             if not mp_res.multi_face_landmarks:
                 return result
 
-            result.has_face           = True
+            result.has_face            = True
             result.landmarks_available = True
             lm = mp_res.multi_face_landmarks[0].landmark
 
-            # 1. Pose solvePnP
+            # 1. Pose solvePnP (angles normalisés v5.1)
             result.yaw, result.pitch, result.roll = self._head_pose(lm, w, h)
 
             # 2. EAR + clignement
@@ -647,26 +620,13 @@ class FacialAnalysisService:
             result.ear_right = self._ear(lm, 386, 374, 263, 362)
             result.is_blink  = (result.ear_left + result.ear_right) / 2 < _EAR_BLINK_THRESHOLD
 
-            # 3. Contact visuel — détection par solvePnP (yaw/pitch) uniquement
-            #
-            # Pourquoi on abandonne iris_offset comme critère primaire :
-            #   La caméra laptop est ~10cm sous l'écran → quand on regarde l'écran,
-            #   iris_offset_y est structurellement positif (regard "vers le haut"
-            #   du point de vue caméra). Aucun seuil fixe ne peut compenser ça
-            #   sans calibration par session.
-            #
-            # solvePnP donne les angles de tête (yaw/pitch) en coordonnées absolues
-            #   indépendamment de la position de la caméra → signal fiable.
-            #   yaw  : rotation gauche/droite  (< 25° = face caméra)
-            #   pitch: rotation haut/bas        (< 20° = face caméra)
-            #
-            # iris_offset est conservé pour le logging et les métriques fines,
-            # mais n'est plus un critère bloquant pour eye_contact.
+            # 3. Iris offset (métriques fines)
             ox_l, oy_l = self._iris_offset(lm, 468,  33, 133, 159, 145)
             ox_r, oy_r = self._iris_offset(lm, 473, 263, 362, 386, 374)
             result.iris_offset_x = (ox_l + ox_r) / 2
             result.iris_offset_y = (oy_l + oy_r) / 2
 
+            # 4. Contact visuel basé sur yaw/pitch normalisés
             result.eye_contact = (
                 not result.is_blink
                 and abs(result.yaw)   < _EYE_CONTACT_MAX_YAW
@@ -674,53 +634,46 @@ class FacialAnalysisService:
                 and abs(result.iris_offset_x) < _IRIS_CONTACT_X
             )
 
-            # DEBUG TEMPORAIRE — à retirer une fois les seuils calibrés
-            # Affiche les valeurs brutes pour comprendre pourquoi contact=0%
             logger.debug(
                 f"[eye_debug] yaw={result.yaw:+.1f}° pitch={result.pitch:+.1f}° "
                 f"iris_x={result.iris_offset_x:+.3f} iris_y={result.iris_offset_y:+.3f} "
                 f"blink={result.is_blink} → contact={result.eye_contact}"
             )
 
-            # 4. Bouche
-            eye_dist          = self._dist(lm, 33, 263) + 1e-6
-            result.mar        = abs(lm[13].y - lm[14].y) / (self._dist(lm, 61, 291) + 1e-6)
-            lip_mid_y         = (lm[13].y + lm[14].y) / 2
-            corner_avg        = (lm[61].y + lm[291].y) / 2
+            # 5. Bouche
+            eye_dist             = self._dist(lm, 33, 263) + 1e-6
+            result.mar           = abs(lm[13].y - lm[14].y) / (self._dist(lm, 61, 291) + 1e-6)
+            lip_mid_y            = (lm[13].y + lm[14].y) / 2
+            corner_avg           = (lm[61].y + lm[291].y) / 2
             result.lip_corner_up = max(0.0, (lip_mid_y - corner_avg) / eye_dist * 3.0)
 
-            # 5. Sourcils
+            # 6. Sourcils
             brow_gap          = abs(lm[107].x - lm[336].x) / eye_dist
             result.brow_frown = max(0.0, min(1.0, (0.55 - brow_gap) * 5.0))
             brow_h_l          = max(0.0, lm[159].y - lm[107].y) / eye_dist
             brow_h_r          = max(0.0, lm[386].y - lm[336].y) / eye_dist
             result.brow_raise = min(1.0, (brow_h_l + brow_h_r) / 2 * 4.0)
 
-            # 6. Crop visage pour le backend émotions (NE PAS appeler ici — fait en batch)
-            #    On stocke le crop dans un attribut temporaire utilisé par analyze_frames_batch
-            result._face_roi_cache = self._face_roi(frame_bgr, lm, w, h) if not result.is_blink else None
+            # 7. Cache crop pour batch inference émotions
+            result._face_roi_cache = (
+                self._face_roi(frame_bgr, lm, w, h) if not result.is_blink else None
+            )
 
         except Exception as e:
             logger.debug(f"analyze_frame : {e}")
 
         return result
 
-    # ── Analyse batch (échantillonnage + batch inference émotions) ────────────
+    # ── Analyse batch ─────────────────────────────────────────────────────────
 
-    def analyze_frames_batch(
-        self,
-        frames_bgr: list[np.ndarray],
-    ) -> list[FrameResult]:
+    def analyze_frames_batch(self, frames_bgr: list[np.ndarray]) -> list[FrameResult]:
         """
         Pipeline optimisé v5 :
           1. Échantillonnage max MAX_FRAMES_TO_ANALYZE frames
-          2. MediaPipe sur chaque frame (CPU — rapide, séquentiel)
+          2. MediaPipe sur chaque frame (CPU — séquentiel)
           3. Extraction crops visages depuis landmarks
-          4. Batch inference PyTorch sur tous les crops d'un coup (GPU)
-             → une seule passe forward au lieu de N
+          4. Batch inference PyTorch sur tous les crops (GPU)
           5. Injection des scores d'émotions dans les FrameResult
-
-        Gain v5 vs v4 : ~3× sur GPU (RTX 4050) grâce au batch inference.
         """
         total = len(frames_bgr)
         if total == 0:
@@ -733,20 +686,18 @@ class FacialAnalysisService:
             f"(échantillonnage 1/{max(1, total // len(sampled))})"
         )
 
-        # ── Étape 1 : MediaPipe (comportemental) ──────────────────────────────
+        # Étape 1 : MediaPipe (comportemental)
         frame_results: list[FrameResult] = []
         for frame in sampled:
             frame_results.append(self.analyze_frame(frame))
 
-        # ── Étape 2 : Batch inference émotions ───────────────────────────────
+        # Étape 2 : Batch inference émotions
         if not isinstance(self._emotion_backend, _FACSBackend):
-            # Collecter les crops valides (non-blink, visage détecté)
             valid_pairs: list[tuple[int, np.ndarray]] = []
             for i, fr in enumerate(frame_results):
                 roi = getattr(fr, "_face_roi_cache", None)
                 if fr.has_face and roi is not None and roi.size > 0:
                     valid_pairs.append((i, roi))
-                # Nettoyage de l'attribut temporaire
                 if hasattr(fr, "_face_roi_cache"):
                     del fr._face_roi_cache
 
@@ -782,7 +733,7 @@ class FacialAnalysisService:
                     fr.dominant_emotion = max(emo, key=emo.get)
                     fr.emotion_source   = self._emotion_backend.source_label
         else:
-            # FACS depuis landmarks (pas de batch possible)
+            # FACS depuis landmarks
             for i, fr in enumerate(frame_results):
                 if hasattr(fr, "_face_roi_cache"):
                     del fr._face_roi_cache
@@ -805,7 +756,7 @@ class FacialAnalysisService:
 
         return frame_results
 
-    # ── Agrégation métriques (inchangée) ──────────────────────────────────────
+    # ── Agrégation métriques ──────────────────────────────────────────────────
 
     def compute_metrics(self, frame_results: list[FrameResult]) -> FacialMetrics:
         total = len(frame_results)
@@ -874,41 +825,34 @@ class FacialAnalysisService:
         metrics.dominant_emotion = max(metrics.emotion_scores, key=metrics.emotion_scores.get)
 
         # Scores synthétiques
-        # Formules rééquilibrées v5.1 :
-        #   - Poids émotions CNN réduits (prédictions frame-level bruitées)
-        #   - Stabilité et contact contribuent plus positivement
-        #   - Pénalité blink_stress supprimée (clign. rare en mode concentré ≠ stress)
         if metrics.behavioral_metrics_reliable:
-            # Confidence : composante comportementale forte, émotions en nuance légère
             metrics.confidence_score = round(max(0.0, min(10.0,
-                metrics.eye_contact_ratio * 4.0    # contact visuel = signal fort
-                + metrics.head_stability  * 3.0    # posture stable = assurance
-                + metrics.smile_ratio     * 1.5    # sourire = à l'aise
-                + 1.5                              # baseline (personne présente)
-                - emo_avgs["angry"] * 1.5          # réduit vs avant (3.0)
-                - emo_avgs["fear"]  * 1.0          # réduit vs avant (2.0)
-                - abs(metrics.avg_yaw / 45) * 0.5  # tête tournée = légère pénalité
+                metrics.eye_contact_ratio * 4.0
+                + metrics.head_stability  * 3.0
+                + metrics.smile_ratio     * 1.5
+                + 1.5
+                - emo_avgs["angry"] * 1.5
+                - emo_avgs["fear"]  * 1.0
+                - abs(metrics.avg_yaw / 45) * 0.5
             )), 1)
 
             brow_frown_avg = _avg([f.brow_frown for f in valid if f.landmarks_available])
-            # Stress : sourcils froncés + instabilité posturale comme signaux principaux
             metrics.stress_score = round(max(0.0, min(10.0,
-                brow_frown_avg                    * 4.0   # sourcils = signal stress fiable
-                + (1 - metrics.head_stability)    * 2.5   # agitation posturale
-                + (1 - metrics.eye_contact_ratio) * 1.5   # évitement regard
-                + emo_avgs["fear"]                * 1.5   # réduit vs avant (3.0)
-                + emo_avgs["angry"]               * 1.0   # réduit vs avant (2.0)
-                - emo_avgs["happy"]               * 1.5   # sourire = antistress
+                brow_frown_avg                    * 4.0
+                + (1 - metrics.head_stability)    * 2.5
+                + (1 - metrics.eye_contact_ratio) * 1.5
+                + emo_avgs["fear"]                * 1.5
+                + emo_avgs["angry"]               * 1.0
+                - emo_avgs["happy"]               * 1.5
             )), 1)
 
             brow_raise_avg = _avg([f.brow_raise for f in valid if f.landmarks_available])
             expressiveness = 1.0 - emo_avgs.get("neutral", 1.0)
-            # Engagement : contact + expressivité + stabilité
             metrics.engagement_score = round(max(0.0, min(10.0,
                 metrics.eye_contact_ratio * 3.5
                 + expressiveness          * 2.0
                 + metrics.smile_ratio     * 1.5
-                + metrics.head_stability  * 2.0   # augmenté vs avant (1.5)
+                + metrics.head_stability  * 2.0
                 + brow_raise_avg          * 1.0
             )), 1)
         else:
