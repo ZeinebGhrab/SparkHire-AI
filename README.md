@@ -326,8 +326,8 @@ sparkhire-ai/
 Client                        Backend                      MongoDB
   │                             │                            │
   │── video_frame (JPEG) ──────►│                            │
-  │── audio_chunk (PCM) ───────►│                           │
-  │── answer_complete ─────────►│                           │
+  │── audio_chunk (PCM) ───────►│                            │
+  │── answer_complete ─────────►│                            │
   │                             ├── MediaPipe + HSEmotion    │
   │                             ├── Whisper ASR              │
   │                             ├── Llama 3.2 evaluation     │
