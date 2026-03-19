@@ -351,55 +351,55 @@ Client                        Backend                      MongoDB
 
 ### Database Schema
 
-![Database Schema](docs/Database%20Schema.png)
+<img src="docs/Database Schema.png" width="50%" alt="Database Schema"/>
 
 ---
 
 ### Sequence Diagram — Full Interview Flow
 
-![Sequence Diagram](docs/Sequence%20Diagram.png)
+<img src="docs/Sequence Diagram.png" width="50%" alt="Sequence Diagram"/>
 
 ---
 
 ### Flow 1 — Session Access Validation
 
-![Session Access Validation](docs/1.3%20Session%20Access%20Validation.png)
+<img src="docs/1.3 Session Access Validation.png" width="50%" alt="Session Access Validation"/>
 
 ---
 
 ### Flow 2 — Real-Time Interview
 
-![Real-Time Interview](docs/2.3%20Real-Time%20Interview.png)
+<img src="docs/2.3 Real-Time Interview.png" width="50%" alt="Real-Time Interview"/>
 
 ---
 
 ### Flow 3 — Global Evaluation & Hiring Decision
 
-![Global Evaluation](docs/3.3%20Global%20Evaluation%20%26%20Hiring%20Decision.png)
+<img src="docs/3.3 Global Evaluation & Hiring Decision.png" width="50%" alt="Global Evaluation and Hiring Decision"/>
 
 ---
 
 ### Activity A1 — Facial Analysis Pipeline
 
-![Facial Analysis Pipeline](docs/A1.%20Facial%20Analysis%20Pipeline.png)
+<img src="docs/A1. Facial Analysis Pipeline.png" width="50%" alt="Facial Analysis Pipeline"/>
 
 ---
 
 ### Activity A2 — ASR + LLM Evaluation
 
-![ASR + LLM Evaluation](docs/A2.%20ASR%20%2B%20LLM%20Evaluation.png)
+<img src="docs/A2. ASR + LLM Evaluation.png" width="50%" alt="ASR + LLM Evaluation"/>
 
 ---
 
 ### Activity A3 — TTS Synthesis
 
-![TTS Synthesis](docs/A3.%20TTS%20Synthesis.png)
+<img src="docs/A3. TTS Synthesis.png" width="50%" alt="TTS Synthesis"/>
 
 ---
 
 ### Activity A4 — Global Evaluation & HR Report
 
-![Global Evaluation HR Report](docs/A4.%20Global%20Evaluation%20%26%20HR%20Report.png)
+<img src="docs/A4. Global Evaluation & HR Report.png" width="50%" alt="Global Evaluation and HR Report"/>
 
 ---
 
