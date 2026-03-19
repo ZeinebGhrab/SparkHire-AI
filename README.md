@@ -324,12 +324,12 @@ sparkhire-ai/
 Client                        Backend                      MongoDB
   │                             │                            │
   │── video_frame (JPEG) ──────►│                            │
-  │── audio_chunk (PCM) ────────►│                            │
-  │── answer_complete ──────────►│                            │
-  │                             ├── MediaPipe + HSEmotion     │
-  │                             ├── Whisper ASR               │
-  │                             ├── Llama 3.2 evaluation      │
-  │                             └──────────────── save ──────►│
+  │── audio_chunk (PCM) ───────►│                            │
+  │── answer_complete ─────────►│                            │
+  │                             ├── MediaPipe + HSEmotion    │
+  │                             ├── Whisper ASR              │
+  │                             ├── Llama 3.2 evaluation     │
+  │                             └─────────────── save ──────►│
   │                             │                            │
   │◄── answer_evaluated ────────│   { question_order,        │
   │                             │     had_followup,          │
