@@ -13,14 +13,15 @@
 5. [Running the App](#running-the-app)
 6. [Configuration](#configuration)
 7. [Architecture](#architecture)
-8. [Facial Behavior Analysis](#facial-behavior-analysis)
-9. [Scoring & Decisions](#scoring--decisions)
-10. [WebSocket Message Contract](#websocket-message-contract)
-11. [API Reference](#api-reference)
-12. [Tech Stack](#tech-stack)
-13. [Performance](#performance)
-14. [Troubleshooting](#troubleshooting)
-15. [Academic Context](#academic-context)
+8. [Diagrams](#diagrams)
+9. [Facial Behavior Analysis](#facial-behavior-analysis)
+10. [Scoring & Decisions](#scoring--decisions)
+11. [WebSocket Message Contract](#websocket-message-contract)
+12. [API Reference](#api-reference)
+13. [Tech Stack](#tech-stack)
+14. [Performance](#performance)
+15. [Troubleshooting](#troubleshooting)
+16. [Academic Context](#academic-context)
 
 ---
 
@@ -57,7 +58,7 @@ Candidate speaks
 
 ### AI Pipeline
 - 🧠 **ASR** — faster-whisper (GPU-accelerated, ~1–3 s/answer)
-- 📝 **LLM evaluation** — Ollama + Llama 3.2, strict grading scale 0–10
+- 📝 **LLM evaluation** — Ollama + Llama 3.2, strict grading scale 0–10, duration-aware scoring
 - 🔊 **TTS** — Edge-TTS 7.x (primary) + gTTS (automatic fallback)
 - ⚡ TTS prefetch — next question generated while candidate answers current one
 - 😊 **Facial analysis** — HSEmotion EfficientNet-B0 (~82%) + MediaPipe FaceMesh
@@ -205,7 +206,7 @@ uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
 
 Expected startup output:
 ```
-✅ MediaPipe FaceMesh | 478 landmarks + iris | CPU
+✅ MediaPipe FaceMesh v5.2 | 478 landmarks + iris | CPU
 ✅ HSEmotion | model=enet_b0_8_best_afew | device=CPU
 ✅ Whisper 'medium' ready on CPU
 ✅ Edge-TTS initialized
@@ -285,7 +286,7 @@ sparkhire-ai/
 │   │   ├── asr_service.py             ← Whisper GPU/CPU
 │   │   ├── tts_service.py             ← Edge-TTS 7.x + gTTS fallback
 │   │   ├── edge_tts_engine.py         ← retry ×3, 7.x API
-│   │   ├── llm_service.py             ← evaluate_with_facial()
+│   │   ├── llm_service.py             ← evaluate_with_facial() + duration context
 │   │   ├── facial_analysis_service.py ← v5.2: MediaPipe + HSEmotion
 │   │   └── avatar_service.py
 │   ├── websocket/
@@ -309,6 +310,7 @@ sparkhire-ai/
 │       ├── camera_preview_widget.py   ← PiP camera + REC badge only
 │       └── stark_theme.py
 │
+├── docs/                              ← architecture diagrams (PNG)
 ├── scripts/
 ├── models/
 ├── uploads/
@@ -324,16 +326,16 @@ sparkhire-ai/
 Client                        Backend                      MongoDB
   │                             │                            │
   │── video_frame (JPEG) ──────►│                            │
-  │── audio_chunk (PCM) ───────►│                            │
-  │── answer_complete ─────────►│                            │
-  │                             ├── MediaPipe + HSEmotion    │
-  │                             ├── Whisper ASR              │
-  │                             ├── Llama 3.2 evaluation     │
-  │                             └─────────────── save ──────►│
+  │── audio_chunk (PCM) ────────►│                            │
+  │── answer_complete ──────────►│                            │
+  │                             ├── MediaPipe + HSEmotion     │
+  │                             ├── Whisper ASR               │
+  │                             ├── Llama 3.2 evaluation      │
+  │                             │   (+ duration context)      │
+  │                             └──────────────── save ──────►│
   │                             │                            │
   │◄── answer_evaluated ────────│   { question_order,        │
-  │                             │     had_followup,          │
-  │                             │     is_initial }           │
+  │                             │     had_followup }         │
   │                             │   (no scores or metrics)   │
   │                             │                            │
   │◄── global_evaluation ───────│   { decision,              │
@@ -345,9 +347,65 @@ Client                        Backend                      MongoDB
 
 ---
 
+## Diagrams
+
+### Database Schema
+
+![Database Schema](docs/Database%20Schema.png)
+
+---
+
+### Sequence Diagram — Full Interview Flow
+
+![Sequence Diagram](docs/Sequence%20Diagram.png)
+
+---
+
+### Flow 1 — Session Access Validation
+
+![Session Access Validation](docs/1.3%20Session%20Access%20Validation.png)
+
+---
+
+### Flow 2 — Real-Time Interview
+
+![Real-Time Interview](docs/2.3%20Real-Time%20Interview.png)
+
+---
+
+### Flow 3 — Global Evaluation & Hiring Decision
+
+![Global Evaluation](docs/3.3%20Global%20Evaluation%20%26%20Hiring%20Decision.png)
+
+---
+
+### Activity A1 — Facial Analysis Pipeline
+
+![Facial Analysis Pipeline](docs/A1.%20Facial%20Analysis%20Pipeline.png)
+
+---
+
+### Activity A2 — ASR + LLM Evaluation
+
+![ASR + LLM Evaluation](docs/A2.%20ASR%20%2B%20LLM%20Evaluation.png)
+
+---
+
+### Activity A3 — TTS Synthesis
+
+![TTS Synthesis](docs/A3.%20TTS%20Synthesis.png)
+
+---
+
+### Activity A4 — Global Evaluation & HR Report
+
+![Global Evaluation HR Report](docs/A4.%20Global%20Evaluation%20%26%20HR%20Report.png)
+
+---
+
 ## Facial Behavior Analysis
 
-### Detection pipeline 
+### Detection pipeline (v5.2)
 
 ```
 Webcam frames (2fps, JPEG)
@@ -366,7 +424,7 @@ Webcam frames (2fps, JPEG)
         3. FACS heuristics             ~60%   landmarks only      ← fallback 2
 ```
 
-### Metrics stored per answer 
+### Metrics stored per answer (MongoDB only)
 
 | Metric | Range | Description |
 |---|---|---|
@@ -379,6 +437,14 @@ Webcam frames (2fps, JPEG)
 | `blink_rate` | bpm | Estimated at 10fps; returns 0.0 if < 5 frames |
 | `dominant_emotion` | string | Most frequent emotion across all frames |
 
+### v5.2 formula changes
+
+| Issue in v5.1 | Fix in v5.2 |
+|---|---|
+| Eye contact dominated confidence (4.0 pts) — staring blankly scored high | Reduced to 2.5 pts; positive emotions contribute 2.0 pts |
+| `sad` not penalizing confidence or engagement | `sad` now reduces both confidence and engagement |
+| `stress_score` ignored `sad` and `surprise` | Both now contribute to stress |
+| `blink_rate` assumed 2fps → 0.0 bpm on short answers | Corrected to 10fps sampling |
 
 ### Global facial summary in HR report
 
@@ -440,6 +506,17 @@ Example — 3 questions, weights 1 / 2 / 3:
 | Q2 | 6 | 2.0 | 12 |
 | Q3 | 7 | 3.0 | 21 |
 | **Result** | | **6.0** | **41 / 6 = 6.83** |
+
+### Duration-aware scoring
+
+The LLM receives the response duration and the question's allowed maximum as context. The scoring is modulated as follows:
+
+| Usage ratio | Impact |
+|---|---|
+| < 20% of allocated time | Penalty of −1 to −2 pts if content is also poor |
+| 40–90% of allocated time | Neutral — no impact |
+| > 90% of allocated time with rich content | Possible bonus of +0.5 pt |
+| Short but precise and complete | No penalty |
 
 ### Grading scale
 
@@ -553,7 +630,7 @@ Example — 3 questions, weights 1 / 2 / 3:
 | cuDNN | nvidia-cudnn-cu12 | 8.9.7.29 | cuDNN 8 DLLs (Windows) |
 | TTS primary | Edge-TTS | 7.2.7 | Microsoft neural TTS |
 | TTS fallback | gTTS | 2.5.3 | Google TTS |
-| LLM | Ollama + Llama 3.2 | latest | Answer evaluation |
+| LLM | Ollama + Llama 3.2 | latest | Answer evaluation + duration scoring |
 | Landmarks | MediaPipe | 0.10.14 | 478 landmarks + iris |
 | Emotions | HSEmotion | latest | EfficientNet-B0 ~82% |
 | Emotions fallback | DeepFace | 0.0.99 | VGG CNN ~73% |
@@ -612,7 +689,7 @@ Developed as a **Final Year Engineering Project** — 2nd year, Data Engineering
 | Data Engineering | Real-time audio/video pipeline, MongoDB modeling, FastAPI REST design |
 | Artificial Intelligence | Whisper ASR (GPU), Llama 3.2 LLM, Edge-TTS 7.x, HSEmotion EfficientNet-B0 |
 | Computer Vision | MediaPipe FaceMesh (478 landmarks), EAR blink, solvePnP head pose, iris gaze |
-| Decisional Systems | Weighted scoring, follow-up generation, hiring decision, behavioral scoring v5.2 |
+| Decisional Systems | Weighted + duration-aware scoring, follow-up generation, hiring decision, behavioral scoring v5.2 |
 | Software Engineering | WebSocket, TTS prefetch, JWT auth, recruiter notifications, privacy-by-design |
 
 ---
