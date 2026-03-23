@@ -404,7 +404,7 @@ Client                        Backend                      MongoDB
 
 ## Facial Behavior Analysis
 
-### Detection pipeline (v5.2)
+### Detection pipeline 
 
 ```
 Webcam frames (2fps, JPEG)
@@ -435,15 +435,6 @@ Webcam frames (2fps, JPEG)
 | `smile_ratio` | 0–1 | Fraction of frames with smile detected |
 | `blink_rate` | bpm | Estimated at 10fps; returns 0.0 if < 5 frames |
 | `dominant_emotion` | string | Most frequent emotion across all frames |
-
-### v5.2 formula changes
-
-| Issue in v5.1 | Fix in v5.2 |
-|---|---|
-| Eye contact dominated confidence (4.0 pts) — staring blankly scored high | Reduced to 2.5 pts; positive emotions contribute 2.0 pts |
-| `sad` not penalizing confidence or engagement | `sad` now reduces both confidence and engagement |
-| `stress_score` ignored `sad` and `surprise` | Both now contribute to stress |
-| `blink_rate` assumed 2fps → 0.0 bpm on short answers | Corrected to 10fps sampling |
 
 ### Global facial summary in HR report
 
