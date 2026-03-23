@@ -679,7 +679,7 @@ Developed as a **Final Year Engineering Project** — 2nd year, Data Engineering
 | Data Engineering | Real-time audio/video pipeline, MongoDB modeling, FastAPI REST design |
 | Artificial Intelligence | Whisper ASR (GPU), Llama 3.2 LLM, Edge-TTS 7.x, HSEmotion EfficientNet-B0 |
 | Computer Vision | MediaPipe FaceMesh (478 landmarks), EAR blink, solvePnP head pose, iris gaze |
-| Decisional Systems | Weighted + duration-aware scoring, follow-up generation, hiring decision, behavioral scoring v5.2 |
+| Decisional Systems | Weighted + duration-aware scoring, follow-up generation, hiring decision, behavioral scoring |
 | Software Engineering | WebSocket, TTS prefetch, JWT auth, recruiter notifications, privacy-by-design |
 
 ---
