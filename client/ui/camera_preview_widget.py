@@ -1,3 +1,4 @@
+"""CameraPreviewWidget — Apex Modern v9"""
 import sys, types as _types
 for _m in ["mediapipe.tasks","mediapipe.tasks.python","mediapipe.tasks.python.audio",
            "mediapipe.tasks.python.core","mediapipe.tasks.python.vision","mediapipe.tasks.python.text"]:
