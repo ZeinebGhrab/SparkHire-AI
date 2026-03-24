@@ -1,19 +1,3 @@
-"""
-SparkHire AI — Design System v6  ·  Clean SaaS Edition
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Aesthetic: Stripe / Linear / Notion — refined, light, minimal.
-Palette: Pure white surfaces · Soft gray borders · Indigo/violet primary
-Rules:
-  • Shadows over borders wherever possible
-  • 8px grid spacing system
-  • 12–16px border-radius on interactive elements
-  • Typography: DM Sans display / Inter body
-  • Primary: indigo→violet gradient
-  • No hard borders — only #E5E7EB separators
-"""
-
-
 class T:
     """Design token namespace — v6 clean SaaS."""
 

@@ -1,9 +1,3 @@
-"""
-Interview Widget — SparkHire AI v6  ·  Clean SaaS Edition
-Stripe / Linear aesthetic — white cards, soft shadows, strong hierarchy.
-Functionality identical to v5.
-"""
-
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QLabel, QProgressBar, QFrame, QGraphicsDropShadowEffect,

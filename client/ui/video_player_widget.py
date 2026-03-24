@@ -1,9 +1,3 @@
-"""
-Video Player Widget — SparkHire AI v6  ·  Clean SaaS Edition
-Embedded card style — no heavy border, soft shadow, modern status bar.
-Functionality identical to v5.
-"""
-
 import cv2
 import pygame
 import numpy as np

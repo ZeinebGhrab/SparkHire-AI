@@ -1,17 +1,6 @@
-"""
-CameraPreviewWidget — Overlay caméra PiP entièrement contenu dans le cadre vidéo
-
-"""
-
 import sys
 import types as _types
 
-# ── Isolation mediapipe — même stratégie que facial_analysis_service.py ──────
-# Bloque mediapipe.tasks AVANT tout import de mediapipe.
-# Sans ce patch, sur Windows Python 3.11, mediapipe tente de charger
-# tensorflow/_pywrap_tensorflow_internal.dll → DLL init failure → ImportError.
-# Le patch remplace les sous-modules problématiques par des modules vides
-# avant que mediapipe ne tente de les charger.
 for _mod in [
     "mediapipe.tasks", "mediapipe.tasks.python",
     "mediapipe.tasks.python.audio", "mediapipe.tasks.python.core",
