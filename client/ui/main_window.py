@@ -1,7 +1,7 @@
 """
-Main Window — SparkHire AI v5  ·  Precision Intelligence
-Premium PySide6 layout — editorial luxury aesthetic
-All functionality preserved from original.
+Main Window — SparkHire AI v6  ·  Clean SaaS Edition
+Stripe / Linear / Notion aesthetic — light, minimal, refined.
+All functionality preserved from v5.
 """
 
 from PySide6.QtWidgets import (
@@ -115,6 +115,12 @@ def _shadow(blur=20, dy=4, alpha=20, r=79, g=70, b=229):
     s.setBlurRadius(blur); s.setOffset(0, dy)
     s.setColor(QColor(r, g, b, alpha)); return s
 
+def _soft_shadow(blur=24, dy=6, alpha=18):
+    """Soft neutral shadow — no color tint."""
+    s = QGraphicsDropShadowEffect()
+    s.setBlurRadius(blur); s.setOffset(0, dy)
+    s.setColor(QColor(0, 0, 0, alpha)); return s
+
 def _label(text, size=T.FS_BASE, bold=False, color=T.TEXT_700):
     lbl = QLabel(text)
     f = QFont(T.FONT, size); f.setBold(bold)
@@ -136,24 +142,24 @@ class LanguageCard(QFrame):
         self._on_select = on_select
         self._selected  = False
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setFixedSize(192, 200)
+        self.setFixedSize(200, 210)
         self._build()
         self._refresh()
 
     def _build(self):
         lay = QVBoxLayout(self)
         lay.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        lay.setSpacing(T.SP_2)
-        lay.setContentsMargins(T.SP_5, T.SP_5, T.SP_5, T.SP_5)
+        lay.setSpacing(T.SP_3)
+        lay.setContentsMargins(T.SP_5, T.SP_6, T.SP_5, T.SP_5)
 
-        # Flag
+        # Flag bubble — clean circle
         flag_wrap = QFrame()
-        flag_wrap.setFixedSize(72, 72)
+        flag_wrap.setFixedSize(76, 76)
         flag_wrap.setStyleSheet(f"""
             QFrame {{
                 background: {T.BG_PAGE};
                 border: 1px solid {T.BORDER};
-                border-radius: 18px;
+                border-radius: 38px;
             }}
         """)
         flag_inner = QVBoxLayout(flag_wrap)
@@ -166,22 +172,20 @@ class LanguageCard(QFrame):
         flag_inner.addWidget(flag)
         lay.addWidget(flag_wrap, alignment=Qt.AlignmentFlag.AlignCenter)
 
-        lay.addSpacing(T.SP_1)
-
-        # Name
+        # Language name — strong weight
         name = _label(self._data["name"], T.FS_LG, True, T.TEXT_900)
         name.setAlignment(Qt.AlignmentFlag.AlignCenter)
         lay.addWidget(name)
 
-        # Native tag
+        # Native tag — soft pill
         tag = QLabel(self._data["native"])
-        tag.setFont(QFont(T.FONT, T.FS_XS))
+        tag.setFont(QFont(T.FONT, T.FS_SM))
         tag.setAlignment(Qt.AlignmentFlag.AlignCenter)
         tag.setStyleSheet(f"""
-            color: {T.TEXT_400};
+            color: {T.TEXT_500};
             background: {T.BG_PAGE};
             border-radius: {T.R_FULL}px;
-            padding: 2px 10px;
+            padding: 3px 12px;
         """)
         lay.addWidget(tag, alignment=Qt.AlignmentFlag.AlignCenter)
 
@@ -190,12 +194,13 @@ class LanguageCard(QFrame):
         if self._selected:
             self.setStyleSheet(f"""
                 LanguageCard {{
-                    background: {c['bg']};
+                    background: {T.BG_CARD};
                     border: 2px solid {c['color']};
                     border-radius: {T.R_XL}px;
                 }}
             """)
-            eff = _shadow(28, 6, 40, *self._hex_rgb(c['color']))
+            # Soft indigo glow when selected
+            eff = _shadow(32, 8, 35, *self._hex_rgb(c['color']))
             self.setGraphicsEffect(eff)
         else:
             self.setStyleSheet(f"""
@@ -206,10 +211,10 @@ class LanguageCard(QFrame):
                 }}
                 LanguageCard:hover {{
                     background: {T.BG_HOVER};
-                    border: 1px solid {T.BORDER_HOVER};
+                    border-color: {T.BORDER_HOVER};
                 }}
             """)
-            self.setGraphicsEffect(_shadow(14, 3, 12))
+            self.setGraphicsEffect(_soft_shadow(16, 4, 10))
 
     @staticmethod
     def _hex_rgb(h):
@@ -226,7 +231,7 @@ class LanguageCard(QFrame):
 # ── Status Chip ───────────────────────────────────────────────────────────────
 
 class StatusChip(QFrame):
-    """Animated connection status indicator."""
+    """Connection status indicator — clean pill."""
 
     STATES = {
         "disconnected": (T.TEXT_400,    "●", T.BG_PAGE,  T.BORDER,     T.TEXT_500),
@@ -237,14 +242,14 @@ class StatusChip(QFrame):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setFixedHeight(38)
+        self.setFixedHeight(36)
 
         lay = QHBoxLayout(self)
         lay.setContentsMargins(12, 0, 16, 0)
         lay.setSpacing(8)
 
         self._dot = QLabel("●")
-        f = QFont(T.FONT, 9); self._dot.setFont(f)
+        f = QFont(T.FONT, 8); self._dot.setFont(f)
         lay.addWidget(self._dot)
 
         col = QVBoxLayout(); col.setSpacing(0)

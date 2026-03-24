@@ -1,42 +1,41 @@
 """
-SparkHire AI — Design System v5  ·  Precision Intelligence
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SparkHire AI — Design System v6  ·  Clean SaaS Edition
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Aesthetic: Editorial luxury meets enterprise precision.
-Palette: Pearl white · Deep indigo · Electric cyan · Warm amber
-Influences: Linear.app · Vercel Dashboard · Stripe Atlas
-
+Aesthetic: Stripe / Linear / Notion — refined, light, minimal.
+Palette: Pure white surfaces · Soft gray borders · Indigo/violet primary
 Rules:
-  • Layered depth through shadows, NOT opacity hacks
-  • Indigo primary, cyan accent, amber highlight
-  • Typography: Outfit display / Inter body (system fallbacks)
-  • Border: 1px #E2E8F0 cards | 2px colored for focus/select
-  • Motion: pure QSS :hover/:pressed states
+  • Shadows over borders wherever possible
+  • 8px grid spacing system
+  • 12–16px border-radius on interactive elements
+  • Typography: DM Sans display / Inter body
+  • Primary: indigo→violet gradient
+  • No hard borders — only #E5E7EB separators
 """
 
 
 class T:
-    """Design token namespace."""
+    """Design token namespace — v6 clean SaaS."""
 
     # ── Base Backgrounds ───────────────────────────────────────────
-    BG_APP          = "#F5F7FF"   # pearl blue-white — main window
-    BG_PAGE         = "#EEF2FF"   # indigo-50 tint — secondary zones
-    BG_CARD         = "#FFFFFF"   # pure white — cards/surfaces
-    BG_CARD_ALT     = "#FAFBFF"   # barely-there tint — alt cards
-    BG_HOVER        = "#F0F4FF"   # hovered surfaces
-    BG_SELECTED     = "#EEF2FF"   # selected state
+    BG_APP          = "#F8FAFC"   # off-white, ultra-light blue tint
+    BG_PAGE         = "#F1F5F9"   # slate-100
+    BG_CARD         = "#FFFFFF"   # pure white cards
+    BG_CARD_ALT     = "#FAFAFA"   # barely-there alt
+    BG_HOVER        = "#F8FAFC"   # hover state
+    BG_SELECTED     = "#EEF2FF"   # indigo-50 selection
     BG_INPUT        = "#FFFFFF"
     BG_INPUT_FOCUS  = "#FAFBFF"
-    BG_SIDEBAR      = "#1E1B4B"   # deep indigo sidebar
+    BG_SIDEBAR      = "#1E1B4B"
 
-    # ── Borders ───────────────────────────────────────────────────
-    BORDER          = "#E2E8F0"   # slate-200
-    BORDER_FOCUS    = "#6366F1"   # indigo-500
-    BORDER_HOVER    = "#C7D2FE"   # indigo-200
-    BORDER_SELECT   = "#4F46E5"   # indigo-600
-    BORDER_STRONG   = "#CBD5E1"   # slate-300
+    # ── Borders — intentionally very light ────────────────────────
+    BORDER          = "#E5E7EB"   # gray-200 — the ONE border color
+    BORDER_FOCUS    = "#6366F1"   # indigo-500 focus ring
+    BORDER_HOVER    = "#D1D5DB"   # gray-300 hover
+    BORDER_SELECT   = "#4F46E5"   # indigo-600 selected
+    BORDER_STRONG   = "#D1D5DB"   # gray-300
 
-    # ── Indigo/Blue Primary ───────────────────────────────────────
+    # ── Indigo Primary ────────────────────────────────────────────
     INDIGO_50       = "#EEF2FF"
     INDIGO_100      = "#E0E7FF"
     INDIGO_200      = "#C7D2FE"
@@ -48,7 +47,14 @@ class T:
     INDIGO_800      = "#3730A3"
     INDIGO_900      = "#312E81"
 
-    # ── Cyan / Teal Accent ────────────────────────────────────────
+    # ── Violet accent (for gradient pair) ─────────────────────────
+    VIOLET_50       = "#F5F3FF"
+    VIOLET_100      = "#EDE9FE"
+    VIOLET_400      = "#A78BFA"
+    VIOLET_500      = "#8B5CF6"
+    VIOLET_600      = "#7C3AED"
+
+    # ── Cyan / Teal ───────────────────────────────────────────────
     CYAN_50         = "#ECFEFF"
     CYAN_100        = "#CFFAFE"
     CYAN_200        = "#A5F3FC"
@@ -57,7 +63,7 @@ class T:
     CYAN_600        = "#0891B2"
     CYAN_700        = "#0E7490"
 
-    # ── Amber / Gold Highlight ────────────────────────────────────
+    # ── Amber ─────────────────────────────────────────────────────
     AMBER_50        = "#FFFBEB"
     AMBER_100       = "#FEF3C7"
     AMBER_200       = "#FDE68A"
@@ -67,7 +73,7 @@ class T:
     ORANGE_500      = "#F97316"
     ORANGE_600      = "#EA580C"
 
-    # ── Status Colors ─────────────────────────────────────────────
+    # ── Status ────────────────────────────────────────────────────
     GREEN_50        = "#F0FDF4"
     GREEN_100       = "#DCFCE7"
     GREEN_200       = "#BBF7D0"
@@ -81,28 +87,25 @@ class T:
     RED_500         = "#EF4444"
     RED_600         = "#DC2626"
     RED_700         = "#B91C1C"
-    VIOLET_50       = "#F5F3FF"
-    VIOLET_100      = "#EDE9FE"
-    VIOLET_500      = "#8B5CF6"
-    VIOLET_600      = "#7C3AED"
 
     # ── Text Hierarchy ────────────────────────────────────────────
-    TEXT_950        = "#030712"   # near-black for headings
-    TEXT_900        = "#0F172A"   # slate-900
-    TEXT_800        = "#1E293B"   # slate-800 — body
-    TEXT_700        = "#334155"   # slate-700 — secondary body
-    TEXT_600        = "#475569"   # slate-600 — muted
-    TEXT_500        = "#64748B"   # slate-500 — placeholder
-    TEXT_400        = "#94A3B8"   # slate-400 — disabled
-    TEXT_300        = "#CBD5E1"   # slate-300
+    TEXT_950        = "#030712"   # near-black headings
+    TEXT_900        = "#111827"   # gray-900 — headings
+    TEXT_800        = "#1F2937"   # gray-800 — body
+    TEXT_700        = "#374151"   # gray-700
+    TEXT_600        = "#4B5563"   # gray-600 — secondary
+    TEXT_500        = "#6B7280"   # gray-500 — muted/placeholder
+    TEXT_400        = "#9CA3AF"   # gray-400 — disabled
+    TEXT_300        = "#D1D5DB"
     TEXT_WHITE      = "#FFFFFF"
-    TEXT_INDIGO     = "#4F46E5"   # colored text
+    TEXT_INDIGO     = "#4F46E5"
 
     # ── Typography ────────────────────────────────────────────────
-    FONT            = "'Outfit', 'Plus Jakarta Sans', 'Nunito', 'Segoe UI', sans-serif"
+    # DM Sans: geometric but warmer than Inter; excellent at display sizes
+    FONT            = "'DM Sans', 'Inter', 'Segoe UI', system-ui, sans-serif"
     FONT_BODY       = "'Inter', 'DM Sans', 'Segoe UI', sans-serif"
-    FONT_MONO       = "'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospace"
-    FONT_DISPLAY    = "'Outfit', 'Plus Jakarta Sans', sans-serif"
+    FONT_MONO       = "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace"
+    FONT_DISPLAY    = "'DM Sans', 'Inter', sans-serif"
 
     FS_2XS  = 9
     FS_XS   = 10
@@ -112,10 +115,10 @@ class T:
     FS_LG   = 18
     FS_XL   = 22
     FS_2XL  = 28
-    FS_3XL  = 36
+    FS_3XL  = 34
     FS_4XL  = 44
 
-    # ── Spacing ───────────────────────────────────────────────────
+    # ── Spacing — 8px grid ────────────────────────────────────────
     SP_1  = 4
     SP_2  = 8
     SP_3  = 12
@@ -126,26 +129,26 @@ class T:
     SP_10 = 40
     SP_12 = 48
 
-    # ── Border Radius ─────────────────────────────────────────────
-    R_SM   = 6
-    R_MD   = 10
+    # ── Border Radius — generous, modern ─────────────────────────
+    R_SM   = 8
+    R_MD   = 12
     R_LG   = 14
-    R_XL   = 18
-    R_2XL  = 24
+    R_XL   = 16
+    R_2XL  = 20
     R_FULL = 9999
 
 
 class StarkTheme:
-    """Main theme class — all shared aliases and component styles."""
+    """Main theme class — all shared aliases and component styles, v6."""
 
-    # ─── Primary Gradients ────────────────────────────────────────
+    # ─── Primary Gradients — indigo → violet ──────────────────────
     GRADIENT_PRIMARY = (
         f"qlineargradient(x1:0,y1:0,x2:1,y2:0,"
-        f"stop:0 {T.INDIGO_600},stop:1 {T.INDIGO_500})"
+        f"stop:0 {T.INDIGO_600},stop:1 {T.VIOLET_500})"
     )
     GRADIENT_PRIMARY_HOVER = (
         f"qlineargradient(x1:0,y1:0,x2:1,y2:0,"
-        f"stop:0 {T.INDIGO_700},stop:1 {T.INDIGO_600})"
+        f"stop:0 {T.INDIGO_700},stop:1 {T.VIOLET_600})"
     )
     GRADIENT_CYAN = (
         f"qlineargradient(x1:0,y1:0,x2:1,y2:0,"
@@ -153,15 +156,15 @@ class StarkTheme:
     )
     GRADIENT_ACCENT = (
         f"qlineargradient(x1:0,y1:0,x2:1,y2:0,"
-        f"stop:0 {T.AMBER_500},stop:1 {T.ORANGE_500})"
+        f"stop:0 {T.INDIGO_500},stop:1 {T.VIOLET_500})"
     )
     GRADIENT_HERO = (
         f"qlineargradient(x1:0,y1:0,x2:1,y2:1,"
-        f"stop:0 {T.INDIGO_600},stop:0.5 {T.INDIGO_500},stop:1 {T.CYAN_500})"
+        f"stop:0 {T.INDIGO_600},stop:0.5 {T.VIOLET_500},stop:1 {T.CYAN_500})"
     )
     GRADIENT_BACKGROUND = (
         f"qlineargradient(x1:0,y1:0,x2:1,y2:1,"
-        f"stop:0 {T.BG_APP},stop:0.6 {T.BG_CARD},stop:1 {T.INDIGO_50})"
+        f"stop:0 {T.BG_APP},stop:0.6 {T.BG_CARD},stop:1 #F0F4FF)"
     )
     GRADIENT_CARD = T.BG_CARD
 
@@ -175,7 +178,7 @@ class StarkTheme:
     BLUE_BRIGHT     = T.INDIGO_400
     BLUE_SOFT       = T.INDIGO_600
     BLUE_DIM        = T.INDIGO_100
-    BLUE_GLOW       = "rgba(99,102,241,0.15)"
+    BLUE_GLOW       = "rgba(99,102,241,0.12)"
     BLUE_600        = T.INDIGO_600
     BLUE_700        = T.INDIGO_700
     BLUE_PRIMARY    = T.INDIGO_500
@@ -190,7 +193,7 @@ class StarkTheme:
     AMBER_BRIGHT    = T.AMBER_400
     AMBER_SOFT      = T.AMBER_100
     AMBER_DIM       = T.AMBER_50
-    AMBER_GLOW      = "rgba(245,158,11,0.12)"
+    AMBER_GLOW      = "rgba(245,158,11,0.10)"
     ORANGE_ACCENT   = T.AMBER_500
     ORANGE_LIGHT    = T.AMBER_400
     ORANGE_500      = T.ORANGE_500
@@ -223,163 +226,84 @@ class StarkTheme:
     OVERLAY_DARK    = T.BG_CARD
     BORDER_CYAN     = T.BORDER_FOCUS
     BORDER_WHITE    = T.BORDER
-    BORDER_LIGHT    = T.BORDER
-    FONT_DISPLAY    = T.FONT
-    FONT_BODY       = T.FONT_BODY
-    FONT_MONO       = T.FONT_MONO
-    FONT_FAMILY_PRIMARY = T.FONT
-    FONT_FAMILY_MONO    = T.FONT_MONO
-    FS_XS   = f"{T.FS_XS}px";  FS_SM   = f"{T.FS_SM}px"
-    FS_BASE = f"{T.FS_BASE}px"; FS_MD   = f"{T.FS_MD}px"
-    FS_LG   = f"{T.FS_LG}px";  FS_XL   = f"{T.FS_XL}px"
-    FS_2XL  = f"{T.FS_2XL}px"; FS_3XL  = f"{T.FS_3XL}px"
-    SP_XS   = f"{T.SP_1}px";  SP_XS_INT = T.SP_1
-    SP_SM   = f"{T.SP_2}px";  SP_SM_INT = T.SP_2
-    SP_MD   = f"{T.SP_4}px";  SP_MD_INT = T.SP_4
-    SP_LG   = f"{T.SP_5}px";  SP_LG_INT = T.SP_5
-    SP_XL   = f"{T.SP_6}px";  SP_XL_INT = T.SP_6
-    SP_2XL  = f"{T.SP_8}px";  SP_2XL_INT = T.SP_8
-    SPACING_MD  = f"{T.SP_4}px"; SPACING_MD_INT  = T.SP_4
-    SPACING_LG  = f"{T.SP_5}px"; SPACING_LG_INT  = T.SP_5
-    SPACING_XL  = f"{T.SP_6}px"; SPACING_XL_INT  = T.SP_6
-    SPACING_SM_INT = T.SP_2; SPACING_XS_INT = T.SP_1
-    R_SM   = f"{T.R_SM}px";  R_MD   = f"{T.R_MD}px"
-    R_LG   = f"{T.R_LG}px";  R_XL   = f"{T.R_XL}px"
-    R_2XL  = f"{T.R_2XL}px"; R_FULL = f"{T.R_FULL}px"
-    RADIUS_MEDIUM = f"{T.R_MD}px"
-    RADIUS_LARGE  = f"{T.R_LG}px"
-    RADIUS_SMALL  = f"{T.R_SM}px"
 
-    # ─────────────────────────────────────────────────────────────────
-    #  GLOBAL STYLESHEET
-    # ─────────────────────────────────────────────────────────────────
+    # ─── Shared Shadow Presets ────────────────────────────────────
+    # Soft, modern — no heavy black shadows
+    SHADOW_XS  = "0 1px 2px rgba(0,0,0,0.04)"
+    SHADOW_SM  = "0 2px 8px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)"
+    SHADOW_MD  = "0 4px 16px rgba(0,0,0,0.08), 0 1px 4px rgba(0,0,0,0.04)"
+    SHADOW_LG  = "0 8px 32px rgba(0,0,0,0.10), 0 2px 8px rgba(0,0,0,0.04)"
+    SHADOW_XL  = "0 16px 48px rgba(0,0,0,0.12), 0 4px 12px rgba(0,0,0,0.05)"
+    SHADOW_INDIGO = "0 8px 24px rgba(99,102,241,0.20), 0 2px 8px rgba(99,102,241,0.10)"
+
+    # ─── Global Stylesheet ────────────────────────────────────────
+
     @classmethod
     def global_stylesheet(cls) -> str:
         return f"""
-/* ══════════════════════════════════════════════════════════
-   BASE
-══════════════════════════════════════════════════════════ */
-QMainWindow, QDialog {{
-    background: {T.BG_APP};
-}}
-QWidget {{
-    background: transparent;
-    color: {T.TEXT_800};
-    font-family: {T.FONT};
-    font-size: {T.FS_BASE}px;
-    selection-background-color: {T.INDIGO_100};
-    selection-color: {T.INDIGO_700};
-}}
+        * {{
+            font-family: {T.FONT};
+            outline: none;
+        }}
+        QMainWindow {{
+            background: {T.BG_APP};
+        }}
+        QStatusBar {{
+            background: {T.BG_CARD};
+            border-top: 1px solid {T.BORDER};
+            color: {T.TEXT_500};
+            font-size: {T.FS_XS}px;
+            font-family: {T.FONT};
+            padding: 0 16px;
+        }}
+        QScrollBar:vertical {{
+            background: {T.BG_APP};
+            width: 6px;
+            border-radius: 3px;
+        }}
+        QScrollBar::handle:vertical {{
+            background: {T.BORDER};
+            border-radius: 3px;
+            min-height: 24px;
+        }}
+        QScrollBar::handle:vertical:hover {{
+            background: {T.BORDER_HOVER};
+        }}
+        QScrollBar::add-line:vertical,
+        QScrollBar::sub-line:vertical {{
+            height: 0;
+        }}
+        QToolTip {{
+            background: {T.TEXT_900};
+            color: {T.TEXT_WHITE};
+            border: none;
+            border-radius: 6px;
+            padding: 6px 10px;
+            font-size: {T.FS_SM}px;
+        }}
+        """
 
-/* ══════════════════════════════════════════════════════════
-   SCROLLBARS
-══════════════════════════════════════════════════════════ */
-QScrollBar:vertical {{
-    background: transparent;
-    width: 5px;
-    border-radius: 3px;
-    margin: 4px 1px;
-}}
-QScrollBar::handle:vertical {{
-    background: {T.INDIGO_200};
-    border-radius: 3px;
-    min-height: 28px;
-}}
-QScrollBar::handle:vertical:hover {{ background: {T.INDIGO_400}; }}
-QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
-QScrollBar:horizontal {{
-    background: transparent;
-    height: 5px;
-    border-radius: 3px;
-    margin: 1px 4px;
-}}
-QScrollBar::handle:horizontal {{
-    background: {T.INDIGO_200};
-    border-radius: 3px;
-    min-width: 28px;
-}}
-QScrollBar::handle:horizontal:hover {{ background: {T.INDIGO_400}; }}
-QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{ width: 0; }}
-
-/* ══════════════════════════════════════════════════════════
-   TOOLTIP
-══════════════════════════════════════════════════════════ */
-QToolTip {{
-    background: {T.TEXT_900};
-    color: {T.TEXT_WHITE};
-    border: 1px solid rgba(255,255,255,0.08);
-    border-radius: {T.R_SM}px;
-    padding: 7px 12px;
-    font-size: {T.FS_SM}px;
-    font-weight: 500;
-}}
-
-/* ══════════════════════════════════════════════════════════
-   MESSAGEBOX
-══════════════════════════════════════════════════════════ */
-QMessageBox {{
-    background: {T.BG_CARD};
-    border: 1px solid {T.BORDER};
-    border-radius: {T.R_XL}px;
-}}
-QMessageBox QLabel {{
-    color: {T.TEXT_700};
-    font-size: {T.FS_MD}px;
-    background: transparent;
-}}
-QMessageBox QPushButton {{
-    background: {cls.GRADIENT_PRIMARY};
-    color: {T.TEXT_WHITE};
-    border: none;
-    border-radius: {T.R_MD}px;
-    padding: 9px 24px;
-    font-weight: 700;
-    font-size: {T.FS_SM}px;
-    min-width: 88px;
-    letter-spacing: 0.3px;
-}}
-QMessageBox QPushButton:hover {{
-    background: {cls.GRADIENT_PRIMARY_HOVER};
-}}
-
-/* ══════════════════════════════════════════════════════════
-   STATUS BAR
-══════════════════════════════════════════════════════════ */
-QStatusBar {{
-    background: {T.BG_CARD};
-    color: {T.TEXT_500};
-    font-size: {T.FS_XS}px;
-    font-weight: 500;
-    border-top: 1px solid {T.BORDER};
-    padding: 0 20px;
-    min-height: 26px;
-    letter-spacing: 0.5px;
-}}
-QStatusBar::item {{ border: none; }}
-"""
-
-    # ─────────────────────────────────────────────────────────────────
-    #  COMPONENT STYLES
-    # ─────────────────────────────────────────────────────────────────
+    # ─── Card ─────────────────────────────────────────────────────
 
     @classmethod
-    def card_style(cls, *, selected: bool = False, radius: int = T.R_LG,
-                   hover: bool = False) -> str:
-        if selected:
-            return f"""QFrame {{
-                background: {T.INDIGO_50};
-                border: 2px solid {T.INDIGO_500};
-                border-radius: {radius}px;
-            }}"""
-        return f"""QFrame {{
+    def card_style(cls, hover: bool = False) -> str:
+        """Clean white card — shadow-first, border optional."""
+        hover_css = f"""
+            QFrame:hover {{
+                background: {T.BG_CARD};
+                border-color: {T.BORDER_HOVER};
+            }}
+        """ if hover else ""
+        return f"""
+        QFrame {{
             background: {T.BG_CARD};
             border: 1px solid {T.BORDER};
-            border-radius: {radius}px;
+            border-radius: {T.R_XL}px;
         }}
-        QFrame:hover {{
-            border: 1px solid {T.BORDER_HOVER};
-            background: {T.BG_HOVER};
-        }}"""
+        {hover_css}
+        """
+
+    # ─── Input ────────────────────────────────────────────────────
 
     @classmethod
     def input_style(cls) -> str:
@@ -388,18 +312,18 @@ QStatusBar::item {{ border: none; }}
             background: {T.BG_INPUT};
             border: 1.5px solid {T.BORDER};
             border-radius: {T.R_MD}px;
-            padding: 12px 16px;
+            padding: 14px 18px;
             font-size: {T.FS_MD}px;
             font-family: {T.FONT_MONO};
             color: {T.TEXT_800};
-            letter-spacing: 0.5px;
+            letter-spacing: 0.4px;
         }}
         QLineEdit:hover {{
-            border: 1.5px solid {T.BORDER_HOVER};
-            background: {T.BG_HOVER};
+            border-color: {T.BORDER_HOVER};
+            background: {T.BG_CARD};
         }}
         QLineEdit:focus {{
-            border: 2px solid {T.INDIGO_500};
+            border: 1.5px solid {T.INDIGO_500};
             background: {T.BG_INPUT_FOCUS};
             color: {T.TEXT_900};
         }}
@@ -408,37 +332,41 @@ QStatusBar::item {{ border: none; }}
         }}
         """
 
+    # ─── Progress Bar ─────────────────────────────────────────────
+
     @classmethod
     def progress_style(cls) -> str:
         return f"""
         QProgressBar {{
             border: none;
-            border-radius: 5px;
+            border-radius: 3px;
             background: {T.INDIGO_100};
-            height: 8px;
+            height: 6px;
             text-align: center;
             color: transparent;
         }}
         QProgressBar::chunk {{
             background: {cls.GRADIENT_PRIMARY};
-            border-radius: 5px;
+            border-radius: 3px;
         }}
         """
+
+    # ─── Buttons ──────────────────────────────────────────────────
 
     @classmethod
     def get_button_style(cls, variant: str = "primary") -> str:
         variants = {
-            # ── Indigo gradient (main action) ────────────────────
+            # ── Primary: indigo → violet gradient ────────────────
             "primary": f"""
                 QPushButton {{
                     background: {cls.GRADIENT_PRIMARY};
                     color: {T.TEXT_WHITE};
                     border: none;
-                    border-radius: {T.R_MD}px;
-                    padding: 13px 30px;
+                    border-radius: {T.R_LG}px;
+                    padding: 14px 32px;
                     font-size: {T.FS_MD}px;
                     font-weight: 700;
-                    letter-spacing: 0.4px;
+                    letter-spacing: 0.2px;
                     font-family: {T.FONT};
                 }}
                 QPushButton:hover {{
@@ -446,118 +374,116 @@ QStatusBar::item {{ border: none; }}
                 }}
                 QPushButton:pressed {{
                     background: qlineargradient(x1:0,y1:0,x2:1,y2:0,
-                        stop:0 {T.INDIGO_800},stop:1 {T.INDIGO_700});
-                    padding-top: 14px; padding-bottom: 12px;
-                }}
-                QPushButton:disabled {{
-                    background: {T.BG_PAGE};
-                    color: {T.TEXT_400};
-                    border: 1px solid {T.BORDER};
-                }}
-            """,
-            # ── Amber/Orange (start/accent) ──────────────────────
-            "accent": f"""
-                QPushButton {{
-                    background: {cls.GRADIENT_ACCENT};
-                    color: {T.TEXT_WHITE};
-                    border: none;
-                    border-radius: {T.R_MD}px;
-                    padding: 13px 30px;
-                    font-size: {T.FS_MD}px;
-                    font-weight: 700;
-                    letter-spacing: 0.4px;
-                    font-family: {T.FONT};
-                }}
-                QPushButton:hover {{
-                    background: qlineargradient(x1:0,y1:0,x2:1,y2:0,
-                        stop:0 {T.AMBER_600},stop:1 {T.ORANGE_600});
-                }}
-                QPushButton:pressed {{
-                    padding-top: 14px; padding-bottom: 12px;
-                    background: qlineargradient(x1:0,y1:0,x2:1,y2:0,
-                        stop:0 #92400E,stop:1 #7C2D12);
-                }}
-                QPushButton:disabled {{
-                    background: {T.BG_PAGE};
-                    color: {T.TEXT_400};
-                    border: 1px solid {T.BORDER};
-                }}
-            """,
-            # ── Ghost / Outline ──────────────────────────────────
-            "ghost": f"""
-                QPushButton {{
-                    background: transparent;
-                    color: {T.TEXT_600};
-                    border: 1.5px solid {T.BORDER};
-                    border-radius: {T.R_MD}px;
-                    padding: 10px 22px;
-                    font-size: {T.FS_BASE}px;
-                    font-weight: 600;
-                    font-family: {T.FONT};
-                }}
-                QPushButton:hover {{
-                    background: {T.INDIGO_50};
-                    border: 1.5px solid {T.INDIGO_200};
-                    color: {T.INDIGO_600};
-                }}
-                QPushButton:pressed {{
-                    background: {T.INDIGO_100};
-                    border: 1.5px solid {T.INDIGO_300};
-                    color: {T.INDIGO_700};
-                }}
-            """,
-            # ── Danger (end interview) ───────────────────────────
-            "danger": f"""
-                QPushButton {{
-                    background: {T.RED_50};
-                    color: {T.RED_600};
-                    border: 1.5px solid {T.RED_200};
-                    border-radius: {T.R_MD}px;
-                    padding: 10px 22px;
-                    font-size: {T.FS_BASE}px;
-                    font-weight: 600;
-                    font-family: {T.FONT};
-                }}
-                QPushButton:hover {{
-                    background: qlineargradient(x1:0,y1:0,x2:1,y2:0,
-                        stop:0 {T.RED_500},stop:1 {T.RED_600});
-                    color: {T.TEXT_WHITE};
-                    border: none;
-                }}
-                QPushButton:pressed {{
-                    background: {T.RED_700};
-                    padding-top: 11px; padding-bottom: 9px;
-                }}
-            """,
-            # ── Record (cyan action) ─────────────────────────────
-            "record": f"""
-                QPushButton {{
-                    background: {cls.GRADIENT_PRIMARY};
-                    color: {T.TEXT_WHITE};
-                    border: none;
-                    border-radius: {T.R_MD}px;
-                    padding: 14px 30px;
-                    font-size: {T.FS_MD}px;
-                    font-weight: 700;
-                    letter-spacing: 0.5px;
-                    font-family: {T.FONT};
-                }}
-                QPushButton:hover {{
-                    background: {cls.GRADIENT_PRIMARY_HOVER};
-                }}
-                QPushButton:pressed {{
+                        stop:0 {T.INDIGO_800},stop:1 {T.VIOLET_600});
                     padding-top: 15px; padding-bottom: 13px;
                 }}
                 QPushButton:disabled {{
                     background: {T.BG_PAGE};
                     color: {T.TEXT_400};
-                    border: 1.5px solid {T.BORDER};
+                    border: 1px solid {T.BORDER};
+                }}
+            """,
+            # ── Accent: same gradient, used on session screen ─────
+            "accent": f"""
+                QPushButton {{
+                    background: {cls.GRADIENT_PRIMARY};
+                    color: {T.TEXT_WHITE};
+                    border: none;
+                    border-radius: {T.R_LG}px;
+                    padding: 15px 32px;
+                    font-size: {T.FS_MD}px;
+                    font-weight: 700;
+                    letter-spacing: 0.2px;
+                    font-family: {T.FONT};
+                }}
+                QPushButton:hover {{
+                    background: {cls.GRADIENT_PRIMARY_HOVER};
+                }}
+                QPushButton:pressed {{
+                    padding-top: 16px; padding-bottom: 14px;
+                    background: qlineargradient(x1:0,y1:0,x2:1,y2:0,
+                        stop:0 {T.INDIGO_800},stop:1 {T.VIOLET_600});
+                }}
+                QPushButton:disabled {{
+                    background: {T.BG_PAGE};
+                    color: {T.TEXT_400};
+                    border: 1px solid {T.BORDER};
+                }}
+            """,
+            # ── Ghost / Outline ───────────────────────────────────
+            "ghost": f"""
+                QPushButton {{
+                    background: transparent;
+                    color: {T.TEXT_600};
+                    border: 1px solid {T.BORDER};
+                    border-radius: {T.R_MD}px;
+                    padding: 10px 22px;
+                    font-size: {T.FS_SM}px;
+                    font-weight: 600;
+                    font-family: {T.FONT};
+                }}
+                QPushButton:hover {{
+                    background: {T.BG_HOVER};
+                    border-color: {T.BORDER_HOVER};
+                    color: {T.TEXT_800};
+                }}
+                QPushButton:pressed {{
+                    background: {T.BG_PAGE};
+                    color: {T.TEXT_900};
+                }}
+            """,
+            # ── Danger ────────────────────────────────────────────
+            "danger": f"""
+                QPushButton {{
+                    background: transparent;
+                    color: {T.RED_500};
+                    border: 1px solid {T.RED_200};
+                    border-radius: {T.R_MD}px;
+                    padding: 10px 22px;
+                    font-size: {T.FS_SM}px;
+                    font-weight: 600;
+                    font-family: {T.FONT};
+                }}
+                QPushButton:hover {{
+                    background: {T.RED_500};
+                    color: {T.TEXT_WHITE};
+                    border-color: {T.RED_500};
+                }}
+                QPushButton:pressed {{
+                    background: {T.RED_600};
+                    border-color: {T.RED_600};
+                    padding-top: 11px; padding-bottom: 9px;
+                }}
+            """,
+            # ── Record ────────────────────────────────────────────
+            "record": f"""
+                QPushButton {{
+                    background: {cls.GRADIENT_PRIMARY};
+                    color: {T.TEXT_WHITE};
+                    border: none;
+                    border-radius: {T.R_LG}px;
+                    padding: 15px 32px;
+                    font-size: {T.FS_MD}px;
+                    font-weight: 700;
+                    letter-spacing: 0.2px;
+                    font-family: {T.FONT};
+                }}
+                QPushButton:hover {{
+                    background: {cls.GRADIENT_PRIMARY_HOVER};
+                }}
+                QPushButton:pressed {{
+                    padding-top: 16px; padding-bottom: 14px;
+                }}
+                QPushButton:disabled {{
+                    background: {T.BG_PAGE};
+                    color: {T.TEXT_400};
+                    border: 1px solid {T.BORDER};
                 }}
             """,
         }
         return variants.get(variant, variants["primary"])
 
-    # ─── Helper utilities ─────────────────────────────────────────────────────
+    # ─── Badges ───────────────────────────────────────────────────
 
     @classmethod
     def badge_style(cls, color: str = T.INDIGO_500,
@@ -566,12 +492,12 @@ QStatusBar::item {{ border: none; }}
             QLabel {{
                 background: {bg};
                 color: {color};
-                border: 1px solid {color}40;
+                border: 1px solid {color}30;
                 border-radius: {T.R_FULL}px;
-                padding: 4px 12px;
+                padding: 3px 10px;
                 font-size: {T.FS_XS}px;
                 font-weight: 700;
-                letter-spacing: 0.8px;
+                letter-spacing: 0.6px;
             }}
         """
 
@@ -582,12 +508,12 @@ QStatusBar::item {{ border: none; }}
                 color: {T.TEXT_400};
                 font-size: {T.FS_XS}px;
                 font-weight: 700;
-                letter-spacing: 2px;
+                letter-spacing: 1.5px;
                 background: transparent;
             }}
         """
 
-    # ─── Backward compat ─────────────────────────────────────────────────────
+    # ─── Backward compat ─────────────────────────────────────────
     @classmethod
     def glass_card_style(cls, hover: bool = True) -> str:
         return cls.card_style()

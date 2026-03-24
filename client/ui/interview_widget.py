@@ -1,6 +1,7 @@
 """
-Interview Widget — SparkHire AI v5  ·  Precision Intelligence
-Premium PySide6 component — pure QSS, no external dependencies
+Interview Widget — SparkHire AI v6  ·  Clean SaaS Edition
+Stripe / Linear aesthetic — white cards, soft shadows, strong hierarchy.
+Functionality identical to v5.
 """
 
 from PySide6.QtWidgets import (
@@ -74,7 +75,7 @@ DEFAULT_MAX_RECORDING_SECONDS = 90
 class PulseDot(QWidget):
     """Animated pulsing dot for status indicators."""
 
-    def __init__(self, color: str = T.INDIGO_500, size: int = 10, parent=None):
+    def __init__(self, color: str = T.INDIGO_500, size: int = 8, parent=None):
         super().__init__(parent)
         self._color = QColor(color)
         self._alpha = 255
@@ -98,17 +99,14 @@ class PulseDot(QWidget):
     def paintEvent(self, _):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        # Outer glow
         glow = QColor(self._color)
-        glow.setAlpha(max(0, self._alpha // 4))
-        p.setBrush(QBrush(glow))
-        p.setPen(Qt.PenStyle.NoPen)
+        glow.setAlpha(max(0, self._alpha // 5))
+        p.setBrush(QBrush(glow)); p.setPen(Qt.PenStyle.NoPen)
         p.drawEllipse(0, 0, self._size, self._size)
-        # Core dot
         core = QColor(self._color)
         core.setAlpha(self._alpha)
         p.setBrush(QBrush(core))
-        m = self._size // 5
+        m = self._size // 4
         p.drawEllipse(m, m, self._size - 2 * m, self._size - 2 * m)
 
 
@@ -117,10 +115,9 @@ class StepBadge(QLabel):
 
     def __init__(self, num: int, parent=None):
         super().__init__(str(num), parent)
-        self.setFixedSize(26, 26)
+        self.setFixedSize(24, 24)
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        f = QFont(T.FONT, T.FS_SM)
-        f.setBold(True)
+        f = QFont(T.FONT, T.FS_SM); f.setBold(True)
         self.setFont(f)
         self._set_active(False)
 
@@ -130,7 +127,7 @@ class StepBadge(QLabel):
                 QLabel {{
                     background: {T.INDIGO_500};
                     color: {T.TEXT_WHITE};
-                    border-radius: 13px;
+                    border-radius: 12px;
                     font-weight: 700;
                 }}
             """)
@@ -139,13 +136,14 @@ class StepBadge(QLabel):
                 QLabel {{
                     background: {T.INDIGO_100};
                     color: {T.INDIGO_500};
-                    border-radius: 13px;
+                    border-radius: 12px;
                     font-weight: 700;
                 }}
             """)
 
 
-def _shadow(blur=20, dy=4, alpha=18, r=99, g=102, b=241):
+def _shadow(blur=20, dy=4, alpha=14, r=0, g=0, b=0):
+    """Soft neutral shadow — no color cast."""
     s = QGraphicsDropShadowEffect()
     s.setBlurRadius(blur)
     s.setOffset(0, dy)
@@ -155,8 +153,7 @@ def _shadow(blur=20, dy=4, alpha=18, r=99, g=102, b=241):
 
 def _label(text="", size=T.FS_BASE, bold=False, color=T.TEXT_700):
     lbl = QLabel(text)
-    f = QFont(T.FONT, size)
-    f.setBold(bold)
+    f = QFont(T.FONT, size); f.setBold(bold)
     lbl.setFont(f)
     lbl.setStyleSheet(f"color: {color}; background: transparent;")
     return lbl
@@ -167,16 +164,15 @@ def _divider(vertical=False):
     if vertical:
         d.setFrameShape(QFrame.Shape.VLine)
         d.setFixedWidth(1)
-        d.setStyleSheet(f"background: {T.BORDER}; border: none;")
     else:
         d.setFrameShape(QFrame.Shape.HLine)
         d.setFixedHeight(1)
-        d.setStyleSheet(f"background: {T.BORDER}; border: none;")
+    d.setStyleSheet(f"background: {T.BORDER}; border: none;")
     return d
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-#  HEADER SECTION  (pill badge with section label)
+#  HEADER SECTION
 # ═════════════════════════════════════════════════════════════════════════════
 
 class _SectionHeader(QWidget):
@@ -186,47 +182,35 @@ class _SectionHeader(QWidget):
         h.setContentsMargins(0, 0, 0, 0)
         h.setSpacing(T.SP_2)
 
-        self._dot = PulseDot(T.INDIGO_500, 8)
+        self._dot = PulseDot(T.INDIGO_500, 7)
         h.addWidget(self._dot)
 
         self._lbl = QLabel(text)
-        f = QFont(T.FONT, T.FS_XS)
-        f.setBold(True)
+        f = QFont(T.FONT, T.FS_XS); f.setBold(True)
         self._lbl.setFont(f)
         self._lbl.setStyleSheet(f"""
-            color: {T.INDIGO_500};
-            letter-spacing: 2.5px;
+            color: {T.TEXT_400};
+            letter-spacing: 1.5px;
             background: transparent;
         """)
         h.addWidget(self._lbl)
         h.addStretch()
 
-        # Version tag
-        ver = QLabel("v5.2")
-        ver.setFont(QFont(T.FONT_MONO, T.FS_2XS))
-        ver.setStyleSheet(f"""
-            color: {T.TEXT_400};
-            background: {T.BG_PAGE};
-            border: 1px solid {T.BORDER};
-            border-radius: 4px;
-            padding: 1px 6px;
-        """)
-        h.addWidget(ver)
-
     def set_text(self, text):
         self._lbl.setText(text)
 
     def set_recording(self, recording: bool):
-        self._dot.set_color(T.RED_500 if recording else T.INDIGO_500)
+        self._dot.set_color(T.RED_400 if recording else T.INDIGO_500)
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-#  PROGRESS CARD
+#  PROGRESS CARD — thin, modern
 # ═════════════════════════════════════════════════════════════════════════════
 
 class _ProgressCard(QFrame):
     def __init__(self, parent=None):
         super().__init__(parent)
+        # White card, very light border, soft shadow
         self.setStyleSheet(f"""
             QFrame {{
                 background: {T.BG_CARD};
@@ -234,52 +218,48 @@ class _ProgressCard(QFrame):
                 border-radius: {T.R_LG}px;
             }}
         """)
-        self.setGraphicsEffect(_shadow(16, 3, 14))
+        self.setGraphicsEffect(_shadow(16, 4, 12))
 
         lay = QVBoxLayout(self)
         lay.setContentsMargins(T.SP_5, T.SP_4, T.SP_5, T.SP_4)
         lay.setSpacing(T.SP_3)
 
-        # Top row: label + percentage
+        # Top row: question label + percentage badge
         top = QHBoxLayout()
         top.setSpacing(T.SP_2)
 
         self._q_lbl = QLabel("—  /  —")
-        f = QFont(T.FONT, T.FS_BASE)
-        f.setBold(True)
+        f = QFont(T.FONT, T.FS_BASE); f.setBold(True)
         self._q_lbl.setFont(f)
         self._q_lbl.setStyleSheet(f"color: {T.TEXT_800}; background: transparent;")
         top.addWidget(self._q_lbl)
-
         top.addStretch()
 
+        # Percentage badge — soft indigo pill
         self._pct_badge = QLabel("0%")
-        f2 = QFont(T.FONT, T.FS_SM)
-        f2.setBold(True)
+        f2 = QFont(T.FONT, T.FS_SM); f2.setBold(True)
         self._pct_badge.setFont(f2)
         self._pct_badge.setStyleSheet(f"""
             color: {T.INDIGO_600};
             background: {T.INDIGO_50};
-            border: 1px solid {T.INDIGO_100};
             border-radius: {T.R_FULL}px;
-            padding: 3px 10px;
+            padding: 2px 10px;
         """)
         top.addWidget(self._pct_badge)
-
         lay.addLayout(top)
 
-        # Progress bar with segmented look
+        # Progress bar — thin gradient, 4px height
         self.progress_bar = QProgressBar()
         self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(0)
         self.progress_bar.setTextVisible(False)
-        self.progress_bar.setFixedHeight(6)
+        self.progress_bar.setFixedHeight(4)
         self.progress_bar.setStyleSheet(StarkTheme.progress_style())
         lay.addWidget(self.progress_bar)
 
-        # Dots row
+        # Dot indicators
         self._dots_row = QHBoxLayout()
-        self._dots_row.setSpacing(4)
+        self._dots_row.setSpacing(5)
         self._dots: list[QLabel] = []
         self._total_dots = 0
         lay.addLayout(self._dots_row)
@@ -289,7 +269,6 @@ class _ProgressCard(QFrame):
         self._pct_badge.setText(f"{pct}%")
         self.progress_bar.setValue(pct)
 
-        # Rebuild dots if total changed
         if total != self._total_dots:
             for d in self._dots:
                 d.deleteLater()
@@ -297,42 +276,42 @@ class _ProgressCard(QFrame):
             self._total_dots = total
             for i in range(total):
                 d = QLabel()
-                d.setFixedSize(8, 8)
+                d.setFixedSize(7, 7)
                 d.setStyleSheet(f"""
                     QLabel {{
-                        background: {T.BORDER_STRONG};
-                        border-radius: 4px;
+                        background: {T.BORDER};
+                        border-radius: 3px;
                     }}
                 """)
                 self._dots.append(d)
                 self._dots_row.addWidget(d)
             self._dots_row.addStretch()
 
-        # Color completed dots
         for i, d in enumerate(self._dots):
             if i < current:
                 d.setStyleSheet(f"""
                     QLabel {{
                         background: {T.INDIGO_500};
-                        border-radius: 4px;
+                        border-radius: 3px;
                     }}
                 """)
             else:
                 d.setStyleSheet(f"""
                     QLabel {{
-                        background: {T.BORDER_STRONG};
-                        border-radius: 4px;
+                        background: {T.BORDER};
+                        border-radius: 3px;
                     }}
                 """)
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-#  INFO CARD  (mic icon + instructions + duration badge)
+#  INFO CARD — audio instruction card
 # ═════════════════════════════════════════════════════════════════════════════
 
 class _InfoCard(QFrame):
     def __init__(self, parent=None):
         super().__init__(parent)
+        # Soft off-white background — feels like a content card
         self.setStyleSheet(f"""
             QFrame {{
                 background: {T.BG_CARD};
@@ -340,76 +319,80 @@ class _InfoCard(QFrame):
                 border-radius: {T.R_XL}px;
             }}
         """)
-        self.setGraphicsEffect(_shadow(22, 5, 16))
+        self.setGraphicsEffect(_shadow(20, 6, 14))
 
         lay = QVBoxLayout(self)
-        lay.setContentsMargins(T.SP_6, T.SP_6, T.SP_6, T.SP_6)
+        lay.setContentsMargins(T.SP_6, T.SP_6, T.SP_6, T.SP_5)
         lay.setSpacing(T.SP_4)
 
-        # ── Mic icon container ────────────────────────────────────
+        # ── Mic icon — centered, clean gradient bubble ─────────────
         icon_row = QHBoxLayout()
         icon_row.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         mic_wrap = QFrame()
-        mic_wrap.setFixedSize(64, 64)
+        mic_wrap.setFixedSize(60, 60)
         mic_wrap.setStyleSheet(f"""
             QFrame {{
                 background: qlineargradient(x1:0,y1:0,x2:1,y2:1,
-                    stop:0 {T.INDIGO_500},stop:1 {T.INDIGO_600});
+                    stop:0 {T.INDIGO_500},stop:1 {T.VIOLET_500});
                 border-radius: 16px;
             }}
         """)
-        mic_wrap.setGraphicsEffect(_shadow(20, 4, 60, 79, 70, 229))
+        # Subtle indigo glow on mic icon
+        mic_glow = QGraphicsDropShadowEffect()
+        mic_glow.setBlurRadius(18); mic_glow.setOffset(0, 4)
+        mic_glow.setColor(QColor(99, 102, 241, 50))
+        mic_wrap.setGraphicsEffect(mic_glow)
+
         mic_inner = QVBoxLayout(mic_wrap)
         mic_inner.setContentsMargins(0, 0, 0, 0)
         mic_inner.setAlignment(Qt.AlignmentFlag.AlignCenter)
         mic_emoji = QLabel("🎤")
-        mic_emoji.setFont(QFont("Segoe UI Emoji, Apple Color Emoji", 26))
+        mic_emoji.setFont(QFont("Segoe UI Emoji, Apple Color Emoji", 24))
         mic_emoji.setAlignment(Qt.AlignmentFlag.AlignCenter)
         mic_inner.addWidget(mic_emoji)
 
         icon_row.addWidget(mic_wrap)
         lay.addLayout(icon_row)
 
-        # ── Title ─────────────────────────────────────────────────
+        # ── Title — strong hierarchy ───────────────────────────────
         self._title = QLabel("Écoutez attentivement")
-        f_title = QFont(T.FONT, T.FS_LG)
-        f_title.setBold(True)
+        f_title = QFont(T.FONT, T.FS_MD); f_title.setBold(True)
         self._title.setFont(f_title)
         self._title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._title.setStyleSheet(f"color: {T.TEXT_900}; background: transparent;")
         lay.addWidget(self._title)
 
+        # Light divider
         lay.addWidget(_divider())
 
-        # ── Subtitle ──────────────────────────────────────────────
+        # ── Subtitle — readable, muted ─────────────────────────────
         self._sub = QLabel()
         f_sub = QFont(T.FONT_BODY, T.FS_SM)
         self._sub.setFont(f_sub)
         self._sub.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._sub.setWordWrap(True)
-        self._sub.setStyleSheet(f"color: {T.TEXT_600}; background: transparent; line-height: 1.5;")
+        self._sub.setStyleSheet(f"color: {T.TEXT_500}; background: transparent;")
         lay.addWidget(self._sub)
 
-        # ── Duration badge ────────────────────────────────────────
+        # ── Duration badge — amber pill ────────────────────────────
         dur_row = QHBoxLayout()
         dur_row.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         self._dur_badge = QFrame()
-        self._dur_badge.setFixedHeight(32)
+        self._dur_badge.setFixedHeight(30)
         self._dur_badge.setVisible(False)
         db = QHBoxLayout(self._dur_badge)
-        db.setContentsMargins(14, 0, 14, 0)
-        db.setSpacing(6)
+        db.setContentsMargins(12, 0, 12, 0)
+        db.setSpacing(5)
 
         clk = QLabel("⏱")
-        clk.setFont(QFont("Segoe UI Emoji", 13))
+        clk.setFont(QFont("Segoe UI Emoji", 11))
         clk.setStyleSheet("background: transparent;")
         db.addWidget(clk)
 
         self._dur_lbl = QLabel()
-        f_dur = QFont(T.FONT, T.FS_SM)
-        f_dur.setBold(True)
+        f_dur = QFont(T.FONT, T.FS_SM); f_dur.setBold(True)
         self._dur_lbl.setFont(f_dur)
         self._dur_lbl.setStyleSheet(f"color: {T.AMBER_600}; background: transparent;")
         db.addWidget(self._dur_lbl)
@@ -424,23 +407,21 @@ class _InfoCard(QFrame):
         dur_row.addWidget(self._dur_badge)
         lay.addLayout(dur_row)
 
-        # ── Status pill ───────────────────────────────────────────
-        lay.addSpacing(T.SP_1)
+        # ── Status pill ────────────────────────────────────────────
         pill_row = QHBoxLayout()
         pill_row.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         self._pill = QFrame()
-        self._pill.setFixedHeight(36)
+        self._pill.setFixedHeight(34)
         pill_inner = QHBoxLayout(self._pill)
-        pill_inner.setContentsMargins(16, 0, 20, 0)
+        pill_inner.setContentsMargins(14, 0, 18, 0)
         pill_inner.setSpacing(T.SP_2)
 
-        self._pill_dot = PulseDot(T.TEXT_400, 8)
+        self._pill_dot = PulseDot(T.TEXT_400, 7)
         pill_inner.addWidget(self._pill_dot)
 
         self._pill_lbl = QLabel("En attente")
-        f_pill = QFont(T.FONT, T.FS_SM)
-        f_pill.setBold(True)
+        f_pill = QFont(T.FONT, T.FS_SM); f_pill.setBold(True)
         self._pill_lbl.setFont(f_pill)
         self._pill_lbl.setStyleSheet(f"color: {T.TEXT_500}; background: transparent;")
         pill_inner.addWidget(self._pill_lbl)
@@ -451,19 +432,18 @@ class _InfoCard(QFrame):
 
         # ── Countdown ─────────────────────────────────────────────
         self._countdown = QLabel()
-        f_cd = QFont(T.FONT, T.FS_MD)
-        f_cd.setBold(True)
+        f_cd = QFont(T.FONT, T.FS_BASE); f_cd.setBold(True)
         self._countdown.setFont(f_cd)
         self._countdown.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._countdown.setVisible(False)
-        self._countdown.setStyleSheet(f"color: {T.RED_600}; background: transparent;")
+        self._countdown.setStyleSheet(f"color: {T.RED_500}; background: transparent;")
         lay.addWidget(self._countdown)
 
     _PILL_STATES = {
         "waiting":   (T.TEXT_400,    T.BG_PAGE,      T.BORDER,        T.TEXT_500),
         "playing":   (T.AMBER_500,   T.AMBER_50,     T.AMBER_200,     T.AMBER_600),
         "ready":     (T.GREEN_500,   T.GREEN_50,     T.GREEN_200,     T.GREEN_700),
-        "recording": (T.RED_500,     T.RED_50,       T.RED_200,       T.RED_600),
+        "recording": (T.RED_400,     T.RED_50,       T.RED_200,       T.RED_600),
     }
 
     def _set_pill(self, state: str, text: str = ""):
@@ -518,34 +498,35 @@ class InterviewWidget(QWidget):
         self._countdown_timer.setInterval(1000)
         self._countdown_timer.timeout.connect(self._on_tick)
 
-        self.setMinimumWidth(340)
+        self.setMinimumWidth(320)
         self.setMaximumWidth(440)
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(T.SP_2, T.SP_2, T.SP_2, T.SP_2)
+        # 8px grid margins
+        root.setContentsMargins(T.SP_2, T.SP_3, T.SP_2, T.SP_3)
         root.setSpacing(T.SP_3)
 
-        # ── Section header ────────────────────────────────────────
+        # ── Section header ─────────────────────────────────────────
         self._header = _SectionHeader()
         root.addWidget(self._header)
 
-        # ── Progress card ─────────────────────────────────────────
+        # ── Progress card ──────────────────────────────────────────
         self._progress_card = _ProgressCard()
         root.addWidget(self._progress_card)
 
-        # ── Info card ─────────────────────────────────────────────
+        # ── Info card — vertically centered ───────────────────────
         self._info_card = _InfoCard()
         root.addStretch()
         root.addWidget(self._info_card)
         root.addStretch()
 
-        # ── Record button ─────────────────────────────────────────
+        # ── Record button — full width, prominent ─────────────────
         self.record_btn = self._build_record_btn()
         root.addWidget(self.record_btn)
 
-        # ── End button ────────────────────────────────────────────
+        # ── End button — ghost / danger ────────────────────────────
         self.end_btn = QPushButton()
-        self.end_btn.setMinimumHeight(40)
+        self.end_btn.setMinimumHeight(38)
         self.end_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.end_btn.setStyleSheet(StarkTheme.get_button_style("danger"))
         self.end_btn.clicked.connect(self.end_interview.emit)
@@ -557,16 +538,15 @@ class InterviewWidget(QWidget):
 
     def _build_record_btn(self) -> QPushButton:
         btn = QPushButton()
-        f = QFont(T.FONT, T.FS_MD)
-        f.setBold(True)
+        f = QFont(T.FONT, T.FS_MD); f.setBold(True)
         btn.setFont(f)
-        btn.setMinimumHeight(58)
+        btn.setMinimumHeight(56)
         btn.setCursor(Qt.CursorShape.PointingHandCursor)
         btn.setStyleSheet(StarkTheme.get_button_style("primary"))
+        # Subtle indigo glow
         eff = QGraphicsDropShadowEffect()
-        eff.setBlurRadius(24)
-        eff.setOffset(0, 6)
-        eff.setColor(QColor(79, 70, 229, 60))
+        eff.setBlurRadius(20); eff.setOffset(0, 5)
+        eff.setColor(QColor(99, 102, 241, 45))
         btn.setGraphicsEffect(eff)
         btn.clicked.connect(self._toggle_record)
         btn.setEnabled(False)
@@ -655,11 +635,10 @@ class InterviewWidget(QWidget):
                         stop:0 {T.RED_500},stop:1 {T.RED_600});
                     color: {T.TEXT_WHITE};
                     border: none;
-                    border-radius: {T.R_MD}px;
-                    padding: 14px 30px;
+                    border-radius: {T.R_LG}px;
+                    padding: 15px 32px;
                     font-size: {T.FS_MD}px;
                     font-weight: 700;
-                    letter-spacing: 0.5px;
                     font-family: {T.FONT};
                 }}
                 QPushButton:hover {{
@@ -667,22 +646,20 @@ class InterviewWidget(QWidget):
                         stop:0 {T.RED_600},stop:1 {T.RED_700});
                 }}
                 QPushButton:pressed {{
-                    padding-top: 15px; padding-bottom: 13px;
+                    padding-top: 16px; padding-bottom: 14px;
                     background: {T.RED_700};
                 }}
             """)
             eff = QGraphicsDropShadowEffect()
-            eff.setBlurRadius(24)
-            eff.setOffset(0, 6)
-            eff.setColor(QColor(220, 38, 38, 70))
+            eff.setBlurRadius(20); eff.setOffset(0, 5)
+            eff.setColor(QColor(220, 38, 38, 55))
             self.record_btn.setGraphicsEffect(eff)
         else:
             self.record_btn.setText(self.t("start"))
             self.record_btn.setStyleSheet(StarkTheme.get_button_style("primary"))
             eff = QGraphicsDropShadowEffect()
-            eff.setBlurRadius(24)
-            eff.setOffset(0, 6)
-            eff.setColor(QColor(79, 70, 229, 60))
+            eff.setBlurRadius(20); eff.setOffset(0, 5)
+            eff.setColor(QColor(99, 102, 241, 45))
             self.record_btn.setGraphicsEffect(eff)
 
     # ── Public API ────────────────────────────────────────────────

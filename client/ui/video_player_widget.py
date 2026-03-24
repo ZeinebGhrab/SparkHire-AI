@@ -1,6 +1,7 @@
 """
-Video Player Widget — SparkHire AI v5  ·  Precision Intelligence
-Premium avatar viewer with PiP camera overlay
+Video Player Widget — SparkHire AI v6  ·  Clean SaaS Edition
+Embedded card style — no heavy border, soft shadow, modern status bar.
+Functionality identical to v5.
 """
 
 import cv2
@@ -20,7 +21,8 @@ from client.ui.stark_theme import T
 from client.ui.icons import StarkIcons
 
 
-def _sh(blur=20, dy=5, alpha=20, r=79, g=70, b=229):
+def _sh(blur=24, dy=6, alpha=16, r=0, g=0, b=0):
+    """Soft neutral shadow — clean, no color cast."""
     s = QGraphicsDropShadowEffect()
     s.setBlurRadius(blur); s.setOffset(0, dy)
     s.setColor(QColor(r, g, b, alpha)); return s
@@ -30,7 +32,7 @@ class _PulseDot(QWidget):
     def __init__(self, color: str, parent=None):
         super().__init__(parent)
         self._c = QColor(color); self._a = 255; self._d = -5
-        self.setFixedSize(10, 10)
+        self.setFixedSize(8, 8)
         t = QTimer(self); t.timeout.connect(self._tick); t.start(50)
 
     def set_color(self, c: str): self._c = QColor(c); self.update()
@@ -46,11 +48,11 @@ class _PulseDot(QWidget):
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         c = QColor(self._c); c.setAlpha(self._a)
         p.setBrush(QBrush(c)); p.setPen(Qt.PenStyle.NoPen)
-        p.drawEllipse(1, 1, 8, 8)
+        p.drawEllipse(1, 1, 6, 6)
 
 
 class VideoPlayerWidget(QWidget):
-    """Premium avatar player with status bar + PiP camera overlay."""
+    """Clean embedded video card with modern status bar."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -59,7 +61,7 @@ class VideoPlayerWidget(QWidget):
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
-        # ── Outer card wrapper ────────────────────────────────────
+        # ── Outer card wrapper — embedded, clean ──────────────────
         wrapper = QFrame()
         wrapper.setObjectName("videoWrapper")
         wrapper.setStyleSheet(f"""
@@ -69,34 +71,35 @@ class VideoPlayerWidget(QWidget):
                 border-radius: {T.R_2XL}px;
             }}
         """)
-        wrapper.setGraphicsEffect(_sh(32, 8, 25))
+        # Soft shadow — feels embedded, not floating
+        wrapper.setGraphicsEffect(_sh(32, 8, 18))
 
         wrap_lay = QVBoxLayout(wrapper)
         wrap_lay.setContentsMargins(0, 0, 0, 0)
         wrap_lay.setSpacing(0)
 
-        # ── Top bar (agent info) ──────────────────────────────────
+        # ── Top bar — clean dark gradient ─────────────────────────
         top_bar = QFrame()
-        top_bar.setFixedHeight(52)
+        top_bar.setFixedHeight(50)
         top_bar.setStyleSheet(f"""
             QFrame {{
                 background: qlineargradient(x1:0,y1:0,x2:1,y2:0,
-                    stop:0 {T.INDIGO_700},stop:1 {T.INDIGO_500});
+                    stop:0 {T.INDIGO_700},stop:1 {T.INDIGO_600});
                 border-top-left-radius:  {T.R_2XL - 1}px;
                 border-top-right-radius: {T.R_2XL - 1}px;
             }}
         """)
         top_lay = QHBoxLayout(top_bar)
         top_lay.setContentsMargins(18, 0, 18, 0)
-        top_lay.setSpacing(T.T_SP if hasattr(T, 'T_SP') else 10)
+        top_lay.setSpacing(10)
 
-        # Agent avatar
+        # Agent avatar — subtle glass button
         avatar_dot = QFrame()
-        avatar_dot.setFixedSize(32, 32)
+        avatar_dot.setFixedSize(30, 30)
         avatar_dot.setStyleSheet(f"""
             QFrame {{
-                background: rgba(255,255,255,0.2);
-                border: 1px solid rgba(255,255,255,0.3);
+                background: rgba(255,255,255,0.15);
+                border: 1px solid rgba(255,255,255,0.25);
                 border-radius: 8px;
             }}
         """)
@@ -104,43 +107,43 @@ class VideoPlayerWidget(QWidget):
         av_lay.setContentsMargins(0, 0, 0, 0)
         av_lay.setAlignment(Qt.AlignmentFlag.AlignCenter)
         av_e = QLabel("🤖")
-        av_e.setFont(QFont("Segoe UI Emoji", 14))
+        av_e.setFont(QFont("Segoe UI Emoji", 13))
         av_e.setAlignment(Qt.AlignmentFlag.AlignCenter)
         av_lay.addWidget(av_e)
         top_lay.addWidget(avatar_dot)
-        top_lay.addSpacing(8)
+        top_lay.addSpacing(6)
 
         name_col = QVBoxLayout()
         name_col.setSpacing(1)
         agent_name = QLabel("SparkHire Agent RH")
-        f_an = QFont(T.FONT, 11); f_an.setBold(True)
+        f_an = QFont(T.FONT, 10); f_an.setBold(True)
         agent_name.setFont(f_an)
-        agent_name.setStyleSheet("color: rgba(255,255,255,0.95); background: transparent;")
+        agent_name.setStyleSheet("color: rgba(255,255,255,0.92); background: transparent;")
         name_col.addWidget(agent_name)
 
         self._agent_status = QLabel("En attente…")
-        self._agent_status.setFont(QFont(T.FONT, 9))
-        self._agent_status.setStyleSheet("color: rgba(255,255,255,0.6); background: transparent;")
+        self._agent_status.setFont(QFont(T.FONT, 8))
+        self._agent_status.setStyleSheet("color: rgba(255,255,255,0.55); background: transparent;")
         name_col.addWidget(self._agent_status)
         top_lay.addLayout(name_col)
         top_lay.addStretch()
 
-        # Live badge
+        # LIVE badge — refined pill
         self._live_badge = QFrame()
-        self._live_badge.setFixedHeight(24)
+        self._live_badge.setFixedHeight(22)
         lb_lay = QHBoxLayout(self._live_badge)
         lb_lay.setContentsMargins(8, 0, 10, 0)
         lb_lay.setSpacing(5)
-        self._live_dot = _PulseDot("rgba(255,255,255,0.7)")
+        self._live_dot = _PulseDot("rgba(255,255,255,0.8)")
         lb_lay.addWidget(self._live_dot)
         live_txt = QLabel("LIVE")
-        live_txt.setFont(QFont(T.FONT, 8, QFont.Weight.Bold))
+        live_txt.setFont(QFont(T.FONT, 7, QFont.Weight.Bold))
         live_txt.setStyleSheet("color: rgba(255,255,255,0.85); background: transparent; letter-spacing: 1px;")
         lb_lay.addWidget(live_txt)
         self._live_badge.setStyleSheet(f"""
             QFrame {{
-                background: rgba(255,255,255,0.15);
-                border: 1px solid rgba(255,255,255,0.25);
+                background: rgba(255,255,255,0.12);
+                border: 1px solid rgba(255,255,255,0.20);
                 border-radius: {T.R_FULL}px;
             }}
         """)
@@ -148,26 +151,26 @@ class VideoPlayerWidget(QWidget):
 
         wrap_lay.addWidget(top_bar)
 
-        # ── Video area ────────────────────────────────────────────
+        # ── Video area — clean gradient placeholder ────────────────
         self.avatar_display = QLabel()
         self.avatar_display.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        # Very subtle gradient background — soft, not harsh
         self.avatar_display.setStyleSheet(f"""
             QLabel {{
                 background: qlineargradient(x1:0.5,y1:0,x2:0.5,y2:1,
-                    stop:0 {T.INDIGO_50},
-                    stop:0.3 #F8F9FF,
-                    stop:0.7 #FFFFFF,
-                    stop:1 {T.CYAN_50});
+                    stop:0 #F0F4FF,
+                    stop:0.5 #F8FAFC,
+                    stop:1 #EEF2FF);
                 border: none;
             }}
         """)
         self.avatar_display.setMinimumSize(800, 500)
         wrap_lay.addWidget(self.avatar_display, stretch=1)
 
-        # ── Bottom status bar ─────────────────────────────────────
+        # ── Bottom status bar — clean white bar ───────────────────
         bar = QFrame()
         bar.setObjectName("statusBar")
-        bar.setFixedHeight(60)
+        bar.setFixedHeight(56)
         bar.setStyleSheet(f"""
             #statusBar {{
                 background: {T.BG_CARD};
@@ -178,12 +181,12 @@ class VideoPlayerWidget(QWidget):
         """)
 
         bar_lay = QHBoxLayout(bar)
-        bar_lay.setContentsMargins(20, 0, 20, 0)
+        bar_lay.setContentsMargins(18, 0, 18, 0)
         bar_lay.setSpacing(12)
 
-        # State icon container
+        # State icon — soft colored container
         self._ic_cont = QFrame()
-        self._ic_cont.setFixedSize(40, 40)
+        self._ic_cont.setFixedSize(38, 38)
         self._ic_cont.setStyleSheet(f"""
             QFrame {{
                 background: {T.GREEN_50};
@@ -196,23 +199,23 @@ class VideoPlayerWidget(QWidget):
         ic_inner.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._ic_lbl = QLabel()
         self._ic_lbl.setPixmap(
-            StarkIcons.user_check(T.GREEN_600).pixmap(QSize(22, 22))
+            StarkIcons.user_check(T.GREEN_600).pixmap(QSize(20, 20))
         )
         ic_inner.addWidget(self._ic_lbl)
         bar_lay.addWidget(self._ic_cont)
 
         text_col = QVBoxLayout()
-        text_col.setSpacing(2)
+        text_col.setSpacing(1)
 
         self._status_main = QLabel("Agent RH : Prêt à vous écouter")
-        f_sm = QFont(T.FONT, T.FS_BASE); f_sm.setBold(True)
+        f_sm = QFont(T.FONT, T.FS_SM); f_sm.setBold(True)
         self._status_main.setFont(f_sm)
         self._status_main.setStyleSheet(f"color: {T.TEXT_800}; background: transparent;")
 
         self._status_sub = QLabel("Intelligence Artificielle · SparkHire")
-        self._status_sub.setFont(QFont(T.FONT, T.FS_2XS if hasattr(T, 'FS_2XS') else 9))
+        self._status_sub.setFont(QFont(T.FONT, T.FS_2XS))
         self._status_sub.setStyleSheet(
-            f"color: {T.TEXT_400}; letter-spacing: 0.5px; background: transparent;"
+            f"color: {T.TEXT_400}; letter-spacing: 0.3px; background: transparent;"
         )
 
         text_col.addWidget(self._status_main)
@@ -222,17 +225,16 @@ class VideoPlayerWidget(QWidget):
         self._dot = _PulseDot(T.GREEN_500)
         bar_lay.addWidget(self._dot)
 
+        # State badge — minimal pill
         self._state_badge = QLabel("Disponible")
-        f_badge = QFont(T.FONT, T.FS_XS if hasattr(T, 'FS_XS') else 10)
-        f_badge.setBold(True)
+        f_badge = QFont(T.FONT, T.FS_XS); f_badge.setBold(True)
         self._state_badge.setFont(f_badge)
         self._state_badge.setStyleSheet(f"""
             color: {T.GREEN_700};
             background: {T.GREEN_50};
             border: 1px solid {T.GREEN_200};
             border-radius: {T.R_FULL}px;
-            padding: 4px 12px;
-            letter-spacing: 0.3px;
+            padding: 3px 12px;
         """)
         bar_lay.addWidget(self._state_badge)
 
@@ -280,19 +282,14 @@ class VideoPlayerWidget(QWidget):
     def _show_placeholder(self, state: str):
         w, h = 800, 500
         img = np.zeros((h, w, 3), dtype=np.uint8)
-        # Gradient background
         for y in range(h):
             t_ = y / h
-            img[y, :, 0] = int(238 + t_ * 12)
-            img[y, :, 1] = int(242 + t_ * 8)
+            img[y, :, 0] = int(240 + t_ * 10)
+            img[y, :, 1] = int(244 + t_ * 8)
             img[y, :, 2] = 255
-
-        # State emoji mapping
-        icons = {"idle": "😊", "speaking": "🗣️", "listening": "👂"}
         txt = f"[{state.upper()}]"
         cv2.putText(img, txt, (w // 2 - 80, h // 2 + 8),
                     cv2.FONT_HERSHEY_SIMPLEX, 1.0, (79, 70, 229), 2, cv2.LINE_AA)
-
         qt = QImage(img.data, w, h, 3 * w, QImage.Format_RGB888)
         self.avatar_display.setPixmap(
             QPixmap.fromImage(qt).scaled(
@@ -320,7 +317,7 @@ class VideoPlayerWidget(QWidget):
                     Qt.TransformationMode.SmoothTransformation,
                 )
             )
-        except Exception as e:
+        except Exception:
             pass
 
     def resizeEvent(self, e):
@@ -353,8 +350,7 @@ class VideoPlayerWidget(QWidget):
             background: {badge_bg};
             border: 1px solid {badge_border};
             border-radius: {T.R_FULL}px;
-            padding: 4px 12px;
-            letter-spacing: 0.3px;
+            padding: 3px 12px;
         """)
         self._dot.set_color(dot_color)
         self._agent_status.setText(agent_status)
@@ -363,7 +359,7 @@ class VideoPlayerWidget(QWidget):
 
     def set_idle(self):
         self._apply_bar_state(
-            StarkIcons.user_check(T.GREEN_600).pixmap(QSize(22, 22)),
+            StarkIcons.user_check(T.GREEN_600).pixmap(QSize(20, 20)),
             "Agent RH : Prêt à vous écouter", T.TEXT_800,
             "Disponible", T.GREEN_700, T.GREEN_50, T.GREEN_200,
             T.GREEN_500, T.GREEN_50, T.GREEN_200,
@@ -373,7 +369,7 @@ class VideoPlayerWidget(QWidget):
 
     def set_speaking(self):
         self._apply_bar_state(
-            StarkIcons.message_circle(T.INDIGO_500).pixmap(QSize(22, 22)),
+            StarkIcons.message_circle(T.INDIGO_500).pixmap(QSize(20, 20)),
             "Agent RH : Analyse en cours…", T.INDIGO_700,
             "En cours", T.INDIGO_600, T.INDIGO_50, T.INDIGO_200,
             T.INDIGO_500, T.INDIGO_50, T.INDIGO_200,
@@ -383,7 +379,7 @@ class VideoPlayerWidget(QWidget):
 
     def set_listening(self):
         self._apply_bar_state(
-            StarkIcons.headphones(T.AMBER_600).pixmap(QSize(22, 22)),
+            StarkIcons.headphones(T.AMBER_600).pixmap(QSize(20, 20)),
             "Agent RH : Écoute active…", T.TEXT_800,
             "Enregistrement", T.AMBER_600, T.AMBER_50, T.AMBER_200,
             T.AMBER_500, T.AMBER_50, T.AMBER_200,
