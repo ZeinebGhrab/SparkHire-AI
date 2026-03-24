@@ -1,14 +1,15 @@
 """
-Interview Widget — Professional Light UI
-
+Interview Widget — SparkHire AI v5  ·  Precision Intelligence
+Premium PySide6 component — pure QSS, no external dependencies
 """
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QLabel, QProgressBar, QFrame, QGraphicsDropShadowEffect,
+    QSizePolicy,
 )
-from PySide6.QtCore import Qt, Signal, QTimer
-from PySide6.QtGui import QFont, QColor, QPainter, QBrush
+from PySide6.QtCore import Qt, Signal, QTimer, QPropertyAnimation, QEasingCurve
+from PySide6.QtGui import QFont, QColor, QPainter, QBrush, QPen, QLinearGradient
 import sys
 from pathlib import Path
 
@@ -19,108 +20,486 @@ from client.ui.stark_theme import StarkTheme, T
 
 TEXTS = {
     "ar": {
-        "section":       "الوضع الصوتي",
-        "progress":      "السؤال {c} من {t}",
-        "listen_title":  "استمع جيداً",
-        "listen_sub":    "ستُطرح الأسئلة صوتياً فقط.\nاستمع للمحاور ثم أجب بوضوح.",
-        "max_duration":  "مدة الإجابة القصوى : {m} دق {s} ث",
-        "waiting":       "في انتظار السؤال…",
-        "playing":       "السؤال قيد التشغيل",
-        "ready":         "جاهز للإجابة",
-        "start":         "ابدأ الإجابة",
-        "stop":          "إيقاف التسجيل",
-        "end":           "إنهاء المقابلة",
-        "recording_left":"{s} ث متبقية",
-        "time_up":       "انتهى الوقت — توقف التسجيل تلقائياً",
+        "section":        "المقابلة الصوتية",
+        "progress":       "السؤال {c} من {t}",
+        "listen_title":   "استمع جيداً",
+        "listen_sub":     "ستُطرح الأسئلة صوتياً فقط.\nاستمع للمحاور ثم أجب بوضوح.",
+        "max_duration":   "مدة الإجابة القصوى : {m} دق {s} ث",
+        "waiting":        "في انتظار السؤال…",
+        "playing":        "السؤال قيد التشغيل",
+        "ready":          "جاهز للإجابة",
+        "start":          "ابدأ الإجابة",
+        "stop":           "إيقاف التسجيل",
+        "end":            "إنهاء المقابلة",
+        "recording_left": "{s} ث متبقية",
+        "time_up":        "انتهى الوقت — توقف التسجيل",
     },
     "fr": {
-        "section":       "MODE VOCAL",
-        "progress":      "Question {c} / {t}",
-        "listen_title":  "Écoutez attentivement",
-        "listen_sub":    "Les questions sont posées uniquement en audio.\nÉcoutez l'avatar, puis répondez clairement.",
-        "max_duration":  "Durée max : {m} min {s:02d} s",
-        "waiting":       "En attente de la question…",
-        "playing":       "Lecture en cours",
-        "ready":         "Prêt à répondre",
-        "start":         "Commencer à répondre",
-        "stop":          "Arrêter l'enregistrement",
-        "end":           "Terminer l'entretien",
-        "recording_left":"{s} s restantes",
-        "time_up":       "Temps écoulé — enregistrement arrêté automatiquement",
+        "section":        "ENTRETIEN VOCAL",
+        "progress":       "Question {c} / {t}",
+        "listen_title":   "Écoutez attentivement",
+        "listen_sub":     "Les questions sont posées uniquement en audio.\nÉcoutez l'avatar, puis répondez clairement.",
+        "max_duration":   "Durée max : {m} min {s:02d} s",
+        "waiting":        "En attente de la question…",
+        "playing":        "Lecture en cours",
+        "ready":          "Prêt à répondre",
+        "start":          "Commencer à répondre",
+        "stop":           "Arrêter l'enregistrement",
+        "end":            "Terminer l'entretien",
+        "recording_left": "{s} s restantes",
+        "time_up":        "Temps écoulé — enregistrement arrêté",
     },
     "en": {
-        "section":       "VOCAL MODE",
-        "progress":      "Question {c} of {t}",
-        "listen_title":  "Listen carefully",
-        "listen_sub":    "Questions are audio-only.\nListen to the avatar, then answer clearly.",
-        "max_duration":  "Max response time: {m} min {s:02d} s",
-        "waiting":       "Waiting for question…",
-        "playing":       "Playing question",
-        "ready":         "Ready to answer",
-        "start":         "Start answering",
-        "stop":          "Stop recording",
-        "end":           "End interview",
-        "recording_left":"{s} s left",
-        "time_up":       "Time's up — recording stopped automatically",
+        "section":        "VOICE INTERVIEW",
+        "progress":       "Question {c} of {t}",
+        "listen_title":   "Listen carefully",
+        "listen_sub":     "Questions are audio-only.\nListen to the avatar, then answer clearly.",
+        "max_duration":   "Max response time: {m} min {s:02d} s",
+        "waiting":        "Waiting for question…",
+        "playing":        "Playing question",
+        "ready":          "Ready to answer",
+        "start":          "Start answering",
+        "stop":           "Stop recording",
+        "end":            "End interview",
+        "recording_left": "{s} s left",
+        "time_up":        "Time's up — recording stopped",
     },
 }
 
 DEFAULT_MAX_RECORDING_SECONDS = 90
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
+# ── Utility Widgets ──────────────────────────────────────────────────────────
 
-class _Dot(QWidget):
-    def __init__(self, color: str = T.CYAN_500, parent=None):
+class PulseDot(QWidget):
+    """Animated pulsing dot for status indicators."""
+
+    def __init__(self, color: str = T.INDIGO_500, size: int = 10, parent=None):
         super().__init__(parent)
-        self._c = QColor(color); self._a = 255; self._d = -5
-        self.setFixedSize(9, 9)
-        t = QTimer(self); t.timeout.connect(self._tick); t.start(45)
+        self._color = QColor(color)
+        self._alpha = 255
+        self._delta = -6
+        self._size  = size
+        self.setFixedSize(size, size)
+        self._timer = QTimer(self)
+        self._timer.timeout.connect(self._tick)
+        self._timer.start(40)
 
-    def set_color(self, c: str): self._c = QColor(c); self.update()
+    def set_color(self, color: str):
+        self._color = QColor(color)
+        self.update()
 
     def _tick(self):
-        self._a += self._d
-        if self._a <= 70: self._d = 5
-        elif self._a >= 255: self._d = -5
+        self._alpha = max(55, min(255, self._alpha + self._delta))
+        if self._alpha <= 55:   self._delta = 6
+        elif self._alpha >= 255: self._delta = -6
         self.update()
 
     def paintEvent(self, _):
-        p = QPainter(self); p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        c = QColor(self._c); c.setAlpha(self._a)
-        p.setBrush(QBrush(c)); p.setPen(Qt.PenStyle.NoPen)
-        p.drawEllipse(0, 0, 9, 9)
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        # Outer glow
+        glow = QColor(self._color)
+        glow.setAlpha(max(0, self._alpha // 4))
+        p.setBrush(QBrush(glow))
+        p.setPen(Qt.PenStyle.NoPen)
+        p.drawEllipse(0, 0, self._size, self._size)
+        # Core dot
+        core = QColor(self._color)
+        core.setAlpha(self._alpha)
+        p.setBrush(QBrush(core))
+        m = self._size // 5
+        p.drawEllipse(m, m, self._size - 2 * m, self._size - 2 * m)
 
 
-def _sh(blur=18, dy=4, alpha=22):
+class StepBadge(QLabel):
+    """Numbered step indicator."""
+
+    def __init__(self, num: int, parent=None):
+        super().__init__(str(num), parent)
+        self.setFixedSize(26, 26)
+        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        f = QFont(T.FONT, T.FS_SM)
+        f.setBold(True)
+        self.setFont(f)
+        self._set_active(False)
+
+    def _set_active(self, active: bool):
+        if active:
+            self.setStyleSheet(f"""
+                QLabel {{
+                    background: {T.INDIGO_500};
+                    color: {T.TEXT_WHITE};
+                    border-radius: 13px;
+                    font-weight: 700;
+                }}
+            """)
+        else:
+            self.setStyleSheet(f"""
+                QLabel {{
+                    background: {T.INDIGO_100};
+                    color: {T.INDIGO_500};
+                    border-radius: 13px;
+                    font-weight: 700;
+                }}
+            """)
+
+
+def _shadow(blur=20, dy=4, alpha=18, r=99, g=102, b=241):
     s = QGraphicsDropShadowEffect()
-    s.setBlurRadius(blur); s.setOffset(0, dy)
-    s.setColor(QColor(100, 116, 139, alpha)); return s
+    s.setBlurRadius(blur)
+    s.setOffset(0, dy)
+    s.setColor(QColor(r, g, b, alpha))
+    return s
 
 
-def _lbl(text="", size=T.FS_BASE, bold=False, color=T.TEXT_800):
-    l = QLabel(text); f = QFont(T.FONT, size); f.setBold(bold)
-    l.setFont(f); l.setStyleSheet(f"color: {color}; background: transparent;"); return l
+def _label(text="", size=T.FS_BASE, bold=False, color=T.TEXT_700):
+    lbl = QLabel(text)
+    f = QFont(T.FONT, size)
+    f.setBold(bold)
+    lbl.setFont(f)
+    lbl.setStyleSheet(f"color: {color}; background: transparent;")
+    return lbl
 
 
-def _sep():
-    s = QFrame(); s.setFrameShape(QFrame.Shape.HLine); s.setFixedHeight(1)
-    s.setStyleSheet(f"background: {T.BORDER}; border: none;"); return s
-
-
-def _mini_bar(color: str) -> QProgressBar:
-    b = QProgressBar()
-    b.setRange(0, 100); b.setValue(0)
-    b.setTextVisible(False); b.setFixedHeight(6)
-    b.setStyleSheet(f"""
-        QProgressBar {{ background: {T.BG_PAGE}; border-radius: 3px; border: none; }}
-        QProgressBar::chunk {{ background: {color}; border-radius: 3px; }}
-    """)
-    return b
+def _divider(vertical=False):
+    d = QFrame()
+    if vertical:
+        d.setFrameShape(QFrame.Shape.VLine)
+        d.setFixedWidth(1)
+        d.setStyleSheet(f"background: {T.BORDER}; border: none;")
+    else:
+        d.setFrameShape(QFrame.Shape.HLine)
+        d.setFixedHeight(1)
+        d.setStyleSheet(f"background: {T.BORDER}; border: none;")
+    return d
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-#  INTERVIEW WIDGET
+#  HEADER SECTION  (pill badge with section label)
+# ═════════════════════════════════════════════════════════════════════════════
+
+class _SectionHeader(QWidget):
+    def __init__(self, text="", parent=None):
+        super().__init__(parent)
+        h = QHBoxLayout(self)
+        h.setContentsMargins(0, 0, 0, 0)
+        h.setSpacing(T.SP_2)
+
+        self._dot = PulseDot(T.INDIGO_500, 8)
+        h.addWidget(self._dot)
+
+        self._lbl = QLabel(text)
+        f = QFont(T.FONT, T.FS_XS)
+        f.setBold(True)
+        self._lbl.setFont(f)
+        self._lbl.setStyleSheet(f"""
+            color: {T.INDIGO_500};
+            letter-spacing: 2.5px;
+            background: transparent;
+        """)
+        h.addWidget(self._lbl)
+        h.addStretch()
+
+        # Version tag
+        ver = QLabel("v5.2")
+        ver.setFont(QFont(T.FONT_MONO, T.FS_2XS))
+        ver.setStyleSheet(f"""
+            color: {T.TEXT_400};
+            background: {T.BG_PAGE};
+            border: 1px solid {T.BORDER};
+            border-radius: 4px;
+            padding: 1px 6px;
+        """)
+        h.addWidget(ver)
+
+    def set_text(self, text):
+        self._lbl.setText(text)
+
+    def set_recording(self, recording: bool):
+        self._dot.set_color(T.RED_500 if recording else T.INDIGO_500)
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+#  PROGRESS CARD
+# ═════════════════════════════════════════════════════════════════════════════
+
+class _ProgressCard(QFrame):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setStyleSheet(f"""
+            QFrame {{
+                background: {T.BG_CARD};
+                border: 1px solid {T.BORDER};
+                border-radius: {T.R_LG}px;
+            }}
+        """)
+        self.setGraphicsEffect(_shadow(16, 3, 14))
+
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(T.SP_5, T.SP_4, T.SP_5, T.SP_4)
+        lay.setSpacing(T.SP_3)
+
+        # Top row: label + percentage
+        top = QHBoxLayout()
+        top.setSpacing(T.SP_2)
+
+        self._q_lbl = QLabel("—  /  —")
+        f = QFont(T.FONT, T.FS_BASE)
+        f.setBold(True)
+        self._q_lbl.setFont(f)
+        self._q_lbl.setStyleSheet(f"color: {T.TEXT_800}; background: transparent;")
+        top.addWidget(self._q_lbl)
+
+        top.addStretch()
+
+        self._pct_badge = QLabel("0%")
+        f2 = QFont(T.FONT, T.FS_SM)
+        f2.setBold(True)
+        self._pct_badge.setFont(f2)
+        self._pct_badge.setStyleSheet(f"""
+            color: {T.INDIGO_600};
+            background: {T.INDIGO_50};
+            border: 1px solid {T.INDIGO_100};
+            border-radius: {T.R_FULL}px;
+            padding: 3px 10px;
+        """)
+        top.addWidget(self._pct_badge)
+
+        lay.addLayout(top)
+
+        # Progress bar with segmented look
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(0)
+        self.progress_bar.setTextVisible(False)
+        self.progress_bar.setFixedHeight(6)
+        self.progress_bar.setStyleSheet(StarkTheme.progress_style())
+        lay.addWidget(self.progress_bar)
+
+        # Dots row
+        self._dots_row = QHBoxLayout()
+        self._dots_row.setSpacing(4)
+        self._dots: list[QLabel] = []
+        self._total_dots = 0
+        lay.addLayout(self._dots_row)
+
+    def update(self, current: int, total: int, pct: int):
+        self._q_lbl.setText(f"Question {current} / {total}" if total > 0 else "— / —")
+        self._pct_badge.setText(f"{pct}%")
+        self.progress_bar.setValue(pct)
+
+        # Rebuild dots if total changed
+        if total != self._total_dots:
+            for d in self._dots:
+                d.deleteLater()
+            self._dots.clear()
+            self._total_dots = total
+            for i in range(total):
+                d = QLabel()
+                d.setFixedSize(8, 8)
+                d.setStyleSheet(f"""
+                    QLabel {{
+                        background: {T.BORDER_STRONG};
+                        border-radius: 4px;
+                    }}
+                """)
+                self._dots.append(d)
+                self._dots_row.addWidget(d)
+            self._dots_row.addStretch()
+
+        # Color completed dots
+        for i, d in enumerate(self._dots):
+            if i < current:
+                d.setStyleSheet(f"""
+                    QLabel {{
+                        background: {T.INDIGO_500};
+                        border-radius: 4px;
+                    }}
+                """)
+            else:
+                d.setStyleSheet(f"""
+                    QLabel {{
+                        background: {T.BORDER_STRONG};
+                        border-radius: 4px;
+                    }}
+                """)
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+#  INFO CARD  (mic icon + instructions + duration badge)
+# ═════════════════════════════════════════════════════════════════════════════
+
+class _InfoCard(QFrame):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setStyleSheet(f"""
+            QFrame {{
+                background: {T.BG_CARD};
+                border: 1px solid {T.BORDER};
+                border-radius: {T.R_XL}px;
+            }}
+        """)
+        self.setGraphicsEffect(_shadow(22, 5, 16))
+
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(T.SP_6, T.SP_6, T.SP_6, T.SP_6)
+        lay.setSpacing(T.SP_4)
+
+        # ── Mic icon container ────────────────────────────────────
+        icon_row = QHBoxLayout()
+        icon_row.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        mic_wrap = QFrame()
+        mic_wrap.setFixedSize(64, 64)
+        mic_wrap.setStyleSheet(f"""
+            QFrame {{
+                background: qlineargradient(x1:0,y1:0,x2:1,y2:1,
+                    stop:0 {T.INDIGO_500},stop:1 {T.INDIGO_600});
+                border-radius: 16px;
+            }}
+        """)
+        mic_wrap.setGraphicsEffect(_shadow(20, 4, 60, 79, 70, 229))
+        mic_inner = QVBoxLayout(mic_wrap)
+        mic_inner.setContentsMargins(0, 0, 0, 0)
+        mic_inner.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        mic_emoji = QLabel("🎤")
+        mic_emoji.setFont(QFont("Segoe UI Emoji, Apple Color Emoji", 26))
+        mic_emoji.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        mic_inner.addWidget(mic_emoji)
+
+        icon_row.addWidget(mic_wrap)
+        lay.addLayout(icon_row)
+
+        # ── Title ─────────────────────────────────────────────────
+        self._title = QLabel("Écoutez attentivement")
+        f_title = QFont(T.FONT, T.FS_LG)
+        f_title.setBold(True)
+        self._title.setFont(f_title)
+        self._title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._title.setStyleSheet(f"color: {T.TEXT_900}; background: transparent;")
+        lay.addWidget(self._title)
+
+        lay.addWidget(_divider())
+
+        # ── Subtitle ──────────────────────────────────────────────
+        self._sub = QLabel()
+        f_sub = QFont(T.FONT_BODY, T.FS_SM)
+        self._sub.setFont(f_sub)
+        self._sub.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._sub.setWordWrap(True)
+        self._sub.setStyleSheet(f"color: {T.TEXT_600}; background: transparent; line-height: 1.5;")
+        lay.addWidget(self._sub)
+
+        # ── Duration badge ────────────────────────────────────────
+        dur_row = QHBoxLayout()
+        dur_row.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        self._dur_badge = QFrame()
+        self._dur_badge.setFixedHeight(32)
+        self._dur_badge.setVisible(False)
+        db = QHBoxLayout(self._dur_badge)
+        db.setContentsMargins(14, 0, 14, 0)
+        db.setSpacing(6)
+
+        clk = QLabel("⏱")
+        clk.setFont(QFont("Segoe UI Emoji", 13))
+        clk.setStyleSheet("background: transparent;")
+        db.addWidget(clk)
+
+        self._dur_lbl = QLabel()
+        f_dur = QFont(T.FONT, T.FS_SM)
+        f_dur.setBold(True)
+        self._dur_lbl.setFont(f_dur)
+        self._dur_lbl.setStyleSheet(f"color: {T.AMBER_600}; background: transparent;")
+        db.addWidget(self._dur_lbl)
+
+        self._dur_badge.setStyleSheet(f"""
+            QFrame {{
+                background: {T.AMBER_50};
+                border: 1px solid {T.AMBER_200};
+                border-radius: {T.R_FULL}px;
+            }}
+        """)
+        dur_row.addWidget(self._dur_badge)
+        lay.addLayout(dur_row)
+
+        # ── Status pill ───────────────────────────────────────────
+        lay.addSpacing(T.SP_1)
+        pill_row = QHBoxLayout()
+        pill_row.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        self._pill = QFrame()
+        self._pill.setFixedHeight(36)
+        pill_inner = QHBoxLayout(self._pill)
+        pill_inner.setContentsMargins(16, 0, 20, 0)
+        pill_inner.setSpacing(T.SP_2)
+
+        self._pill_dot = PulseDot(T.TEXT_400, 8)
+        pill_inner.addWidget(self._pill_dot)
+
+        self._pill_lbl = QLabel("En attente")
+        f_pill = QFont(T.FONT, T.FS_SM)
+        f_pill.setBold(True)
+        self._pill_lbl.setFont(f_pill)
+        self._pill_lbl.setStyleSheet(f"color: {T.TEXT_500}; background: transparent;")
+        pill_inner.addWidget(self._pill_lbl)
+
+        self._set_pill("waiting")
+        pill_row.addWidget(self._pill)
+        lay.addLayout(pill_row)
+
+        # ── Countdown ─────────────────────────────────────────────
+        self._countdown = QLabel()
+        f_cd = QFont(T.FONT, T.FS_MD)
+        f_cd.setBold(True)
+        self._countdown.setFont(f_cd)
+        self._countdown.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._countdown.setVisible(False)
+        self._countdown.setStyleSheet(f"color: {T.RED_600}; background: transparent;")
+        lay.addWidget(self._countdown)
+
+    _PILL_STATES = {
+        "waiting":   (T.TEXT_400,    T.BG_PAGE,      T.BORDER,        T.TEXT_500),
+        "playing":   (T.AMBER_500,   T.AMBER_50,     T.AMBER_200,     T.AMBER_600),
+        "ready":     (T.GREEN_500,   T.GREEN_50,     T.GREEN_200,     T.GREEN_700),
+        "recording": (T.RED_500,     T.RED_50,       T.RED_200,       T.RED_600),
+    }
+
+    def _set_pill(self, state: str, text: str = ""):
+        dot_c, bg, border, text_c = self._PILL_STATES.get(state, self._PILL_STATES["waiting"])
+        self._pill_dot.set_color(dot_c)
+        self._pill.setStyleSheet(f"""
+            QFrame {{
+                background: {bg};
+                border: 1px solid {border};
+                border-radius: {T.R_FULL}px;
+            }}
+        """)
+        self._pill_lbl.setStyleSheet(
+            f"color: {text_c}; font-weight: 600; background: transparent; letter-spacing: 0.2px;"
+        )
+        if text:
+            self._pill_lbl.setText(text)
+
+    def set_status(self, state: str, text: str = ""):
+        self._set_pill(state, text)
+
+    def set_title(self, t): self._title.setText(t)
+    def set_sub(self, t): self._sub.setText(t)
+    def set_duration_label(self, t):
+        self._dur_lbl.setText(t)
+        self._dur_badge.setVisible(bool(t))
+    def set_countdown(self, text: str, color: str):
+        self._countdown.setText(text)
+        self._countdown.setStyleSheet(f"color: {color}; font-weight: 700; background: transparent;")
+        self._countdown.setVisible(bool(text))
+    def set_pill_text(self, text: str):
+        self._pill_lbl.setText(text)
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+#  MAIN INTERVIEW WIDGET
 # ═════════════════════════════════════════════════════════════════════════════
 
 class InterviewWidget(QWidget):
@@ -132,159 +511,97 @@ class InterviewWidget(QWidget):
         super().__init__(parent)
         self._lang               = language
         self.is_recording        = False
-        self._max_recording_secs = DEFAULT_MAX_RECORDING_SECONDS
-        self._remaining_secs     = DEFAULT_MAX_RECORDING_SECONDS
-        self._countdown_timer    = QTimer(self)
-        self._countdown_timer.setInterval(1000)
-        self._countdown_timer.timeout.connect(self._on_countdown_tick)
+        self._max_secs           = DEFAULT_MAX_RECORDING_SECONDS
+        self._remaining          = DEFAULT_MAX_RECORDING_SECONDS
 
-        self.setMinimumWidth(360)
-        self.setMaximumWidth(460)
+        self._countdown_timer = QTimer(self)
+        self._countdown_timer.setInterval(1000)
+        self._countdown_timer.timeout.connect(self._on_tick)
+
+        self.setMinimumWidth(340)
+        self.setMaximumWidth(440)
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(0, 0, 0, 0)
+        root.setContentsMargins(T.SP_2, T.SP_2, T.SP_2, T.SP_2)
         root.setSpacing(T.SP_3)
 
-        root.addWidget(self._make_header_badge())
-        root.addWidget(self._make_progress_card())
-        root.addWidget(self._make_instruction_card())
+        # ── Section header ────────────────────────────────────────
+        self._header = _SectionHeader()
+        root.addWidget(self._header)
+
+        # ── Progress card ─────────────────────────────────────────
+        self._progress_card = _ProgressCard()
+        root.addWidget(self._progress_card)
+
+        # ── Info card ─────────────────────────────────────────────
+        self._info_card = _InfoCard()
         root.addStretch()
-        self.record_btn = self._make_record_btn()
+        root.addWidget(self._info_card)
+        root.addStretch()
+
+        # ── Record button ─────────────────────────────────────────
+        self.record_btn = self._build_record_btn()
         root.addWidget(self.record_btn)
-        self.end_btn = self._make_end_btn()
+
+        # ── End button ────────────────────────────────────────────
+        self.end_btn = QPushButton()
+        self.end_btn.setMinimumHeight(40)
+        self.end_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.end_btn.setStyleSheet(StarkTheme.get_button_style("danger"))
+        self.end_btn.clicked.connect(self.end_interview.emit)
         root.addWidget(self.end_btn)
 
         self._apply()
 
-    def t(self, k, **kwargs):
-        tpl = TEXTS.get(self._lang, TEXTS["fr"]).get(k, k)
-        return tpl.format(**kwargs) if kwargs else tpl
+    # ── Build record button ───────────────────────────────────────
 
-    def set_language(self, lang: str):
-        self._lang = lang; self._apply()
-
-    def _apply(self):
-        self._sect_lbl.setText(self.t("section"))
-        self._inst_title.setText(self.t("listen_title"))
-        self._inst_sub.setText(self.t("listen_sub"))
-        self._update_max_duration_label()
-        self.record_btn.setText(self.t("stop") if self.is_recording else self.t("start"))
-        self.end_btn.setText(self.t("end"))
-        self._set_status("waiting")
-        ltr = Qt.LayoutDirection.RightToLeft if self._lang == "ar" else Qt.LayoutDirection.LeftToRight
-        self.setLayoutDirection(ltr)
-
-    def _update_max_duration_label(self):
-        m = self._max_recording_secs // 60
-        s = self._max_recording_secs % 60
-        self._max_dur_lbl.setText(self.t("max_duration", m=m, s=s))
-
-    # ── Build header badge ────────────────────────────────────────────────────
-
-    def _make_header_badge(self):
-        w = QWidget(); h = QHBoxLayout(w)
-        h.setContentsMargins(2, 0, 2, 0); h.setSpacing(T.SP_2)
-        self._dot = _Dot(T.CYAN_500); h.addWidget(self._dot)
-        self._sect_lbl = _lbl("", T.FS_XS, bold=True, color=T.CYAN_600)
-        self._sect_lbl.setStyleSheet(f"color: {T.CYAN_600}; letter-spacing: 2px; background: transparent;")
-        h.addWidget(self._sect_lbl); h.addStretch(); return w
-
-    # ── Build progress card ───────────────────────────────────────────────────
-
-    def _make_progress_card(self):
-        card = QFrame()
-        card.setStyleSheet(f"QFrame {{ background: {T.BG_CARD}; border: 1px solid {T.BORDER}; border-radius: {T.R_MD}px; }}")
-        card.setGraphicsEffect(_sh(16, 3))
-        lay = QVBoxLayout(card); lay.setContentsMargins(T.SP_4, T.SP_3, T.SP_4, T.SP_3); lay.setSpacing(T.SP_2)
-
-        row = QHBoxLayout()
-        self._prog_lbl = _lbl("—  /  —", T.FS_BASE, bold=True, color=T.TEXT_800)
-        row.addWidget(self._prog_lbl); row.addStretch()
-        self._pct_lbl = _lbl("0 %", T.FS_SM, bold=True, color=T.CYAN_600)
-        row.addWidget(self._pct_lbl); lay.addLayout(row)
-
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setRange(0, 100); self.progress_bar.setValue(0)
-        self.progress_bar.setTextVisible(False); self.progress_bar.setFixedHeight(8)
-        self.progress_bar.setStyleSheet(StarkTheme.progress_style())
-        lay.addWidget(self.progress_bar); return card
-
-    # ── Build instruction card ────────────────────────────────────────────────
-
-    def _make_instruction_card(self):
-        card = QFrame()
-        card.setStyleSheet(f"QFrame {{ background: {T.BG_CARD}; border: 1px solid {T.BORDER}; border-radius: {T.R_LG}px; }}")
-        card.setGraphicsEffect(_sh(20, 4))
-        lay = QVBoxLayout(card); lay.setContentsMargins(T.SP_5, T.SP_5, T.SP_5, T.SP_5); lay.setSpacing(T.SP_3)
-
-        mic_cont = QFrame(); mic_cont.setFixedSize(50, 50)
-        mic_cont.setStyleSheet(f"QFrame {{ background: qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 {T.CYAN_50},stop:1 {T.BLUE_50}); border: 1px solid {T.CYAN_200}; border-radius: 12px; }}")
-        mic_inner = QVBoxLayout(mic_cont); mic_inner.setContentsMargins(0,0,0,0); mic_inner.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        mic_e = QLabel("🎤"); mic_e.setFont(QFont("Segoe UI Emoji, Apple Color Emoji", 24)); mic_e.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        mic_inner.addWidget(mic_e); lay.addWidget(mic_cont, alignment=Qt.AlignmentFlag.AlignCenter)
-
-        self._inst_title = _lbl("", T.FS_LG, bold=True, color=T.TEXT_900)
-        self._inst_title.setAlignment(Qt.AlignmentFlag.AlignCenter); lay.addWidget(self._inst_title)
-
-        lay.addWidget(_sep())
-
-        self._inst_sub = _lbl("", T.FS_SM, color=T.TEXT_600)
-        self._inst_sub.setAlignment(Qt.AlignmentFlag.AlignCenter); self._inst_sub.setWordWrap(True)
-        lay.addWidget(self._inst_sub)
-
-        # Badge durée max
-        dur_row = QHBoxLayout(); dur_row.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        dur_badge = QFrame(); dur_badge.setFixedHeight(28)
-        db_lay = QHBoxLayout(dur_badge); db_lay.setContentsMargins(12, 0, 12, 0); db_lay.setSpacing(6)
-        clock = QLabel("⏱"); clock.setFont(QFont("Segoe UI Emoji", 12))
-        clock.setStyleSheet("background: transparent;"); db_lay.addWidget(clock)
-        self._max_dur_lbl = QLabel()
-        self._max_dur_lbl.setFont(QFont(T.FONT, T.FS_SM, QFont.Weight.Bold))
-        self._max_dur_lbl.setStyleSheet(f"color: {T.AMBER_500}; background: transparent;")
-        db_lay.addWidget(self._max_dur_lbl)
-        dur_badge.setStyleSheet(f"QFrame {{ background: {T.AMBER_50}; border: 1px solid {T.AMBER_100}; border-radius: {T.R_FULL}px; }}")
-        dur_row.addWidget(dur_badge); lay.addLayout(dur_row)
-        dur_badge.setVisible(False)
-        self._dur_badge = dur_badge
-
-        lay.addSpacing(T.SP_2)
-
-        # Status pill
-        pill_row = QHBoxLayout(); pill_row.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._pill = QFrame(); self._pill.setFixedHeight(34)
-        p_lay = QHBoxLayout(self._pill); p_lay.setContentsMargins(14, 0, 18, 0); p_lay.setSpacing(T.SP_2)
-        self._pill_dot = _Dot(T.TEXT_400); p_lay.addWidget(self._pill_dot)
-        self._pill_lbl = _lbl("", T.FS_SM, bold=True, color=T.TEXT_600)
-        p_lay.addWidget(self._pill_lbl); pill_row.addWidget(self._pill); lay.addLayout(pill_row)
-
-        # Compte à rebours
-        self._countdown_lbl = _lbl("", T.FS_SM, bold=True, color=T.RED_600)
-        self._countdown_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._countdown_lbl.setVisible(False); lay.addWidget(self._countdown_lbl)
-
-        return card
-
-    # ── Buttons ───────────────────────────────────────────────────────────────
-
-    def _make_record_btn(self):
+    def _build_record_btn(self) -> QPushButton:
         btn = QPushButton()
-        btn.setFont(QFont(T.FONT, T.FS_MD, QFont.Weight.Bold)); btn.setMinimumHeight(54)
+        f = QFont(T.FONT, T.FS_MD)
+        f.setBold(True)
+        btn.setFont(f)
+        btn.setMinimumHeight(58)
         btn.setCursor(Qt.CursorShape.PointingHandCursor)
         btn.setStyleSheet(StarkTheme.get_button_style("primary"))
-        s = QGraphicsDropShadowEffect(); s.setBlurRadius(22); s.setOffset(0, 6)
-        s.setColor(QColor(6, 182, 212, 70)); btn.setGraphicsEffect(s)
+        eff = QGraphicsDropShadowEffect()
+        eff.setBlurRadius(24)
+        eff.setOffset(0, 6)
+        eff.setColor(QColor(79, 70, 229, 60))
+        btn.setGraphicsEffect(eff)
         btn.clicked.connect(self._toggle_record)
         btn.setEnabled(False)
         return btn
 
-    def _make_end_btn(self):
-        btn = QPushButton()
-        btn.setFont(QFont(T.FONT, T.FS_SM, QFont.Weight.DemiBold)); btn.setMinimumHeight(42)
-        btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn.setStyleSheet(StarkTheme.get_button_style("danger"))
-        btn.clicked.connect(self.end_interview.emit); return btn
+    # ── i18n ──────────────────────────────────────────────────────
 
-    # ── Enregistrement ────────────────────────────────────────────────────────
+    def t(self, key, **kwargs):
+        tpl = TEXTS.get(self._lang, TEXTS["fr"]).get(key, key)
+        return tpl.format(**kwargs) if kwargs else tpl
+
+    def set_language(self, lang: str):
+        self._lang = lang
+        self._apply()
+
+    def _apply(self):
+        self._header.set_text(self.t("section"))
+        self._info_card.set_title(self.t("listen_title"))
+        self._info_card.set_sub(self.t("listen_sub"))
+        self._update_dur_label()
+        self.record_btn.setText(
+            self.t("stop") if self.is_recording else self.t("start")
+        )
+        self.end_btn.setText(self.t("end"))
+        self._info_card.set_status("waiting", self.t("waiting"))
+        ltr = Qt.LayoutDirection.RightToLeft if self._lang == "ar" \
+              else Qt.LayoutDirection.LeftToRight
+        self.setLayoutDirection(ltr)
+
+    def _update_dur_label(self):
+        m = self._max_secs // 60
+        s = self._max_secs % 60
+        self._info_card.set_duration_label(self.t("max_duration", m=m, s=s))
+
+    # ── Record logic ──────────────────────────────────────────────
 
     def _toggle_record(self):
         if not self.is_recording:
@@ -293,108 +610,105 @@ class InterviewWidget(QWidget):
             self._stop_rec(auto=False)
 
     def _start_rec(self):
-        self.is_recording    = True
-        self._remaining_secs = self._max_recording_secs
+        self.is_recording  = True
+        self._remaining    = self._max_secs
         self.start_recording.emit()
+        self._header.set_recording(True)
         self._set_recording_style(True)
-        self._set_status("recording")
-        self._countdown_lbl.setVisible(True)
-        self._update_countdown_label()
+        self._info_card.set_status("recording", "● " + self.t("stop"))
+        self._info_card.set_countdown(
+            self.t("recording_left", s=self._remaining),
+            T.RED_500
+        )
         self._countdown_timer.start()
 
     def _stop_rec(self, auto: bool = False):
         self._countdown_timer.stop()
         self.is_recording = False
         self.stop_recording.emit()
+        self._header.set_recording(False)
         self._set_recording_style(False)
         self.record_btn.setEnabled(False)
-        self._countdown_lbl.setVisible(False)
+        self._info_card.set_countdown("", "")
         if auto:
-            self._set_status("waiting")
-            self._pill_lbl.setText(self.t("time_up"))
-            self._pill_lbl.setStyleSheet(f"color: {T.RED_600}; font-weight: 600; background: transparent;")
+            self._info_card.set_status("waiting", "")
+            self._info_card.set_pill_text(self.t("time_up"))
         else:
-            self._set_status("waiting")
+            self._info_card.set_status("waiting", self.t("waiting"))
 
-    def _on_countdown_tick(self):
-        self._remaining_secs -= 1
-        self._update_countdown_label()
-        if self._remaining_secs <= 0:
+    def _on_tick(self):
+        self._remaining -= 1
+        s = self._remaining
+        color = T.TEXT_600 if s > 30 else (T.AMBER_500 if s > 10 else T.RED_500)
+        text = self.t("recording_left", s=s)
+        self._info_card.set_countdown(text, color)
+        self._info_card.set_pill_text(text)
+        if s <= 0:
             self._stop_rec(auto=True)
-
-    def _update_countdown_label(self):
-        s     = self._remaining_secs
-        color = T.TEXT_600 if s > 30 else (T.AMBER_500 if s > 10 else T.RED_600)
-        self._countdown_lbl.setText(self.t("recording_left", s=s))
-        self._countdown_lbl.setStyleSheet(f"color: {color}; font-weight: 700; background: transparent;")
-        self._pill_lbl.setText(self.t("recording_left", s=s))
-        self._pill_lbl.setStyleSheet(f"color: {T.RED_600}; font-weight: 600; background: transparent;")
 
     def _set_recording_style(self, recording: bool):
         if recording:
             self.record_btn.setText(self.t("stop"))
             self.record_btn.setStyleSheet(f"""
                 QPushButton {{
-                    background: {T.RED_50}; color: {T.RED_600};
-                    border: 1px solid #FECACA; border-radius: {T.R_MD}px;
-                    padding: 12px 28px; font-size: {T.FS_MD}px; font-weight: 700;
+                    background: qlineargradient(x1:0,y1:0,x2:1,y2:0,
+                        stop:0 {T.RED_500},stop:1 {T.RED_600});
+                    color: {T.TEXT_WHITE};
+                    border: none;
+                    border-radius: {T.R_MD}px;
+                    padding: 14px 30px;
+                    font-size: {T.FS_MD}px;
+                    font-weight: 700;
+                    letter-spacing: 0.5px;
+                    font-family: {T.FONT};
                 }}
                 QPushButton:hover {{
                     background: qlineargradient(x1:0,y1:0,x2:1,y2:0,
-                        stop:0 {T.RED_500},stop:1 {T.RED_600});
-                    color: white; border: none;
+                        stop:0 {T.RED_600},stop:1 {T.RED_700});
                 }}
-                QPushButton:pressed {{ background: {T.RED_700}; padding-top: 13px; padding-bottom: 11px; }}
+                QPushButton:pressed {{
+                    padding-top: 15px; padding-bottom: 13px;
+                    background: {T.RED_700};
+                }}
             """)
-            self._dot.set_color(T.RED_500)
+            eff = QGraphicsDropShadowEffect()
+            eff.setBlurRadius(24)
+            eff.setOffset(0, 6)
+            eff.setColor(QColor(220, 38, 38, 70))
+            self.record_btn.setGraphicsEffect(eff)
         else:
             self.record_btn.setText(self.t("start"))
             self.record_btn.setStyleSheet(StarkTheme.get_button_style("primary"))
-            self._dot.set_color(T.CYAN_500)
+            eff = QGraphicsDropShadowEffect()
+            eff.setBlurRadius(24)
+            eff.setOffset(0, 6)
+            eff.setColor(QColor(79, 70, 229, 60))
+            self.record_btn.setGraphicsEffect(eff)
 
-    # ── Status pill ───────────────────────────────────────────────────────────
-
-    _STATUS_CFG = {
-        "waiting":   (T.TEXT_400,  T.BG_PAGE,  T.BORDER,    T.TEXT_400,  "waiting"),
-        "playing":   (T.AMBER_500, T.AMBER_50, T.AMBER_100, T.AMBER_500, "playing"),
-        "ready":     (T.GREEN_500, T.GREEN_50, T.GREEN_100, T.GREEN_700, "ready"),
-        "recording": (T.RED_500,   T.RED_50,   T.RED_100,   T.RED_600,   "stop"),
-    }
-
-    def _set_status(self, state: str):
-        dot_c, bg, border, text_c, text_k = self._STATUS_CFG.get(state, self._STATUS_CFG["waiting"])
-        self._pill_dot.set_color(dot_c)
-        self._pill.setStyleSheet(f"QFrame {{ background: {bg}; border: 1px solid {border}; border-radius: {T.R_FULL}px; }}")
-        self._pill_lbl.setText(self.t(text_k))
-        self._pill_lbl.setStyleSheet(f"color: {text_c}; font-weight: 600; background: transparent;")
-
-    # ── API publique ──────────────────────────────────────────────────────────
+    # ── Public API ────────────────────────────────────────────────
 
     def set_max_recording_seconds(self, seconds: int):
-        self._max_recording_secs = max(10, seconds)
-        self._remaining_secs     = self._max_recording_secs
-        self._update_max_duration_label()
-        self._dur_badge.setVisible(True)
+        self._max_secs   = max(10, seconds)
+        self._remaining  = self._max_secs
+        self._update_dur_label()
 
     def update_question(self, progress: dict):
         c = progress.get("current", 0)
         t = progress.get("total",   0)
         p = progress.get("percentage", 0)
-        self._prog_lbl.setText(self.t("progress", c=c, t=t))
-        self._pct_lbl.setText(f"{p} %")
-        self.progress_bar.setValue(p)
-        self._set_status("playing")
+        self._progress_card.update(c, t, p)
+        self._info_card.set_status("playing", self.t("playing"))
         self.record_btn.setEnabled(False)
         self.record_btn.setText(self.t("start"))
         self.record_btn.setStyleSheet(StarkTheme.get_button_style("primary"))
-        self._dot.set_color(T.CYAN_500)
+        self._header.set_recording(False)
 
     def set_audio_playing(self):
-        self._set_status("playing")
+        self._info_card.set_status("playing", self.t("playing"))
         self.record_btn.setEnabled(False)
 
     def set_ready_to_answer(self):
-        self._set_status("ready")
+        self._info_card.set_status("ready", self.t("ready"))
 
     def enable_recording(self, enabled: bool):
         if enabled:
@@ -404,5 +718,4 @@ class InterviewWidget(QWidget):
             if self.is_recording:
                 self._stop_rec(auto=False)
             self.record_btn.setEnabled(False)
-            self._set_status("waiting")
-
+            self._info_card.set_status("waiting", self.t("waiting"))
