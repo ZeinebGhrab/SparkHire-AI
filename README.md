@@ -9,7 +9,7 @@
 [![MediaPipe](https://img.shields.io/badge/MediaPipe-FaceMesh-blue)]()
 [![HSEmotion](https://img.shields.io/badge/Emotion-HSEmotion-red)]()
 [![Edge-TTS](https://img.shields.io/badge/TTS-Edge-TTS-0078D4)]()
-[![gTTS](https://img.shields.io/badge/TTS-gTTS-00C0FF)]()
+[![gTTS](https://img.shields.io/badge/TTS-gTTS-00C0FF?logo=microphone&logoColor=white)]()
 [![PySide6](https://img.shields.io/badge/PySide6-Desktop_App-41CD52?logo=qt&logoColor=white)]()
 [![License](https://img.shields.io/badge/license-Proprietary-lightgrey.svg)]()
 [![Stars](https://img.shields.io/github/stars/ZeinebGhrab/sparkhire-ai?style=social)]()
