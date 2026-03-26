@@ -1879,7 +1879,7 @@ The behavioral analysis component is framed as a **supplementary observational i
 
 ## License & Contact
 
-**Proprietary** — SparkHire AI (c) 2026  
+**Proprietary** — SparkHire AI © 2026  
 ENET'Com Sfax — Data Engineering & Decisional Systems
 
 **Author:** Zeineb Ghrab  
