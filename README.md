@@ -1,6 +1,6 @@
 # ⚡ SparkHire AI — Intelligent Vocal Interview Platform
 
-> **Final Year Engineering Project (PFA)** · Data Engineering & Decision Systems · ENET'Com Sfax · 2025–2026
+> **Final Year Engineering Project (PFA)** · Data Engineering & Decisional Systems · ENET'Com Sfax · 2025–2026
 
 ---
 
@@ -256,7 +256,7 @@ Score is **weighted**: `Σ(score_i × weight_i) / Σ(weight_i)`
 
 | Module | README |
 |---|---|
-| 📘 **Full Technical Documentation** | [`docs/README.md`](docs/README.md) |
+| Full Technical Documentation | [`docs/README.md`](docs/README.md) |
 | Backend (API, routes, DB) | [`backend/README.md`](backend/README.md) |
 | AI Services (ASR, TTS, LLM, Facial) | [`backend/services/README.md`](backend/services/README.md) |
 | Evaluation Pipeline | [`backend/evaluation/README.md`](backend/evaluation/README.md) |
