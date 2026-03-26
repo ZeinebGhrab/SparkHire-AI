@@ -534,7 +534,7 @@ class MainWindow(QMainWindow):
         tag.setStyleSheet(f"""
             color: {T.INDIGO_500};
             background: {T.INDIGO_50};
-            border: 1px solid {T.INDIGO_200};
+            border: 2px  {T.INDIGO_200};
             border-radius: {T.R_FULL}px;
             padding: 4px 14px;
             letter-spacing: 2.5px;
