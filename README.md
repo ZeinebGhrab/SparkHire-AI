@@ -24,6 +24,51 @@ Candidate speaks
 
 ---
 
+## Features
+
+### Core Interview
+- 🎙️ Automated voice interview with animated HR avatar
+- 🌍 Trilingual: **Arabic / French / English**
+- 🔁 Smart follow-up questions when answer score < 8
+- ⏱️ Per-question timer (configurable, default 90 s) with auto-stop
+- 🎛️ Recording starts automatically after question audio ends
+- 🔄 Reconnection support — resumes at current question if `in_progress`
+- 🗓️ Interview scheduling with 30-minute late access window
+
+### AI Pipeline
+- 🧠 **ASR** — faster-whisper (GPU-accelerated, ~1–3 s/answer)
+- 📝 **LLM evaluation** — Ollama + Llama 3.2, strict grading scale 0–10, duration-aware scoring
+- 🔊 **TTS** — Edge-TTS 7.x (primary) + gTTS (automatic fallback)
+- ⚡ TTS prefetch — next question generated while candidate answers current one
+- 😊 **Facial analysis** — HSEmotion EfficientNet-B0 (~82%) + MediaPipe FaceMesh
+
+### Privacy & Data
+- 🔒 All behavioral metrics stored in MongoDB — never sent to candidate
+- 📊 Global HR report with per-answer facial summary + hiring decision
+- 🔔 Automatic recruiter notification on interview completion
+
+### Platform
+- 🔐 JWT authentication for recruiters
+- 🖥️ PySide6 desktop client (Windows / Linux / macOS)
+- 🗃️ MongoDB — candidates, positions, sessions, evaluations, notifications
+- 📤 CSV / JSON export + analytics dashboard
+
+---
+
+## System Requirements
+
+| Software | Version | Role |
+|---|---|---|
+| Python | 3.10 or 3.11 | Main runtime |
+| MongoDB | 7.x Community | Data persistence |
+| Ollama | latest | Local LLM server |
+| FFmpeg | 6.0+ | Audio conversion (gTTS fallback) |
+| CUDA Toolkit | 11.x or 12.x | GPU acceleration (optional) |
+
+> **Windows only:** VS C++ Build Tools 2022 required to compile PyAudio.
+
+---
+
 ## Project Structure
 
 ```
@@ -63,20 +108,6 @@ sparkhire-ai/
 ├── models/                          ← Whisper / ffmpeg models
 └── assets/videos/                   ← HR avatar videos
 ```
-
----
-
-## System Requirements
-
-| Software | Version | Role |
-|---|---|---|
-| Python | 3.10 or 3.11 | Main runtime |
-| MongoDB | 7.x Community | Data persistence |
-| Ollama | latest | Local LLM server |
-| FFmpeg | 6.0+ | Audio conversion (gTTS fallback) |
-| CUDA Toolkit | 11.x or 12.x | GPU acceleration (optional) |
-
-> **Windows only:** VS C++ Build Tools 2022 required to compile PyAudio.
 
 ---
 
