@@ -1,5 +1,16 @@
 # ⚡ SparkHire AI — Intelligent Vocal Interview Platform
 
+[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)]()
+[![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)]()
+[![FastAPI](https://img.shields.io/badge/FastAPI-Backend-009688?logo=fastapi&logoColor=white)]()
+[![MongoDB](https://img.shields.io/badge/MongoDB-Database-47A248?logo=mongodb&logoColor=white)]()
+[![Whisper](https://img.shields.io/badge/ASR-Whisper-orange)]()
+[![Llama](https://img.shields.io/badge/LLM-Llama%203.2-purple)]()
+[![MediaPipe](https://img.shields.io/badge/MediaPipe-FaceMesh-blue)]()
+[![HSEmotion](https://img.shields.io/badge/Emotion-HSEmotion-red)]()
+[![PySide6](https://img.shields.io/badge/PySide6-Desktop_App-41CD52?logo=qt&logoColor=white)]()
+[![License](https://img.shields.io/badge/license-Proprietary-lightgrey.svg)]()
+
 > **Final Year Engineering Project (PFA)** · Data Engineering & Decisional Systems · ENET'Com Sfax · 2025–2026
 
 ---
