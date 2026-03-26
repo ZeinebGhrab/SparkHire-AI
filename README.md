@@ -21,32 +21,6 @@
 
 ---
 
-## 📑 Table of Contents
-
-- [Overview](#overview)
-- [Features](#features)
-  - [Core Interview](#core-interview)
-  - [AI Pipeline](#ai-pipeline)
-  - [Privacy & Data](#privacy--data)
-  - [Platform](#platform)
-- [System Requirements](#system-requirements)
-- [Project Structure](#project-structure)
-- [Quick Installation](#quick-installation)
-- [Running the Application](#running-the-application)
-- [Global Architecture](#global-architecture)
-  - [Data Pipeline](#data-pipeline)
-  - [Score & Decision](#score--decision)
-  - [LLM Grading Scale](#llm-grading-scale)
-- [Technology Stack](#technology-stack)
-- [Measured Performance](#measured-performance-rtx-4050-laptop)
-- [Diagrams](#diagrams)
-- [Detailed Documentation](#detailed-documentation)
-- [Academic Context](#academic-context)
-- [Support & Contribution](#support--contribution)
-- [License & Contact](#license--contact)
-
----
-
 ## Overview
 
 SparkHire AI automates first-round recruitment interviews. A candidate connects through the desktop client, answers questions delivered by a TTS avatar, and the platform evaluates responses using a local LLM. In parallel, a computer vision pipeline analyzes facial behavior and stores metrics exclusively on the HR side.
