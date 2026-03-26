@@ -11,6 +11,8 @@
 [![PySide6](https://img.shields.io/badge/PySide6-Desktop_App-41CD52?logo=qt&logoColor=white)]()
 [![License](https://img.shields.io/badge/license-Proprietary-lightgrey.svg)]()
 
+> AI-powered voice interview platform with real-time multimodal evaluation (ASR + LLM + Computer Vision)
+
 > **Final Year Engineering Project (PFA)** · Data Engineering & Decisional Systems · ENET'Com Sfax · 2025–2026
 
 ---
