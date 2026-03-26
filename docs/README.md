@@ -762,7 +762,7 @@ EvaluationService.evaluate_full_session(session_id, language)
 |      +-- dominant_emotion: most frequent across all answers
 |
 +-- 5. Weighted average
-|      Sigma(score_i * weight_i) / Sigma(weight_i)
+|      Σ(score_i * weight_i) / Σ(weight_i)
 |
 +-- 6. LLM global summary
 |      generate_global_summary() -> recommendation, decision_reason,
@@ -1747,7 +1747,7 @@ The design follows a Stripe/Linear-inspired aesthetic: white cards on off-white 
 ### Weighted Average Formula
 
 ```
-average_score = Sigma(score_i * weight_i) / Sigma(weight_i)
+average_score = Σ(score_i * weight_i) / Σ(weight_i)
 ```
 
 **Worked example — 3 questions with weights 1, 2, 3:**
