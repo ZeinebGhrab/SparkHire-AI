@@ -278,11 +278,11 @@ After each complete evaluation, `_save_evaluation()` performs two MongoDB operat
 ### Flow 3 — Global Evaluation & Hiring Decision
 
 <p align="center">
-  <img src="../docs/3.3 Global Evaluation & Hiring Decision.png" width="50%" alt="Global Evaluation and Hiring Decision"/>
+  <img src="../../docs/3.3 Global Evaluation & Hiring Decision.png" width="50%" alt="Global Evaluation and Hiring Decision"/>
 </p>
 
 ### Activity A4 — Global Evaluation & HR Report
 
 <p align="center">
-  <img src="../docs/A4. Global Evaluation & HR Report.png" width="50%" alt="Global Evaluation and HR Report"/>
+  <img src="../../docs/A4. Global Evaluation & HR Report.png" width="50%" alt="Global Evaluation and HR Report"/>
 </p>

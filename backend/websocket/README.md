@@ -343,11 +343,11 @@ Four dedicated `ThreadPoolExecutor` instances prevent blocking the asyncio event
 ### Flow 1 — Session Access Validation
 
 <p align="center">
-  <img src="../docs/1.3 Session Access Validation.png" width="50%" alt="Session Access Validation"/>
+  <img src="../../docs/1.3 Session Access Validation.png" width="50%" alt="Session Access Validation"/>
 </p>
 
 ### Flow 2 — Real-Time Interview
 
 <p align="center">
-  <img src="../docs/2.3 Real-Time Interview.png" width="60%" alt="Real-Time Interview"/>
+  <img src="../../docs/2.3 Real-Time Interview.png" width="60%" alt="Real-Time Interview"/>
 </p>
