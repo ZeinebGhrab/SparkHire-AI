@@ -1,6 +1,6 @@
 # ⚡ SparkHire AI — Intelligent Vocal Interview Platform
 
-> **Final Year Engineering Project (PFE)** · Data Engineering & Decision Systems · ENET'Com Sfax · 2025–2026
+> **Final Year Engineering Project (PFA)** · Data Engineering & Decision Systems · ENET'Com Sfax · 2025–2026
 
 ---
 
@@ -143,8 +143,8 @@ python -m client.main
 PySide6 Client                Backend FastAPI               MongoDB
       │                             │                          │
       ├── video_frame (JPEG) ──────►│                          │
-      ├── audio_chunk (PCM) ────────►│                         │
-      ├── answer_complete ──────────►│                         │
+      ├── audio_chunk (PCM) ───────►│                          │
+      ├── answer_complete ─────────►│                          │
       │                             ├── MediaPipe + HSEmotion  │
       │                             ├── Whisper ASR            │
       │                             ├── Llama 3.2 evaluation   │
