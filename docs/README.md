@@ -1,6 +1,6 @@
 # ⚡ SparkHire AI — Intelligent Vocal Interview Platform
 
-> **Final Year Engineering Project (PFA)** · Data Engineering & Decision Systems · ENET'Com Sfax · 2025–2026  
+> **Final Year Engineering Project (PFA)** · Data Engineering & Decisional Systems · ENET'Com Sfax · 2025–2026  
 > **Author:** Zeineb Ghrab · `zeineb.ghrab@enetcom.u-sfax.tn`  
 > **Stack:** FastAPI · MongoDB · Whisper · Llama 3.2 · MediaPipe · HSEmotion · PySide6
 
