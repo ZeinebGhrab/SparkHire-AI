@@ -323,17 +323,17 @@ Each service exposes a `get_*_service()` function returning a unique instance in
 ### Activity A1 — Facial Analysis Pipeline
 
 <p align="center">
-  <img src="../docs/A1. Facial Analysis Pipeline.png" width="50%" alt="Facial Analysis Pipeline"/>
+  <img src="../../docs/A1. Facial Analysis Pipeline.png" width="50%" alt="Facial Analysis Pipeline"/>
 </p>
 
 ### Activity A2 — ASR + LLM Evaluation
 
 <p align="center">
-  <img src="../docs/A2. ASR + LLM Evaluation.png" width="50%" alt="ASR + LLM Evaluation"/>
+  <img src="../../docs/A2. ASR + LLM Evaluation.png" width="50%" alt="ASR + LLM Evaluation"/>
 </p>
 
 ### Activity A3 — TTS Synthesis
 
 <p align="center">
-  <img src="../docs/A3. TTS Synthesis.png" width="40%" alt="TTS Synthesis"/>
+  <img src="../../docs/A3. TTS Synthesis.png" width="40%" alt="TTS Synthesis"/>
 </p>
