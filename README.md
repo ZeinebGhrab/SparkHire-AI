@@ -38,6 +38,7 @@
 - [Diagrams](#diagrams)
 - [Detailed Documentation](#detailed-documentation)
 - [Academic Context](#academic-context)
+- [Support & Contribution](#support--contribution)
 - [License & Contact](#license--contact)
 
 ---
@@ -316,7 +317,7 @@ Score is **weighted**: `Σ(score_i × weight_i) / Σ(weight_i)`
 
 ---
 
-## ⭐ Support & Contribution
+## Support & Contribution
 
 If you like this project, please consider giving it a ⭐.
 
