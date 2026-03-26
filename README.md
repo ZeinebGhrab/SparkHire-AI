@@ -300,6 +300,7 @@ Score is **weighted**: `Σ(score_i × weight_i) / Σ(weight_i)`
 If you like this project, please consider giving it a ⭐.
 
 Contributions are highly welcome!  
+
 Feel free to:
 - Fork the repository
 - Create a new branch
