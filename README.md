@@ -321,6 +321,8 @@ For major changes, please open an issue first to discuss what you would like to 
 **Proprietary** — SparkHire AI © 2026  
 `zeineb.ghrab@enetcom.u-sfax.tn`
 
+---
+
 ## 👤 Author
 
 **Zeineb Ghrab**  
