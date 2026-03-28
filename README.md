@@ -15,15 +15,21 @@
 [![Stars](https://img.shields.io/github/stars/ZeinebGhrab/sparkhire-ai?style=social)]()
 [![Forks](https://img.shields.io/github/forks/ZeinebGhrab/sparkhire-ai?style=social)]()
 
-> AI-powered voice interview platform with real-time multimodal evaluation (ASR + LLM + Computer Vision)
+ 🚀 AI-powered platform for automated voice interviews with real-time multimodal evaluation (ASR · LLM · Computer Vision)
 
-> **Final Year Engineering Project (PFA)** · Data Engineering & Decisional Systems · ENET'Com Sfax · 2025–2026
+> 🎓 Final Year Engineering Project (PFA) — Data Engineering & Decisional Systems · ENET'Com Sfax · 2025–2026
 
 ---
 
 ## Overview
 
-SparkHire AI automates first-round recruitment interviews. A candidate connects through the desktop client, answers questions delivered by a TTS avatar, and the platform evaluates responses using a local LLM. In parallel, a computer vision pipeline analyzes facial behavior and stores metrics exclusively on the HR side.
+**SparkHire AI** automates first-round technical and HR interviews using a fully integrated AI pipeline.
+
+Candidates interact with a voice-based avatar through a desktop application, answering dynamic interview questions. Their responses are transcribed, evaluated, and enriched with behavioral insights in real time.
+
+Meanwhile, recruiters receive a comprehensive evaluation report powered by AI — combining linguistic analysis, scoring logic, and facial behavior metrics.
+
+### 🔄 AI Processing Pipeline
 
 ```
 Candidate speaks
@@ -43,32 +49,32 @@ Candidate speaks
 
 ## Features
 
-### Core Interview
-- 🎙️ Automated voice interview with animated HR avatar
-- 🌍 Trilingual: **Arabic / French / English**
-- 🔁 Smart follow-up questions when answer score < 8
-- ⏱️ Per-question timer (configurable, default 90 s) with auto-stop
-- 🎛️ Recording starts automatically after question audio ends
-- 🔄 Reconnection support — resumes at current question if `in_progress`
-- 🗓️ Interview scheduling with 30-minute late access window
+### 🎙️ Interview Experience
+- Automated voice-based interview with animated HR avatar  
+- Trilingual support: **Arabic · French · English**  
+- Dynamic follow-up questions (triggered when score < 8)  
+- Configurable response timer (default: 90 seconds)  
+- Automatic recording synchronization with TTS  
+- Session recovery & reconnection support  
+- Interview scheduling with late access tolerance  
 
-### AI Pipeline
-- 🧠 **ASR** — faster-whisper (GPU-accelerated, ~1–3 s/answer)
-- 📝 **LLM evaluation** — Ollama + Llama 3.2, strict grading scale 0–10, duration-aware scoring
-- 🔊 **TTS** — Edge-TTS 7.x (primary) + gTTS (automatic fallback)
-- ⚡ TTS prefetch — next question generated while candidate answers current one
-- 😊 **Facial analysis** — HSEmotion EfficientNet-B0 (~82%) + MediaPipe FaceMesh
+### 🧠 AI Pipeline
+- **ASR**: faster-whisper (GPU-accelerated)  
+- **LLM Evaluation**: Llama 3.2 via Ollama (structured scoring)  
+- **TTS**: Edge-TTS (primary) + gTTS (fallback)  
+- **Prefetching**: next question generated during answer processing  
+- **Facial Analysis**: MediaPipe FaceMesh + HSEmotion  
 
-### Privacy & Data
-- 🔒 All behavioral metrics stored in MongoDB — never sent to candidate
-- 📊 Global HR report with per-answer facial summary + hiring decision
-- 🔔 Automatic recruiter notification on interview completion
+### 🔐 Data & Privacy
+- Behavioral metrics stored securely (HR-only access)  
+- Global evaluation reports with decision support  
+- Recruiter notification system  
 
-### Platform
-- 🔐 JWT authentication for recruiters
-- 🖥️ PySide6 desktop client (Windows / Linux / macOS)
-- 🗃️ MongoDB — candidates, positions, sessions, evaluations, notifications
-- 📤 CSV / JSON export + analytics dashboard
+### ⚙️ Platform
+- FastAPI backend with JWT authentication  
+- Cross-platform desktop client (PySide6)  
+- MongoDB data storage  
+- Export (CSV / JSON) + analytics dashboard  
 
 ---
 
@@ -314,3 +320,11 @@ For major changes, please open an issue first to discuss what you would like to 
 
 **Proprietary** — SparkHire AI © 2026  
 `zeineb.ghrab@enetcom.u-sfax.tn`
+
+## 👤 Author
+
+**Zeineb Ghrab**  
+Data & Decisional Systems Engineer Student  
+ENET'Com Sfax  
+
+🔗 Open to AI / Data Engineering opportunities
