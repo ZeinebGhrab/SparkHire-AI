@@ -16,6 +16,16 @@ backend/evaluation/
 The REST API is exposed in `backend/evaluation/routes.py`.
 
 ---
+ 
+## Files
+ 
+| File | Description |
+|---|---|
+| `models.py` | Pydantic models: `AnswerEvaluation`, `GlobalEvaluation`, decision helpers |
+| `service.py` | `EvaluationService` — full orchestration logic |
+| `routes.py` | REST API endpoints |
+
+---
 
 ## Data Models
 

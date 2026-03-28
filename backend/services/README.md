@@ -18,6 +18,19 @@ backend/services/
 
 ---
 
+## Files
+ 
+| File | Description |
+|---|---|
+| `asr_service.py` | Speech recognition (Whisper GPU / Vosk offline) |
+| `tts_service.py` | Speech synthesis (Edge-TTS primary + gTTS fallback) |
+| `edge_tts_engine.py` | Edge-TTS engine with network retry logic |
+| `llm_service.py` | LLM evaluation via Ollama + Llama 3.2 |
+| `facial_analysis_service.py` | Behavioral analysis (MediaPipe + HSEmotion) |
+| `avatar_service.py` | Avatar video provider (simple / D-ID stub) |
+ 
+---
+
 ## 1. ASR — Speech Recognition
 
 **File:** `asr_service.py`
