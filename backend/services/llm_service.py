@@ -3,6 +3,7 @@ Service LLM — Évaluation des réponses via Ollama + Llama 3
 Pipeline: Transcription → LLM → Score / Feedback multilingue
 + Génération de questions de suivi si la réponse est floue
 + Intégration des données du langage corporel facial (DeepFace + MediaPipe)
++ Calibration RH : injection des corrections passées dans le system prompt
 """
 
 import json
@@ -398,23 +399,11 @@ def _build_duration_context(
     max_duration_seconds: float,
     language: str,
 ) -> str:
-    """
-    Construit le bloc de contexte durée à injecter dans le prompt LLM.
-
-    Retourne une chaîne vide si :
-      - duration_seconds <= 0
-      - max_duration_seconds <= 0
-
-    Le ratio d'utilisation guide le LLM pour moduler le score :
-      < 20%  → pénalité possible si contenu pauvre
-      40–90% → neutre (idéal)
-      > 90%  → léger bonus si contenu riche
-    """
     if duration_seconds <= 0 or max_duration_seconds <= 0:
         return ""
 
-    lang  = language if language in ("ar", "fr", "en") else "fr"
-    ratio = min(1.0, duration_seconds / max_duration_seconds)
+    lang      = language if language in ("ar", "fr", "en") else "fr"
+    ratio     = min(1.0, duration_seconds / max_duration_seconds)
     ratio_pct = int(ratio * 100)
 
     def _fmt(secs: float) -> str:
@@ -423,24 +412,13 @@ def _build_duration_context(
 
     tpl = _DURATION_CONTEXT_PROMPT.get(lang, _DURATION_CONTEXT_PROMPT["fr"])
     return tpl.format(
-        duration_str = _fmt(duration_seconds),
-        max_str      = _fmt(max_duration_seconds),
-        ratio_pct    = ratio_pct,
+        duration_str=_fmt(duration_seconds),
+        max_str=_fmt(max_duration_seconds),
+        ratio_pct=ratio_pct,
     )
 
 
 def _build_facial_context(facial_metrics, language: str) -> str:
-    """
-    Construit le bloc de contexte facial à injecter dans le prompt LLM.
-
-    Retourne une chaîne vide si :
-      - facial_metrics est None
-      - face_detection_rate < 0.3 (données trop peu fiables)
-      - frames_analyzed == 0
-
-    Ce bloc est simplement concaténé à la fin du system prompt —
-    le LLM l'intègre naturellement sans instruction supplémentaire.
-    """
     if facial_metrics is None:
         return ""
 
@@ -448,18 +426,14 @@ def _build_facial_context(facial_metrics, language: str) -> str:
     frames_total   = getattr(facial_metrics, "frames_analyzed", 0)
 
     if detection_rate < 0.3 or frames_total == 0:
-        return ""   # Qualité insuffisante — ne pas biaiser le LLM
+        return ""
 
-    lang = language if language in ("ar", "fr", "en") else "fr"
-    tpl  = _FACIAL_CONTEXT_PROMPT.get(lang, _FACIAL_CONTEXT_PROMPT["fr"])
-
-    # Stabilité : head_stability > 0.6 = bonne posture
+    lang     = language if language in ("ar", "fr", "en") else "fr"
+    tpl      = _FACIAL_CONTEXT_PROMPT.get(lang, _FACIAL_CONTEXT_PROMPT["fr"])
     stable   = getattr(facial_metrics, "head_stability", 1.0) > 0.6
     stab_lbl = _STABILITY_LABELS.get(lang, _STABILITY_LABELS["fr"])[stable]
-
-    # Émotion dominante traduite
-    dom_raw = getattr(facial_metrics, "dominant_emotion", "neutral")
-    dom_lbl = _EMOTION_LABELS.get(lang, _EMOTION_LABELS["fr"]).get(dom_raw, dom_raw)
+    dom_raw  = getattr(facial_metrics, "dominant_emotion", "neutral")
+    dom_lbl  = _EMOTION_LABELS.get(lang, _EMOTION_LABELS["fr"]).get(dom_raw, dom_raw)
 
     return tpl.format(
         dominant_emotion  = dom_lbl,
@@ -472,6 +446,147 @@ def _build_facial_context(facial_metrics, language: str) -> str:
         frames_with_face  = getattr(facial_metrics, "frames_with_face", 0),
         frames_total      = frames_total,
     )
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# CALIBRATION RH — Contexte few-shot injecté dans le prompt
+# ═════════════════════════════════════════════════════════════════════════════
+
+def _build_calibration_context(corrections: list, language: str) -> str:
+    """
+    Construit le bloc de calibration RH à injecter dans le system prompt.
+
+    Prend les corrections RH passées (score corrigé, forces validées, commentaire)
+    et les formate en exemples few-shot compréhensibles par le LLM.
+
+    Retourne une chaîne vide si :
+      - la liste est vide
+      - aucune correction n'a de delta >= 0.5 pt ni de commentaire significatif
+
+    Le bloc est conçu pour être concaténé directement après le system prompt
+    de base. Longueur typique : 200–600 tokens selon le nombre d'exemples.
+    """
+    if not corrections:
+        return ""
+
+    # Ne garder que les exemples instructifs
+    meaningful = [
+        c for c in corrections
+        if abs(c.get("corrected_score", 0) - c.get("original_score", 0)) >= 0.5
+        or c.get("hr_comment", "").strip()
+        or c.get("strengths_added", [])
+    ]
+    if not meaningful:
+        return ""
+
+    lang = language if language in ("ar", "fr", "en") else "fr"
+
+    _header = {
+        "fr": (
+            "\n\nCALIBRAGE RH — L'équipe RH a validé les évaluations suivantes pour ce poste. "
+            "Adapte ton barème en conséquence :"
+        ),
+        "en": (
+            "\n\nHR CALIBRATION — The HR team has validated the following evaluations for this position. "
+            "Adjust your grading scale accordingly:"
+        ),
+        "ar": (
+            "\n\nمعايرة الموارد البشرية — قام فريق الموارد البشرية بالتحقق من التقييمات التالية لهذا المنصب. "
+            "اضبط معايير تقييمك وفقاً لذلك :"
+        ),
+    }
+
+    _direction = {
+        "fr": {
+            "up":   "LLM avait sous-évalué",
+            "down": "LLM avait sur-évalué",
+            "same": "score confirmé",
+        },
+        "en": {
+            "up":   "LLM had underscored",
+            "down": "LLM had overscored",
+            "same": "score confirmed",
+        },
+        "ar": {
+            "up":   "النموذج أعطى درجة أقل من اللازم",
+            "down": "النموذج أعطى درجة أعلى من اللازم",
+            "same": "الدرجة مؤكدة",
+        },
+    }
+
+    _footer = {
+        "fr": (
+            "\n→ Ces exemples définissent le niveau d'exigence RH pour ce poste. "
+            "Si une réponse ressemble à ces extraits, applique le même niveau de score."
+        ),
+        "en": (
+            "\n→ These examples define the HR expectation level for this position. "
+            "If an answer resembles these excerpts, apply the same scoring level."
+        ),
+        "ar": (
+            "\n→ هذه الأمثلة تحدد مستوى التوقعات لهذا المنصب. "
+            "إذا كانت الإجابة مشابهة لهذه المقتطفات، طبّق نفس مستوى التقييم."
+        ),
+    }
+
+    dir_labels = _direction[lang]
+    lines      = [_header[lang]]
+
+    for i, c in enumerate(meaningful, 1):
+        orig  = c.get("original_score", 0)
+        corr  = c.get("corrected_score", 0)
+        delta = corr - orig
+
+        direction = (
+            dir_labels["up"]   if delta >= 0.5  else
+            dir_labels["down"] if delta <= -0.5 else
+            dir_labels["same"]
+        )
+
+        strengths    = (c.get("strengths_validated", []) + c.get("strengths_added", []))[:3]
+        improvements = c.get("improvements_validated", [])[:3]
+        question     = (c.get("question_text", "") or "")[:120]
+        excerpt      = (c.get("transcript_excerpt", "") or "")[:150]
+        comment      = (c.get("hr_comment", "") or "")[:120]
+
+        if lang == "fr":
+            block = (
+                f"\nExemple {i} :\n"
+                f"  Question           : {question or '—'}\n"
+                f"  Extrait réponse    : « {excerpt or '—'} »\n"
+                f"  Score LLM initial  : {round(orig, 1)}/10 ({c.get('original_verdict', '')})\n"
+                f"  Score RH validé    : {round(corr, 1)}/10 — {direction}\n"
+                f"  Forces retenues    : {', '.join(strengths) if strengths else '—'}\n"
+                f"  Améliorations      : {', '.join(improvements) if improvements else '—'}\n"
+                f"  Commentaire RH     : {comment or '—'}"
+            )
+        elif lang == "en":
+            block = (
+                f"\nExample {i}:\n"
+                f"  Question           : {question or '—'}\n"
+                f"  Answer excerpt     : « {excerpt or '—'} »\n"
+                f"  Initial LLM score  : {round(orig, 1)}/10 ({c.get('original_verdict', '')})\n"
+                f"  HR validated score : {round(corr, 1)}/10 — {direction}\n"
+                f"  Strengths retained : {', '.join(strengths) if strengths else '—'}\n"
+                f"  Improvements       : {', '.join(improvements) if improvements else '—'}\n"
+                f"  HR comment         : {comment or '—'}"
+            )
+        else:  # ar
+            block = (
+                f"\nمثال {i} :\n"
+                f"  السؤال                : {question or '—'}\n"
+                f"  مقتطف الإجابة          : « {excerpt or '—'} »\n"
+                f"  درجة النموذج الأولية   : {round(orig, 1)}/10 ({c.get('original_verdict', '')})\n"
+                f"  الدرجة المعتمدة من RH  : {round(corr, 1)}/10 — {direction}\n"
+                f"  نقاط القوة             : {', '.join(strengths) if strengths else '—'}\n"
+                f"  محاور التحسين          : {', '.join(improvements) if improvements else '—'}\n"
+                f"  تعليق فريق التوظيف     : {comment or '—'}"
+            )
+
+        lines.append(block)
+
+    lines.append(_footer[lang])
+    return "\n".join(lines)
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -602,7 +717,7 @@ class OllamaLLMService:
         parsed["evaluated"] = True
         return parsed
 
-    # ── NOUVEAU — Évaluation enrichie avec langage corporel ───────────────────
+    # ── Évaluation enrichie : facial + durée + calibration RH ────────────────
 
     async def evaluate_with_facial(
         self,
@@ -613,41 +728,48 @@ class OllamaLLMService:
         facial_metrics=None,
         duration_seconds: float = 0.0,
         max_duration_seconds: float = 0.0,
+        calibration_corrections: list | None = None,   # ← NOUVEAU
     ) -> dict:
         """
-        Évalue une réponse en intégrant les données du langage corporel facial
-        ET la durée de réponse du candidat.
+        Évalue une réponse en intégrant :
+          1. Les données du langage corporel facial (MediaPipe + HSEmotion)
+          2. La durée de réponse relative au temps alloué
+          3. Les corrections RH passées pour ce poste (few-shot calibration)
+
+        Ordre d'injection dans le system prompt :
+          _SYSTEM_PROMPT_FOLLOWUP[lang]
+            + duration_context
+            + facial_context
+            + calibration_context    ← en dernier pour qu'il prime sur les autres
 
         Le contenu de la réponse reste prioritaire (80%).
-        Les données faciales enrichissent le feedback (20%).
-        La durée module le score selon le ratio d'utilisation du temps alloué :
-          - < 20% du temps → pénalité possible si contenu pauvre
-          - 40–90%         → neutre (idéal)
-          - > 90%          → bonus possible si contenu riche
-
-        Paramètres :
-            facial_metrics       : FacialMetrics | None
-            duration_seconds     : float — durée réelle de la réponse en secondes
-            max_duration_seconds : float — durée maximale autorisée pour cette question
+        Le comportement non-verbal enrichit le feedback (20%).
+        La calibration ajuste le niveau d'exigence sur ce poste spécifique.
         """
         lang = language if language in ("ar", "fr", "en") else "fr"
 
         if not answer or len(answer.strip()) < 5:
             result = dict(_EMPTY_ANSWER_RESULT[lang])
             result.update({
-                "llm_model":       self.model,
-                "evaluated":       True,
-                "needs_followup":  False,
+                "llm_model":         self.model,
+                "evaluated":         True,
+                "needs_followup":    False,
                 "followup_question": "",
             })
             return result
 
-        # Construire les contextes additionnels
-        duration_context = _build_duration_context(duration_seconds, max_duration_seconds, lang)
-        facial_context   = _build_facial_context(facial_metrics, lang)
+        # ── Construire les contextes additionnels ─────────────────────────────
+        duration_context    = _build_duration_context(duration_seconds, max_duration_seconds, lang)
+        facial_context      = _build_facial_context(facial_metrics, lang)
+        calibration_context = _build_calibration_context(calibration_corrections or [], lang)
 
-        # Injecter durée + facial à la fin du system prompt
-        system = _SYSTEM_PROMPT_FOLLOWUP[lang] + duration_context + facial_context
+        # Calibration en dernier : elle doit primer sur le barème de base
+        system = (
+            _SYSTEM_PROMPT_FOLLOWUP[lang]
+            + duration_context
+            + facial_context
+            + calibration_context
+        )
 
         user = _USER_PROMPT[lang].format(question=question, answer=answer)
         if position_title:
@@ -669,23 +791,83 @@ class OllamaLLMService:
             f"({int(min(1.0, duration_seconds / max_duration_seconds) * 100) if max_duration_seconds > 0 else '?'}%)"
             if duration_seconds > 0 else "durée=n/a"
         )
+        calib_info = (
+            f"calibration={len(calibration_corrections)} exemple(s)"
+            if calibration_corrections else "calibration=—"
+        )
         if facial_metrics and getattr(facial_metrics, "frames_with_face", 0) > 0:
             logger.info(
-                f"Évaluation+Facial [{lang}] | "
+                f"Évaluation+Facial+Calibration [{lang}] | "
                 f"score={parsed['score']}/10 | "
                 f"needs_followup={parsed['needs_followup']} | "
                 f"{dur_info} | "
                 f"émotion={getattr(facial_metrics, 'dominant_emotion', 'n/a')} | "
                 f"confiance={getattr(facial_metrics, 'confidence_score', 0)}/10 | "
                 f"stress={getattr(facial_metrics, 'stress_score', 0)}/10 | "
-                f"contact={int(getattr(facial_metrics, 'eye_contact_ratio', 0)*100)}%"
+                f"contact={int(getattr(facial_metrics, 'eye_contact_ratio', 0)*100)}% | "
+                f"{calib_info}"
             )
         else:
             logger.info(
-                f"Évaluation+Facial [{lang}] | "
+                f"Évaluation+Calibration [{lang}] | "
                 f"score={parsed['score']}/10 | "
-                f"{dur_info} | "
-                f"données faciales: absentes ou qualité insuffisante"
+                f"{dur_info} | {calib_info}"
+            )
+
+        return parsed
+
+    # ── Évaluation avec calibration seule (sans facial) ──────────────────────
+
+    async def evaluate_with_calibration(
+        self,
+        question: str,
+        answer: str,
+        language: str = "fr",
+        position_title: str = "",
+        calibration_corrections: list | None = None,
+    ) -> dict:
+        """
+        Évalue une réponse en injectant uniquement les corrections RH comme
+        exemples few-shot dans le system prompt.
+
+        Utilisé quand l'analyse faciale n'est pas disponible (caméra absente)
+        mais que des corrections de calibration existent pour le poste.
+        """
+        lang = language if language in ("ar", "fr", "en") else "fr"
+
+        if not answer or len(answer.strip()) < 5:
+            result = dict(_EMPTY_ANSWER_RESULT[lang])
+            result.update({
+                "llm_model":         self.model,
+                "evaluated":         True,
+                "needs_followup":    False,
+                "followup_question": "",
+            })
+            return result
+
+        calibration_context = _build_calibration_context(calibration_corrections or [], lang)
+        system = _SYSTEM_PROMPT_FOLLOWUP[lang] + calibration_context
+
+        user = _USER_PROMPT[lang].format(question=question, answer=answer)
+        if position_title:
+            suffix = {
+                "ar": f"\n\nالمنصب: {position_title}",
+                "fr": f"\n\nPoste : {position_title}",
+                "en": f"\n\nPosition: {position_title}",
+            }
+            user += suffix[lang]
+
+        raw    = await self._call_ollama(system, user)
+        parsed = self._parse_followup_json(raw, lang)
+        parsed["llm_model"] = self.model
+        parsed["evaluated"] = True
+
+        if calibration_corrections:
+            logger.info(
+                f"Évaluation+Calibration [{lang}] | "
+                f"score={parsed['score']}/10 | "
+                f"needs_followup={parsed['needs_followup']} | "
+                f"{len(calibration_corrections)} exemple(s) calibration"
             )
 
         return parsed
@@ -704,14 +886,12 @@ class OllamaLLMService:
         Génère un résumé global depuis les évaluations individuelles.
         Retourne : recommendation, decision_reason, key_strengths,
                    key_improvements, summary.
-        global_verdict supprimé — redondant avec average_score.
         """
         lang = language if language in ("ar", "fr", "en") else "fr"
 
         if not answers_eval:
             return self._empty_summary(lang)
 
-        # Moyenne pondérée
         if weighted_avg is not None:
             avg = round(weighted_avg, 2)
         else:
@@ -719,13 +899,10 @@ class OllamaLLMService:
             total_w = sum(w for _, w in sw)
             avg     = round(sum(s * w for s, w in sw) / total_w, 2) if total_w > 0 else 0.0
 
-        # Détail compact (avec données faciales si disponibles)
         detail_lines = []
         for i, a in enumerate(answers_eval, 1):
             feedback_short = (a.get("feedback") or "")[:80].replace("\n", " ")
             w = a.get("weight", 1.0)
-
-            # Ajouter un résumé facial s'il existe
             facial = a.get("facial_analysis") or {}
             if facial and facial.get("frames_with_face", 0) > 0:
                 facial_summary = (
@@ -734,7 +911,6 @@ class OllamaLLMService:
                 )
             else:
                 facial_summary = ""
-
             detail_lines.append(
                 f"Q{i} (score={a.get('score', 0)}/10, poids={w}){facial_summary} : {feedback_short}"
             )
@@ -810,7 +986,6 @@ class OllamaLLMService:
                     base = self._normalize(obj, lang)
                     base["needs_followup"]    = bool(obj.get("needs_followup", False))
                     base["followup_question"] = str(obj.get("followup_question", "")).strip()
-                    # Score >= 8 → pas de suivi (règle métier)
                     if base["score"] >= 8:
                         base["needs_followup"]    = False
                         base["followup_question"] = ""
@@ -864,7 +1039,6 @@ class OllamaLLMService:
         avg: float,
         lang: str,
     ) -> dict:
-        """Fallback déterministe pour tous les champs globaux vides."""
         if not result.get("recommendation"):
             if lang == "fr":
                 result["recommendation"] = (

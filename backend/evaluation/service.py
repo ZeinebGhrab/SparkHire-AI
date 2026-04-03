@@ -1,10 +1,15 @@
-"""
+""""
 Service d'évaluation — orchestre le pipeline
 Audio → Whisper (ASR) → Ollama/Llama3 (LLM) → Score + Feedback
 
 Moyenne pondérée :
   average_score = Σ(score_i × weight_i) / Σ(weight_i)
-  
+
+Calibration RH :
+  Avant chaque session d'évaluation, les corrections RH passées pour le poste
+  sont chargées depuis `evaluation_corrections` et injectées dans le prompt LLM
+  comme exemples few-shot. Permet au modèle de s'adapter au niveau d'exigence
+  spécifique de l'équipe RH sans aucun fine-tuning.
 """
 
 import asyncio
@@ -16,7 +21,7 @@ from typing import Optional
 from backend.evaluation.models import (
     AnswerEvaluation, GlobalEvaluation,
     FacialSummary, GlobalFacialSummary,
-    compute_decision, DECISION_LABELS, DECISION_COLORS
+    compute_decision, DECISION_LABELS, DECISION_COLORS,
 )
 from backend.services.llm_service import OllamaLLMService
 from backend.database import db
@@ -41,7 +46,7 @@ class EvaluationService:
         self.llm = llm_service
         self.asr = asr_service
 
-    # ── Évaluation réponse par réponse ────────────────────────────────────
+    # ── Évaluation réponse par réponse ────────────────────────────────────────
 
     async def evaluate_single_answer(
         self,
@@ -52,18 +57,46 @@ class EvaluationService:
         position_title: str = "",
         audio_path: Optional[str] = None,
         weight: float = 1.0,
+        calibration_corrections: list | None = None,   # ← NOUVEAU
     ) -> AnswerEvaluation:
+        """
+        Évalue une réponse individuelle en combinant :
+          - transcription Whisper (si transcript vide)
+          - évaluation LLM avec calibration few-shot si disponible
+
+        Le paramètre `calibration_corrections` contient les corrections RH
+        récentes pour ce poste, récupérées une seule fois dans
+        `evaluate_full_session` et partagées entre toutes les réponses.
+        """
         transcript = answer_transcript.strip()
         if not transcript and audio_path and self.asr:
             transcript = await self._retranscribe(audio_path, language)
             logger.info(f"Re-transcription Whisper Q{question_order}: '{transcript}'")
 
-        eval_result = await self.llm.evaluate_answer(
+        # Construire les kwargs communs
+        eval_kwargs: dict = dict(
             question=question_text,
             answer=transcript,
             language=language,
             position_title=position_title,
         )
+
+        # Sélectionner la méthode d'évaluation disponible dans cet ordre :
+        #   1. evaluate_with_facial  (calibration + facial + durée — chemin nominal)
+        #   2. evaluate_with_calibration  (calibration seule — sans caméra)
+        #   3. evaluate_with_followup  (base — aucune calibration disponible)
+        if calibration_corrections:
+            eval_kwargs["calibration_corrections"] = calibration_corrections
+
+        if hasattr(self.llm, "evaluate_with_facial"):
+            eval_result = await self.llm.evaluate_with_facial(**eval_kwargs)
+        elif calibration_corrections and hasattr(self.llm, "evaluate_with_calibration"):
+            eval_result = await self.llm.evaluate_with_calibration(**eval_kwargs)
+        else:
+            # Retirer calibration_corrections si la méthode ne la supporte pas
+            eval_result = await self.llm.evaluate_with_followup(
+                **{k: v for k, v in eval_kwargs.items() if k != "calibration_corrections"}
+            )
 
         return AnswerEvaluation(
             question_order=question_order,
@@ -76,14 +109,14 @@ class EvaluationService:
                 "feedback", "llm_model", "evaluated")},
         )
 
-    # ── Évaluation complète d'un entretien terminé ────────────────────────
+    # ── Évaluation complète d'un entretien terminé ────────────────────────────
 
     async def evaluate_full_session(
         self,
         session_id: str,
         language: Optional[str] = None,
     ) -> Optional[GlobalEvaluation]:
-        # ── Charger les données ────────────────────────────────────────────
+        # ── Charger les données ────────────────────────────────────────────────
         session = db.interview_sessions.find_one({"session_id": session_id})
         if not session:
             logger.error(f"Session introuvable : {session_id}")
@@ -100,8 +133,8 @@ class EvaluationService:
             if candidate else "Candidat"
         )
 
-        lang    = language or session.get("language", "fr")
-        answers = session.get("answers", [])
+        lang      = language or session.get("language", "fr")
+        answers   = session.get("answers", [])
         questions: dict[int, dict] = {
             q["order"]: q for q in position.get("questions", [])
         }
@@ -111,7 +144,33 @@ class EvaluationService:
             f"{len(answers)} réponse(s) | langue={lang}"
         )
 
-        # ── Évaluation par réponse en parallèle ───────────────────────────
+        # ── Fetch calibration RH pour ce poste ───────────────────────────────
+        # Récupère les 5 corrections les plus instructives (delta score maximal)
+        # et les partage entre toutes les évaluations de la session pour éviter
+        # N appels MongoDB (une seule requête en amont).
+        calibration_corrections: list = []
+        try:
+            from backend.evaluation.corrections import CorrectionCRUD
+            calibration_corrections = CorrectionCRUD.get_calibration_for_position(
+                position_id=session["job_position_id"],
+                language=lang,
+                limit=5,
+            )
+            if calibration_corrections:
+                logger.info(
+                    f"Calibration chargée | poste={session['job_position_id']} | "
+                    f"{len(calibration_corrections)} correction(s) | langue={lang}"
+                )
+            else:
+                logger.debug(
+                    f"Aucune correction de calibration pour le poste "
+                    f"{session['job_position_id']} — évaluation standard"
+                )
+        except Exception as e:
+            # La calibration est optionnelle — un échec ne bloque pas l'évaluation
+            logger.warning(f"Chargement calibration échoué (évaluation standard) : {e}")
+
+        # ── Évaluation par réponse en parallèle ───────────────────────────────
         tasks = []
         for ans in answers:
             q_order = ans.get("question_order", 0)
@@ -127,14 +186,13 @@ class EvaluationService:
                     position_title=position.get("title", ""),
                     audio_path=ans.get("audio_file_path"),
                     weight=weight,
+                    calibration_corrections=calibration_corrections,   # ← PARTAGÉ
                 )
             )
 
         per_answer: list[AnswerEvaluation] = await asyncio.gather(*tasks)
 
-        # ── Injection métriques faciales depuis BD ────────────────────────
-        # Les métriques ont déjà été analysées et sauvegardées pendant l'entretien
-        # dans answers[n].evaluation.facial_analysis — on les récupère ici
+        # ── Injection métriques faciales depuis BD ────────────────────────────
         facial_map: dict[int, dict] = {}
         for ans in answers:
             q_order  = ans.get("question_order", 0)
@@ -143,23 +201,22 @@ class EvaluationService:
             if facial:
                 facial_map[q_order] = facial
 
-        # Injecter dans chaque AnswerEvaluation
         enriched_answers = []
         for ae in per_answer:
             f = facial_map.get(ae.question_order)
             if f:
                 try:
                     facial_obj = FacialSummary(
-                        dominant_emotion  = f.get("dominant_emotion",  "neutral"),
-                        emotion_scores    = f.get("emotion_scores",    {}),
-                        eye_contact_ratio = f.get("eye_contact_ratio", 0.0),
-                        head_stability    = f.get("head_stability",    1.0),
-                        smile_ratio       = f.get("smile_ratio",       0.0),
-                        confidence_score  = f.get("confidence_score",  5.0),
-                        stress_score      = f.get("stress_score",      5.0),
-                        engagement_score  = f.get("engagement_score",  5.0),
-                        frames_analyzed   = f.get("frames_analyzed",   0),
-                        frames_with_face  = f.get("frames_with_face",  0),
+                        dominant_emotion    = f.get("dominant_emotion",  "neutral"),
+                        emotion_scores      = f.get("emotion_scores",    {}),
+                        eye_contact_ratio   = f.get("eye_contact_ratio", 0.0),
+                        head_stability      = f.get("head_stability",    1.0),
+                        smile_ratio         = f.get("smile_ratio",       0.0),
+                        confidence_score    = f.get("confidence_score",  5.0),
+                        stress_score        = f.get("stress_score",      5.0),
+                        engagement_score    = f.get("engagement_score",  5.0),
+                        frames_analyzed     = f.get("frames_analyzed",   0),
+                        frames_with_face    = f.get("frames_with_face",  0),
                         face_detection_rate = f.get("face_detection_rate", 0.0),
                     )
                     ae = ae.model_copy(update={"facial": facial_obj})
@@ -168,7 +225,7 @@ class EvaluationService:
             enriched_answers.append(ae)
         per_answer = enriched_answers
 
-        # ── Calcul GlobalFacialSummary ────────────────────────────────────
+        # ── Calcul GlobalFacialSummary ─────────────────────────────────────────
         facial_answers = [ae for ae in per_answer if ae.facial is not None]
         global_facial: Optional[GlobalFacialSummary] = None
         if facial_answers:
@@ -196,7 +253,7 @@ class EvaluationService:
                 f"émotion={dominant}"
             )
 
-        # ── Moyenne pondérée ───────────────────────────────────────────────
+        # ── Moyenne pondérée ──────────────────────────────────────────────────
         avg_score = _weighted_avg([(a.score, a.weight) for a in per_answer])
         logger.info(
             "Scores : "
@@ -204,7 +261,7 @@ class EvaluationService:
             + f" → weighted_avg={avg_score}/10"
         )
 
-        # ── Résumé global LLM ─────────────────────────────────────────────
+        # ── Résumé global LLM ─────────────────────────────────────────────────
         global_raw = await self.llm.generate_global_summary(
             answers_eval=[a.model_dump() for a in per_answer],
             position_title=position.get("title", ""),
@@ -243,11 +300,12 @@ class EvaluationService:
             f"✅ Évaluation terminée {session_id} | "
             f"average_score={avg_score}/10 | "
             f"decision={evaluation.decision} | "
-            f"recommendation={evaluation.recommendation!r}"
+            f"recommendation={evaluation.recommendation!r} | "
+            f"calibration={len(calibration_corrections)} exemple(s)"
         )
         return evaluation
 
-    # ── Garantie de complétude ────────────────────────────────────────────
+    # ── Garantie de complétude ─────────────────────────────────────────────────
 
     def _fill_missing_fields(
         self,
@@ -320,7 +378,7 @@ class EvaluationService:
 
         return ev
 
-    # ── Helpers ───────────────────────────────────────────────────────────
+    # ── Helpers ───────────────────────────────────────────────────────────────
 
     async def _retranscribe(self, audio_path: str, language: str) -> str:
         try:
