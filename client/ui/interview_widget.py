@@ -68,7 +68,7 @@ DEFAULT_MAX_RECORDING_SECONDS = 90
 class PulseDot(QWidget):
     """Animated pulsing dot for status indicators."""
 
-    def __init__(self, color: str = T.INDIGO_500, size: int = 8, parent=None):
+    def __init__(self, color: str = T.TEAL_500, size: int = 8, parent=None):
         super().__init__(parent)
         self._color = QColor(color)
         self._alpha = 255
@@ -118,7 +118,7 @@ class StepBadge(QLabel):
         if active:
             self.setStyleSheet(f"""
                 QLabel {{
-                    background: {T.INDIGO_500};
+                    background: {T.TEAL_500};
                     color: {T.TEXT_WHITE};
                     border-radius: 12px;
                     font-weight: 700;
@@ -127,8 +127,8 @@ class StepBadge(QLabel):
         else:
             self.setStyleSheet(f"""
                 QLabel {{
-                    background: {T.INDIGO_100};
-                    color: {T.INDIGO_500};
+                    background: {T.TEAL_100};
+                    color: {T.TEAL_600};
                     border-radius: 12px;
                     font-weight: 700;
                 }}
@@ -175,7 +175,7 @@ class _SectionHeader(QWidget):
         h.setContentsMargins(0, 0, 0, 0)
         h.setSpacing(T.SP_2)
 
-        self._dot = PulseDot(T.INDIGO_500, 7)
+        self._dot = PulseDot(T.TEAL_500, 7)
         h.addWidget(self._dot)
 
         self._lbl = QLabel(text)
@@ -193,7 +193,7 @@ class _SectionHeader(QWidget):
         self._lbl.setText(text)
 
     def set_recording(self, recording: bool):
-        self._dot.set_color(T.RED_400 if recording else T.INDIGO_500)
+        self._dot.set_color(T.RED_400 if recording else T.TEAL_500)
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -233,8 +233,8 @@ class _ProgressCard(QFrame):
         f2 = QFont(T.FONT, T.FS_SM); f2.setBold(True)
         self._pct_badge.setFont(f2)
         self._pct_badge.setStyleSheet(f"""
-            color: {T.INDIGO_600};
-            background: {T.INDIGO_50};
+            color: {T.TEAL_700};
+            background: {T.TEAL_50};
             border-radius: {T.R_FULL}px;
             padding: 2px 10px;
         """)
@@ -284,7 +284,7 @@ class _ProgressCard(QFrame):
             if i < current:
                 d.setStyleSheet(f"""
                     QLabel {{
-                        background: {T.INDIGO_500};
+                        background: {T.TEAL_500};
                         border-radius: 3px;
                     }}
                 """)
@@ -327,14 +327,14 @@ class _InfoCard(QFrame):
         mic_wrap.setStyleSheet(f"""
             QFrame {{
                 background: qlineargradient(x1:0,y1:0,x2:1,y2:1,
-                    stop:0 {T.INDIGO_500},stop:1 {T.VIOLET_500});
+                    stop:0 {T.TEAL_400},stop:1 {T.TEAL_700});
                 border-radius: 16px;
             }}
         """)
         # Subtle indigo glow on mic icon
         mic_glow = QGraphicsDropShadowEffect()
         mic_glow.setBlurRadius(18); mic_glow.setOffset(0, 4)
-        mic_glow.setColor(QColor(99, 102, 241, 50))
+        mic_glow.setColor(QColor(13, 148, 136, 50))
         mic_wrap.setGraphicsEffect(mic_glow)
 
         mic_inner = QVBoxLayout(mic_wrap)
@@ -539,7 +539,7 @@ class InterviewWidget(QWidget):
         # Subtle indigo glow
         eff = QGraphicsDropShadowEffect()
         eff.setBlurRadius(20); eff.setOffset(0, 5)
-        eff.setColor(QColor(99, 102, 241, 45))
+        eff.setColor(QColor(13, 148, 136, 45))
         btn.setGraphicsEffect(eff)
         btn.clicked.connect(self._toggle_record)
         btn.setEnabled(False)
@@ -652,7 +652,7 @@ class InterviewWidget(QWidget):
             self.record_btn.setStyleSheet(StarkTheme.get_button_style("primary"))
             eff = QGraphicsDropShadowEffect()
             eff.setBlurRadius(20); eff.setOffset(0, 5)
-            eff.setColor(QColor(99, 102, 241, 45))
+            eff.setColor(QColor(13, 148, 136, 45))
             self.record_btn.setGraphicsEffect(eff)
 
     # ── Public API ────────────────────────────────────────────────

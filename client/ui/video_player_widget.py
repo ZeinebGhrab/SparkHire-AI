@@ -78,7 +78,7 @@ class VideoPlayerWidget(QWidget):
         top_bar.setStyleSheet(f"""
             QFrame {{
                 background: qlineargradient(x1:0,y1:0,x2:1,y2:0,
-                    stop:0 {T.INDIGO_700},stop:1 {T.INDIGO_600});
+                    stop:0 {T.TEAL_800},stop:1 {T.TEAL_700});
                 border-top-left-radius:  {T.R_2XL - 1}px;
                 border-top-right-radius: {T.R_2XL - 1}px;
             }}
@@ -152,9 +152,9 @@ class VideoPlayerWidget(QWidget):
         self.avatar_display.setStyleSheet(f"""
             QLabel {{
                 background: qlineargradient(x1:0.5,y1:0,x2:0.5,y2:1,
-                    stop:0 #F0F4FF,
-                    stop:0.5 #F8FAFC,
-                    stop:1 #EEF2FF);
+                    stop:0 #F0FDF9,
+                    stop:0.5 #FAFAF8,
+                    stop:1 #EBF8F5);
                 border: none;
             }}
         """)
@@ -363,10 +363,10 @@ class VideoPlayerWidget(QWidget):
 
     def set_speaking(self):
         self._apply_bar_state(
-            StarkIcons.message_circle(T.INDIGO_500).pixmap(QSize(20, 20)),
-            "Agent RH : Analyse en cours…", T.INDIGO_700,
-            "En cours", T.INDIGO_600, T.INDIGO_50, T.INDIGO_200,
-            T.INDIGO_500, T.INDIGO_50, T.INDIGO_200,
+            StarkIcons.message_circle(T.TEAL_600).pixmap(QSize(20, 20)),
+            "Agent RH : Analyse en cours…", T.TEAL_800,
+            "En cours", T.TEAL_700, T.TEAL_50, T.TEAL_200,
+            T.TEAL_500, T.TEAL_50, T.TEAL_200,
             "Traitement de votre profil",
         )
         self._load_video("speaking")

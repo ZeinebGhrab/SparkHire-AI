@@ -1,67 +1,59 @@
+"""
+SparkHire AI — Design Tokens v7
+Aesthetic: Warm Premium Light — Crème/Ivory surfaces · Teal primary · Coral accent
+No dark motif. Clean, confident, HR-tech professional.
+"""
+
+
 class T:
-    """Design token namespace — v6 clean SaaS."""
+    """Design token namespace — v7 Warm Premium Light."""
 
-    # ── Base Backgrounds ───────────────────────────────────────────
-    BG_APP          = "#F8FAFC"   # off-white, ultra-light blue tint
-    BG_PAGE         = "#F1F5F9"   # slate-100
+    # ── Base Backgrounds — warm ivory palette ─────────────────────
+    BG_APP          = "#FAFAF8"   # warm off-white
+    BG_PAGE         = "#F4F3EE"   # warm cream
     BG_CARD         = "#FFFFFF"   # pure white cards
-    BG_CARD_ALT     = "#FAFAFA"   # barely-there alt
-    BG_HOVER        = "#F8FAFC"   # hover state
-    BG_SELECTED     = "#EEF2FF"   # indigo-50 selection
+    BG_CARD_ALT     = "#FFFFFE"
+    BG_HOVER        = "#F7F6F1"   # warm hover
+    BG_SELECTED     = "#EBF8F5"   # teal-tinted selection
     BG_INPUT        = "#FFFFFF"
-    BG_INPUT_FOCUS  = "#FAFBFF"
-    BG_SIDEBAR      = "#1E1B4B"
+    BG_INPUT_FOCUS  = "#FAFFFE"
 
-    # ── Borders — intentionally very light ────────────────────────
-    BORDER          = "#E5E7EB"   # gray-200 — the ONE border color
-    BORDER_FOCUS    = "#6366F1"   # indigo-500 focus ring
-    BORDER_HOVER    = "#D1D5DB"   # gray-300 hover
-    BORDER_SELECT   = "#4F46E5"   # indigo-600 selected
-    BORDER_STRONG   = "#D1D5DB"   # gray-300
+    # ── Borders — warm undertone ──────────────────────────────────
+    BORDER          = "#E8E6DF"
+    BORDER_FOCUS    = "#14B8A6"
+    BORDER_HOVER    = "#D6D3C9"
+    BORDER_SELECT   = "#0D9488"
+    BORDER_STRONG   = "#D6D3C9"
 
-    # ── Indigo Primary ────────────────────────────────────────────
-    INDIGO_50       = "#EEF2FF"
-    INDIGO_100      = "#E0E7FF"
-    INDIGO_200      = "#C7D2FE"
-    INDIGO_300      = "#A5B4FC"
-    INDIGO_400      = "#818CF8"
-    INDIGO_500      = "#6366F1"
-    INDIGO_600      = "#4F46E5"
-    INDIGO_700      = "#4338CA"
-    INDIGO_800      = "#3730A3"
-    INDIGO_900      = "#312E81"
+    # ── Teal Primary ──────────────────────────────────────────────
+    TEAL_50         = "#F0FDFA"
+    TEAL_100        = "#CCFBF1"
+    TEAL_200        = "#99F6E4"
+    TEAL_300        = "#5EEAD4"
+    TEAL_400        = "#2DD4BF"
+    TEAL_500        = "#14B8A6"
+    TEAL_600        = "#0D9488"
+    TEAL_700        = "#0F766E"
+    TEAL_800        = "#115E59"
+    TEAL_900        = "#134E4A"
 
-    # ── Violet accent (for gradient pair) ─────────────────────────
-    VIOLET_50       = "#F5F3FF"
-    VIOLET_100      = "#EDE9FE"
-    VIOLET_400      = "#A78BFA"
-    VIOLET_500      = "#8B5CF6"
-    VIOLET_600      = "#7C3AED"
-    
-    
-    # ── Blue Accent  ───────────────────────
-    BLUE_400 = "#60A5FA"
-    BLUE_500 = "#3B82F6"
-    BLUE_600 = "#2563EB"
+    # ── Coral / Warm Accent ───────────────────────────────────────
+    CORAL_50        = "#FFF7F5"
+    CORAL_100       = "#FFE8E2"
+    CORAL_200       = "#FFCFC4"
+    CORAL_400       = "#F87B5E"
+    CORAL_500       = "#EF5B3A"
+    CORAL_600       = "#D94526"
+    CORAL_700       = "#B83520"
 
-    # ── Cyan / Teal ───────────────────────────────────────────────
-    CYAN_50         = "#ECFEFF"
-    CYAN_100        = "#CFFAFE"
-    CYAN_200        = "#A5F3FC"
-    CYAN_400        = "#22D3EE"
-    CYAN_500        = "#06B6D4"
-    CYAN_600        = "#0891B2"
-    CYAN_700        = "#0E7490"
-
-    # ── Amber ─────────────────────────────────────────────────────
+    # ── Amber / Warm Yellow ───────────────────────────────────────
     AMBER_50        = "#FFFBEB"
     AMBER_100       = "#FEF3C7"
     AMBER_200       = "#FDE68A"
     AMBER_400       = "#FBBF24"
     AMBER_500       = "#F59E0B"
     AMBER_600       = "#D97706"
-    ORANGE_500      = "#F97316"
-    ORANGE_600      = "#EA580C"
+    AMBER_700       = "#B45309"
 
     # ── Status ────────────────────────────────────────────────────
     GREEN_50        = "#F0FDF4"
@@ -78,24 +70,59 @@ class T:
     RED_600         = "#DC2626"
     RED_700         = "#B91C1C"
 
-    # ── Text Hierarchy ────────────────────────────────────────────
-    TEXT_950        = "#030712"   # near-black headings
-    TEXT_900        = "#111827"   # gray-900 — headings
-    TEXT_800        = "#1F2937"   # gray-800 — body
-    TEXT_700        = "#374151"   # gray-700
-    TEXT_600        = "#4B5563"   # gray-600 — secondary
-    TEXT_500        = "#6B7280"   # gray-500 — muted/placeholder
-    TEXT_400        = "#9CA3AF"   # gray-400 — disabled
-    TEXT_300        = "#D1D5DB"
-    TEXT_WHITE      = "#FFFFFF"
-    TEXT_INDIGO     = "#4F46E5"
+    # ── Indigo (legacy compat maps to Teal) ──────────────────────
+    INDIGO_50       = "#F0FDFA"
+    INDIGO_100      = "#CCFBF1"
+    INDIGO_200      = "#99F6E4"
+    INDIGO_400      = "#2DD4BF"
+    INDIGO_500      = "#14B8A6"
+    INDIGO_600      = "#0D9488"
+    INDIGO_700      = "#0F766E"
+    INDIGO_800      = "#115E59"
+    INDIGO_900      = "#134E4A"
 
-    # ── Typography ────────────────────────────────────────────────
-    # DM Sans: geometric but warmer than Inter; excellent at display sizes
-    FONT            = "'DM Sans', 'Inter', 'Segoe UI', system-ui, sans-serif"
-    FONT_BODY       = "'Inter', 'DM Sans', 'Segoe UI', sans-serif"
+    # ── Violet (legacy maps to Coral) ─────────────────────────────
+    VIOLET_50       = "#FFF7F5"
+    VIOLET_100      = "#FFE8E2"
+    VIOLET_400      = "#F87B5E"
+    VIOLET_500      = "#EF5B3A"
+    VIOLET_600      = "#D94526"
+
+    # ── Cyan (legacy maps to Teal) ────────────────────────────────
+    CYAN_50         = "#F0FDFA"
+    CYAN_100        = "#CCFBF1"
+    CYAN_200        = "#99F6E4"
+    CYAN_400        = "#2DD4BF"
+    CYAN_500        = "#14B8A6"
+    CYAN_600        = "#0D9488"
+    CYAN_700        = "#0F766E"
+
+    # ── Blue (legacy) ─────────────────────────────────────────────
+    BLUE_400        = "#2DD4BF"
+    BLUE_500        = "#14B8A6"
+    BLUE_600        = "#0D9488"
+
+    # ── Orange (legacy) ───────────────────────────────────────────
+    ORANGE_500      = "#F97316"
+    ORANGE_600      = "#EA580C"
+
+    # ── Text Hierarchy — warm neutral ─────────────────────────────
+    TEXT_950        = "#1A1916"
+    TEXT_900        = "#262520"
+    TEXT_800        = "#3A3831"
+    TEXT_700        = "#504E46"
+    TEXT_600        = "#6B6860"
+    TEXT_500        = "#8C8A82"
+    TEXT_400        = "#ADAAA2"
+    TEXT_300        = "#D1CFC7"
+    TEXT_WHITE      = "#FFFFFF"
+    TEXT_INDIGO     = "#0D9488"
+
+    # ── Typography — warm humanist ────────────────────────────────
+    FONT            = "'Plus Jakarta Sans', 'DM Sans', 'Segoe UI', system-ui, sans-serif"
+    FONT_BODY       = "'Inter', 'Plus Jakarta Sans', 'Segoe UI', sans-serif"
     FONT_MONO       = "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace"
-    FONT_DISPLAY    = "'DM Sans', 'Inter', sans-serif"
+    FONT_DISPLAY    = "'Plus Jakarta Sans', 'DM Sans', sans-serif"
 
     FS_2XS  = 9
     FS_XS   = 10
@@ -119,64 +146,66 @@ class T:
     SP_10 = 40
     SP_12 = 48
 
-    # ── Border Radius — generous, modern ─────────────────────────
+    # ── Border Radius ─────────────────────────────────────────────
     R_SM   = 8
     R_MD   = 12
     R_LG   = 14
-    R_XL   = 16
-    R_2XL  = 20
+    R_XL   = 18
+    R_2XL  = 22
     R_FULL = 9999
+
+    # ── Sidebar ───────────────────────────────────────────────────
+    BG_SIDEBAR      = "#0F3D38"
 
 
 class StarkTheme:
-    """Main theme class — all shared aliases and component styles, v6."""
+    """Main theme class — v7 Warm Premium Light."""
 
-    # ─── Primary Gradients — indigo → Bleu ──────────────────────
     GRADIENT_PRIMARY = (
         f"qlineargradient(x1:0,y1:0,x2:1,y2:0,"
-        f"stop:0 {T.INDIGO_600},stop:1 {T.BLUE_500})"
+        f"stop:0 {T.TEAL_500},stop:1 {T.TEAL_600})"
     )
     GRADIENT_PRIMARY_HOVER = (
         f"qlineargradient(x1:0,y1:0,x2:1,y2:0,"
-        f"stop:0 {T.INDIGO_700},stop:1 {T.BLUE_600})"
+        f"stop:0 {T.TEAL_600},stop:1 {T.TEAL_700})"
     )
     GRADIENT_CYAN = (
         f"qlineargradient(x1:0,y1:0,x2:1,y2:0,"
-        f"stop:0 {T.CYAN_500},stop:1 {T.CYAN_600})"
+        f"stop:0 {T.TEAL_400},stop:1 {T.TEAL_500})"
     )
     GRADIENT_ACCENT = (
         f"qlineargradient(x1:0,y1:0,x2:1,y2:0,"
-        f"stop:0 {T.INDIGO_500},stop:1 {T.BLUE_500})"
+        f"stop:0 {T.TEAL_500},stop:1 {T.CORAL_500})"
     )
     GRADIENT_HERO = (
         f"qlineargradient(x1:0,y1:0,x2:1,y2:1,"
-        f"stop:0 {T.INDIGO_600},stop:0.5 {T.VIOLET_500},stop:1 {T.CYAN_500})"
+        f"stop:0 {T.TEAL_600},stop:0.5 {T.TEAL_500},stop:1 {T.CORAL_500})"
     )
     GRADIENT_BACKGROUND = (
         f"qlineargradient(x1:0,y1:0,x2:1,y2:1,"
-        f"stop:0 {T.BG_APP},stop:0.6 {T.BG_CARD},stop:1 #F0F4FF)"
+        f"stop:0 {T.BG_APP},stop:0.6 {T.BG_CARD},stop:1 #F0FAF8)"
     )
     GRADIENT_CARD = T.BG_CARD
 
-    # ─── Backward Compat Aliases ──────────────────────────────────
+    # Backward compat aliases
     BG_VOID         = T.BG_APP
     BG_DEEP         = T.BG_PAGE
     BG_SURFACE      = T.BG_CARD
     BG_ELEVATED     = T.BG_HOVER
     BG_BORDER       = T.BORDER
-    BLUE_ELECTRIC   = T.INDIGO_500
-    BLUE_BRIGHT     = T.INDIGO_400
-    BLUE_SOFT       = T.INDIGO_600
-    BLUE_DIM        = T.INDIGO_100
-    BLUE_GLOW       = "rgba(99,102,241,0.12)"
-    BLUE_600        = T.INDIGO_600
-    BLUE_700        = T.INDIGO_700
-    BLUE_PRIMARY    = T.INDIGO_500
-    BLUE_DARK       = T.INDIGO_700
-    BLUE_LIGHT      = T.CYAN_400
-    BLUE_EXTRA_LIGHT = T.CYAN_100
-    BLUE_50         = T.INDIGO_50
-    BLUE_100        = T.INDIGO_100
+    BLUE_ELECTRIC   = T.TEAL_500
+    BLUE_BRIGHT     = T.TEAL_400
+    BLUE_SOFT       = T.TEAL_600
+    BLUE_DIM        = T.TEAL_100
+    BLUE_GLOW       = "rgba(20,184,166,0.12)"
+    BLUE_600        = T.TEAL_600
+    BLUE_700        = T.TEAL_700
+    BLUE_PRIMARY    = T.TEAL_500
+    BLUE_DARK       = T.TEAL_700
+    BLUE_LIGHT      = T.TEAL_400
+    BLUE_EXTRA_LIGHT = T.TEAL_100
+    BLUE_50         = T.TEAL_50
+    BLUE_100        = T.TEAL_100
     CYAN_50         = T.CYAN_50
     CYAN_100        = T.CYAN_100
     AMBER           = T.AMBER_500
@@ -184,11 +213,11 @@ class StarkTheme:
     AMBER_SOFT      = T.AMBER_100
     AMBER_DIM       = T.AMBER_50
     AMBER_GLOW      = "rgba(245,158,11,0.10)"
-    ORANGE_ACCENT   = T.AMBER_500
-    ORANGE_LIGHT    = T.AMBER_400
+    ORANGE_ACCENT   = T.CORAL_500
+    ORANGE_LIGHT    = T.CORAL_400
     ORANGE_500      = T.ORANGE_500
     ORANGE_600      = T.ORANGE_600
-    ORANGE_400      = "#FB923C"
+    ORANGE_400      = T.CORAL_400
     SUCCESS         = T.GREEN_500
     SUCCESS_GLOW    = T.GREEN_50
     WARNING         = T.AMBER_500
@@ -217,16 +246,12 @@ class StarkTheme:
     BORDER_CYAN     = T.BORDER_FOCUS
     BORDER_WHITE    = T.BORDER
 
-    # ─── Shared Shadow Presets ────────────────────────────────────
-    # Soft, modern — no heavy black shadows
-    SHADOW_XS  = "0 1px 2px rgba(0,0,0,0.04)"
-    SHADOW_SM  = "0 2px 8px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)"
-    SHADOW_MD  = "0 4px 16px rgba(0,0,0,0.08), 0 1px 4px rgba(0,0,0,0.04)"
-    SHADOW_LG  = "0 8px 32px rgba(0,0,0,0.10), 0 2px 8px rgba(0,0,0,0.04)"
-    SHADOW_XL  = "0 16px 48px rgba(0,0,0,0.12), 0 4px 12px rgba(0,0,0,0.05)"
-    SHADOW_INDIGO = "0 8px 24px rgba(99,102,241,0.20), 0 2px 8px rgba(99,102,241,0.10)"
-
-    # ─── Global Stylesheet ────────────────────────────────────────
+    SHADOW_XS  = "0 1px 2px rgba(0,0,0,0.03)"
+    SHADOW_SM  = "0 2px 8px rgba(0,0,0,0.05), 0 1px 2px rgba(0,0,0,0.03)"
+    SHADOW_MD  = "0 4px 16px rgba(0,0,0,0.07), 0 1px 4px rgba(0,0,0,0.03)"
+    SHADOW_LG  = "0 8px 32px rgba(0,0,0,0.09), 0 2px 8px rgba(0,0,0,0.03)"
+    SHADOW_XL  = "0 16px 48px rgba(0,0,0,0.11), 0 4px 12px rgba(0,0,0,0.04)"
+    SHADOW_INDIGO = "0 8px 24px rgba(20,184,166,0.18), 0 2px 8px rgba(20,184,166,0.08)"
 
     @classmethod
     def global_stylesheet(cls) -> str:
@@ -273,11 +298,8 @@ class StarkTheme:
         }}
         """
 
-    # ─── Card ─────────────────────────────────────────────────────
-
     @classmethod
     def card_style(cls, hover: bool = False) -> str:
-        """Clean white card — shadow-first, border optional."""
         hover_css = f"""
             QFrame:hover {{
                 background: {T.BG_CARD};
@@ -292,8 +314,6 @@ class StarkTheme:
         }}
         {hover_css}
         """
-
-    # ─── Input ────────────────────────────────────────────────────
 
     @classmethod
     def input_style(cls) -> str:
@@ -313,7 +333,7 @@ class StarkTheme:
             background: {T.BG_CARD};
         }}
         QLineEdit:focus {{
-            border: 1.5px solid {T.INDIGO_500};
+            border: 1.5px solid {T.TEAL_500};
             background: {T.BG_INPUT_FOCUS};
             color: {T.TEXT_900};
         }}
@@ -322,15 +342,13 @@ class StarkTheme:
         }}
         """
 
-    # ─── Progress Bar ─────────────────────────────────────────────
-
     @classmethod
     def progress_style(cls) -> str:
         return f"""
         QProgressBar {{
             border: none;
             border-radius: 3px;
-            background: {T.INDIGO_100};
+            background: {T.TEAL_100};
             height: 6px;
             text-align: center;
             color: transparent;
@@ -341,12 +359,9 @@ class StarkTheme:
         }}
         """
 
-    # ─── Buttons ──────────────────────────────────────────────────
-
     @classmethod
     def get_button_style(cls, variant: str = "primary") -> str:
         variants = {
-            # ── Primary: indigo → Bleu gradient ────────────────
             "primary": f"""
                 QPushButton {{
                     background: {cls.GRADIENT_PRIMARY};
@@ -364,7 +379,7 @@ class StarkTheme:
                 }}
                 QPushButton:pressed {{
                     background: qlineargradient(x1:0,y1:0,x2:1,y2:0,
-                        stop:0 {T.INDIGO_800},stop:1 {T.BLUE_600});
+                        stop:0 {T.TEAL_700},stop:1 {T.TEAL_800});
                     padding-top: 15px; padding-bottom: 13px;
                 }}
                 QPushButton:disabled {{
@@ -373,7 +388,6 @@ class StarkTheme:
                     border: 1px solid {T.BORDER};
                 }}
             """,
-            # ── Accent: same gradient, used on session screen ─────
             "accent": f"""
                 QPushButton {{
                     background: {cls.GRADIENT_PRIMARY};
@@ -392,7 +406,7 @@ class StarkTheme:
                 QPushButton:pressed {{
                     padding-top: 16px; padding-bottom: 14px;
                     background: qlineargradient(x1:0,y1:0,x2:1,y2:0,
-                        stop:0 {T.INDIGO_800},stop:1 {T.BLUE_600});
+                        stop:0 {T.TEAL_700},stop:1 {T.TEAL_800});
                 }}
                 QPushButton:disabled {{
                     background: {T.BG_PAGE};
@@ -400,7 +414,6 @@ class StarkTheme:
                     border: 1px solid {T.BORDER};
                 }}
             """,
-            # ── Ghost / Outline ───────────────────────────────────
             "ghost": f"""
                 QPushButton {{
                     background: transparent;
@@ -422,7 +435,6 @@ class StarkTheme:
                     color: {T.TEXT_900};
                 }}
             """,
-            # ── Danger ────────────────────────────────────────────
             "danger": f"""
                 QPushButton {{
                     background: transparent;
@@ -445,7 +457,6 @@ class StarkTheme:
                     padding-top: 11px; padding-bottom: 9px;
                 }}
             """,
-            # ── Record ────────────────────────────────────────────
             "record": f"""
                 QPushButton {{
                     background: {cls.GRADIENT_PRIMARY};
@@ -473,11 +484,8 @@ class StarkTheme:
         }
         return variants.get(variant, variants["primary"])
 
-    # ─── Badges ───────────────────────────────────────────────────
-
     @classmethod
-    def badge_style(cls, color: str = T.INDIGO_500,
-                    bg: str = T.INDIGO_50) -> str:
+    def badge_style(cls, color: str = T.TEAL_500, bg: str = T.TEAL_50) -> str:
         return f"""
             QLabel {{
                 background: {bg};
@@ -503,7 +511,6 @@ class StarkTheme:
             }}
         """
 
-    # ─── Backward compat ─────────────────────────────────────────
     @classmethod
     def glass_card_style(cls, hover: bool = True) -> str:
         return cls.card_style()

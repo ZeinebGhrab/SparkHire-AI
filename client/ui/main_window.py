@@ -1,9 +1,3 @@
-"""
-Main Window — SparkHire AI v6  ·  Clean SaaS Edition
-Stripe / Linear / Notion aesthetic — light, minimal, refined.
-All functionality preserved from v5.
-"""
-
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QMessageBox, QLabel, QLineEdit, QPushButton, QFrame,
@@ -102,9 +96,9 @@ UI_TEXTS = {
 }
 
 LANGUAGES = [
-    {"code": "ar", "flag": "🇸🇦", "name": "العربية",  "native": "Arabic",  "color": T.GREEN_600,  "bg": T.GREEN_50,  "border": T.GREEN_200},
-    {"code": "fr", "flag": "🇫🇷", "name": "Français", "native": "French",  "color": T.INDIGO_600, "bg": T.INDIGO_50, "border": T.INDIGO_200},
-    {"code": "en", "flag": "🇬🇧", "name": "English",  "native": "English", "color": T.CYAN_600,   "bg": T.CYAN_50,   "border": T.CYAN_200},
+    {"code": "ar", "flag": "🇸🇦", "name": "العربية",  "native": "Arabic",  "color": T.TEAL_600,  "bg": T.TEAL_50,   "border": T.TEAL_200},
+    {"code": "fr", "flag": "🇫🇷", "name": "Français", "native": "French",  "color": T.TEAL_700,  "bg": T.TEAL_100,  "border": T.TEAL_200},
+    {"code": "en", "flag": "🇬🇧", "name": "English",  "native": "English", "color": T.CORAL_600, "bg": T.CORAL_100, "border": T.CORAL_200},
 ]
 
 
@@ -236,7 +230,7 @@ class StatusChip(QFrame):
     STATES = {
         "disconnected": (T.TEXT_400,    "●", T.BG_PAGE,  T.BORDER,     T.TEXT_500),
         "validating":   (T.AMBER_500,   "◌", T.AMBER_50, T.AMBER_200,  T.AMBER_600),
-        "connected":    (T.GREEN_500,   "●", T.GREEN_50, T.GREEN_200,  T.GREEN_700),
+        "connected":    (T.TEAL_500,    "●", T.TEAL_50,  T.TEAL_200,   T.TEAL_700),
         "error":        (T.RED_500,     "●", T.RED_50,   T.RED_200,    T.RED_600),
     }
 
@@ -398,7 +392,7 @@ class MainWindow(QMainWindow):
         root_w.setObjectName("appRoot")
         root_w.setStyleSheet(f"""
             #appRoot {{
-                background: {T.BG_APP};
+                background: {T.BG_PAGE};
             }}
         """)
         self.setCentralWidget(root_w)
@@ -428,7 +422,7 @@ class MainWindow(QMainWindow):
         hdr.setStyleSheet(f"""
             #mainHeader {{
                 background: {T.BG_CARD};
-                border-bottom: 1px solid {T.BORDER};
+                border-bottom: 1.5px solid {T.BORDER};
             }}
         """)
 
@@ -442,8 +436,8 @@ class MainWindow(QMainWindow):
         logo.setStyleSheet(f"""
             QFrame {{
                 background: qlineargradient(x1:0,y1:0,x2:1,y2:1,
-                    stop:0 {T.INDIGO_500},stop:1 {T.INDIGO_700});
-                border-radius: 9px;
+                    stop:0 {T.TEAL_400},stop:1 {T.TEAL_700});
+                border-radius: 10px;
             }}
         """)
         logo_lay = QVBoxLayout(logo)
@@ -467,7 +461,7 @@ class MainWindow(QMainWindow):
         f1.setBold(True)
         t1.setFont(f1)
         t1.setStyleSheet(f"""
-            color: {T.INDIGO_700};
+            color: {T.TEAL_700};
             background: transparent;
             letter-spacing: -0.5px;
         """)
@@ -476,7 +470,7 @@ class MainWindow(QMainWindow):
         f2 = QFont(T.FONT, T.FS_LG)
         f2.setBold(True)
         t2.setFont(f2)
-        t2.setStyleSheet(f"color: {T.CYAN_500}; background: transparent;")
+        t2.setStyleSheet(f"color: {T.CORAL_500}; background: transparent;")
 
         # Combined on one row
         title_row = QHBoxLayout()
@@ -532,9 +526,9 @@ class MainWindow(QMainWindow):
         tag = QLabel("SÉLECTION DE LA LANGUE")
         tag.setFont(QFont(T.FONT, T.FS_2XS))
         tag.setStyleSheet(f"""
-            color: {T.INDIGO_500};
-            background: {T.INDIGO_50};
-            border: 2px  {T.INDIGO_200};
+            color: {T.TEAL_700};
+            background: {T.TEAL_50};
+            border: 1px solid {T.TEAL_200};
             border-radius: {T.R_FULL}px;
             padding: 4px 14px;
             letter-spacing: 2.5px;
@@ -636,7 +630,7 @@ class MainWindow(QMainWindow):
         icon_frame.setStyleSheet(f"""
             QFrame {{
                 background: qlineargradient(x1:0,y1:0,x2:1,y2:1,
-                    stop:0 {T.INDIGO_500},stop:1 {T.INDIGO_700});
+                    stop:0 {T.TEAL_400},stop:1 {T.TEAL_700});
                 border-radius: 20px;
             }}
         """)
@@ -673,12 +667,12 @@ class MainWindow(QMainWindow):
         self._pill_lbl = QLabel()
         f_pill = QFont(T.FONT, T.FS_XS); f_pill.setBold(True)
         self._pill_lbl.setFont(f_pill)
-        self._pill_lbl.setStyleSheet(f"color: {T.INDIGO_600}; background: transparent; letter-spacing: 0.3px;")
+        self._pill_lbl.setStyleSheet(f"color: {T.TEAL_700}; background: transparent; letter-spacing: 0.3px;")
         pill_inner.addWidget(self._pill_lbl)
         self._lang_pill.setStyleSheet(f"""
             QFrame {{
-                background: {T.INDIGO_50};
-                border: 1px solid {T.INDIGO_200};
+                background: {T.TEAL_50};
+                border: 1px solid {T.TEAL_200};
                 border-radius: {T.R_FULL}px;
             }}
         """)
@@ -708,7 +702,7 @@ class MainWindow(QMainWindow):
         self._connect_btn.setMinimumHeight(56)
         self._connect_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._connect_btn.setStyleSheet(StarkTheme.get_button_style("accent"))
-        self._connect_btn.setGraphicsEffect(_shadow(26, 8, 55, 245, 158, 11))
+        self._connect_btn.setGraphicsEffect(_shadow(26, 8, 45, 13, 148, 136))
         self._connect_btn.clicked.connect(self._connect_to_interview)
         lay.addWidget(self._connect_btn)
         lay.addSpacing(T.SP_3)
