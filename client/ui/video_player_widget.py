@@ -78,7 +78,7 @@ class VideoPlayerWidget(QWidget):
         top_bar.setStyleSheet(f"""
             QFrame {{
                 background: qlineargradient(x1:0,y1:0,x2:1,y2:0,
-                    stop:0 {T.TEAL_800},stop:1 {T.TEAL_700});
+                    stop:0 {T.TEAL_900},stop:0.6 {T.TEAL_800},stop:1 {T.TEAL_700});
                 border-top-left-radius:  {T.R_2XL - 1}px;
                 border-top-right-radius: {T.R_2XL - 1}px;
             }}
@@ -112,12 +112,12 @@ class VideoPlayerWidget(QWidget):
         agent_name = QLabel("SparkHire Agent RH")
         f_an = QFont(T.FONT, 11); f_an.setBold(True)
         agent_name.setFont(f_an)
-        agent_name.setStyleSheet("color: rgba(255,255,255,0.92); background: transparent;")
+        agent_name.setStyleSheet("color: rgba(255,255,255,0.96); background: transparent; letter-spacing: 0.1px;")
         name_col.addWidget(agent_name)
 
         self._agent_status = QLabel("En attente…")
         self._agent_status.setFont(QFont(T.FONT, 9))
-        self._agent_status.setStyleSheet("color: rgba(255,255,255,0.55); background: transparent;")
+        self._agent_status.setStyleSheet("color: rgba(255,255,255,0.65); background: transparent; letter-spacing: 0.3px;")
         name_col.addWidget(self._agent_status)
         top_lay.addLayout(name_col)
         top_lay.addStretch()
@@ -151,10 +151,10 @@ class VideoPlayerWidget(QWidget):
         # Very subtle gradient background — soft, not harsh
         self.avatar_display.setStyleSheet(f"""
             QLabel {{
-                background: qlineargradient(x1:0.5,y1:0,x2:0.5,y2:1,
-                    stop:0 #F0FDF9,
-                    stop:0.5 #FAFAF8,
-                    stop:1 #EBF8F5);
+                background: qlineargradient(x1:0.3,y1:0,x2:0.7,y2:1,
+                    stop:0 #EAF8F4,
+                    stop:0.4 #F5F4EF,
+                    stop:1 #E4F6F1);
                 border: none;
             }}
         """)
@@ -202,14 +202,14 @@ class VideoPlayerWidget(QWidget):
         text_col.setSpacing(1)
 
         self._status_main = QLabel("Agent RH : Prêt à vous écouter")
-        f_sm = QFont(T.FONT, T.FS_SM); f_sm.setBold(True)
+        f_sm = QFont(T.FONT, T.FS_BASE); f_sm.setBold(True)
         self._status_main.setFont(f_sm)
-        self._status_main.setStyleSheet(f"color: {T.TEXT_800}; background: transparent;")
+        self._status_main.setStyleSheet(f"color: {T.TEXT_900}; background: transparent; letter-spacing: -0.1px;")
 
         self._status_sub = QLabel("Intelligence Artificielle · SparkHire")
-        self._status_sub.setFont(QFont(T.FONT, T.FS_2XS))
+        self._status_sub.setFont(QFont(T.FONT_BODY, T.FS_XS))
         self._status_sub.setStyleSheet(
-            f"color: {T.TEXT_400}; letter-spacing: 0.3px; background: transparent;"
+            f"color: {T.TEXT_400}; letter-spacing: 0.5px; background: transparent;"
         )
 
         text_col.addWidget(self._status_main)
@@ -354,9 +354,9 @@ class VideoPlayerWidget(QWidget):
     def set_idle(self):
         self._apply_bar_state(
             StarkIcons.user_check(T.GREEN_600).pixmap(QSize(20, 20)),
-            "Agent RH : Prêt à vous écouter", T.TEXT_800,
-            "Disponible", T.GREEN_700, T.GREEN_50, T.GREEN_200,
-            T.GREEN_500, T.GREEN_50, T.GREEN_200,
+            "Agent RH : Prêt à vous écouter", T.TEXT_900,
+            "Disponible", T.GREEN_700, T.GREEN_100, T.GREEN_200,
+            T.GREEN_500, T.GREEN_100, T.GREEN_200,
             "En attente de votre réponse",
         )
         self._load_video("idle")
@@ -364,9 +364,9 @@ class VideoPlayerWidget(QWidget):
     def set_speaking(self):
         self._apply_bar_state(
             StarkIcons.message_circle(T.TEAL_600).pixmap(QSize(20, 20)),
-            "Agent RH : Analyse en cours…", T.TEAL_800,
-            "En cours", T.TEAL_700, T.TEAL_50, T.TEAL_200,
-            T.TEAL_500, T.TEAL_50, T.TEAL_200,
+            "Agent RH : Analyse en cours…", T.TEAL_900,
+            "En cours", T.TEAL_700, T.TEAL_100, T.TEAL_200,
+            T.TEAL_500, T.TEAL_100, T.TEAL_200,
             "Traitement de votre profil",
         )
         self._load_video("speaking")
@@ -374,9 +374,9 @@ class VideoPlayerWidget(QWidget):
     def set_listening(self):
         self._apply_bar_state(
             StarkIcons.headphones(T.AMBER_600).pixmap(QSize(20, 20)),
-            "Agent RH : Écoute active…", T.TEXT_800,
-            "Enregistrement", T.AMBER_600, T.AMBER_50, T.AMBER_200,
-            T.AMBER_500, T.AMBER_50, T.AMBER_200,
+            "Agent RH : Écoute active…", T.TEXT_900,
+            "Enregistrement", T.AMBER_700, T.AMBER_100, T.AMBER_200,
+            T.AMBER_500, T.AMBER_100, T.AMBER_200,
             "Enregistrement de votre réponse",
         )
         self._load_video("listening")

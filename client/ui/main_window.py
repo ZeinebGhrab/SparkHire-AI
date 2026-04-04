@@ -1,10 +1,10 @@
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QMessageBox, QLabel, QLineEdit, QPushButton, QFrame,
-    QGraphicsDropShadowEffect, QStackedWidget
+    QGraphicsDropShadowEffect, QStackedWidget, QSpacerItem, QSizePolicy,
 )
-from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QFont, QColor
+from PySide6.QtCore import Qt, QTimer, QSize
+from PySide6.QtGui import QFont, QColor, QPainter, QBrush, QPen, QLinearGradient
 import sys, os, base64, time, wave, tempfile, logging
 from pathlib import Path
 import pygame
@@ -143,7 +143,7 @@ class LanguageCard(QFrame):
     def _build(self):
         lay = QVBoxLayout(self)
         lay.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        lay.setSpacing(T.SP_3)
+        lay.setSpacing(T.SP_2)
         lay.setContentsMargins(T.SP_5, T.SP_6, T.SP_5, T.SP_5)
 
         # Flag bubble — clean circle
@@ -167,19 +167,18 @@ class LanguageCard(QFrame):
         lay.addWidget(flag_wrap, alignment=Qt.AlignmentFlag.AlignCenter)
 
         # Language name — strong weight
-        name = _label(self._data["name"], T.FS_LG, True, T.TEXT_900)
+        name = _label(self._data["name"], T.FS_XL, True, T.TEXT_950)
         name.setAlignment(Qt.AlignmentFlag.AlignCenter)
         lay.addWidget(name)
 
         # Native tag — soft pill
         tag = QLabel(self._data["native"])
-        tag.setFont(QFont(T.FONT, T.FS_SM))
+        tag.setFont(QFont(T.FONT_BODY, T.FS_SM))
         tag.setAlignment(Qt.AlignmentFlag.AlignCenter)
         tag.setStyleSheet(f"""
-            color: {T.TEXT_500};
-            background: {T.BG_PAGE};
-            border-radius: {T.R_FULL}px;
-            padding: 3px 12px;
+            color: {T.TEXT_400};
+            background: transparent;
+            padding: 2px 8px;
         """)
         lay.addWidget(tag, alignment=Qt.AlignmentFlag.AlignCenter)
 
@@ -265,12 +264,15 @@ class StatusChip(QFrame):
         dot_c, dot_txt, bg, border, text_c = self.STATES.get(state, self.STATES["disconnected"])
         self._dot.setText(dot_txt)
         self._dot.setStyleSheet(f"color: {dot_c}; background: transparent;")
-        self.lbl_main.setStyleSheet(f"color: {text_c}; font-weight: 600; background: transparent;")
+        self.lbl_main.setStyleSheet(
+            f"color: {text_c}; font-weight: 700; font-size: 11px; background: transparent; letter-spacing: 0.2px;"
+        )
         self.setStyleSheet(f"""
             QFrame {{
                 background: {bg};
                 border: none;
                 border-radius: {T.R_FULL}px;
+                padding: 0 2px;
             }}
         """)
 
@@ -422,7 +424,7 @@ class MainWindow(QMainWindow):
         hdr.setStyleSheet(f"""
             #mainHeader {{
                 background: {T.BG_CARD};
-                border-bottom: 1.5px solid {T.BORDER};
+                border-bottom: 1px solid {T.BORDER};
             }}
         """)
 
@@ -434,10 +436,10 @@ class MainWindow(QMainWindow):
         from PySide6.QtGui import QPixmap
         _logo_path = Path(__file__).resolve().parent.parent.parent / "assets" / "pictures" / "logo.jpg"
         logo = QLabel()
-        logo.setFixedSize(36, 36)
+        logo.setFixedSize(40, 40)
         if _logo_path.exists():
             _pix = QPixmap(str(_logo_path)).scaled(
-                36, 36,
+                40, 40,
                 Qt.AspectRatioMode.KeepAspectRatio,
                 Qt.TransformationMode.SmoothTransformation,
             )
@@ -447,7 +449,7 @@ class MainWindow(QMainWindow):
         else:
             # Fallback : gradient teal avec ⚡
             logo = QFrame()
-            logo.setFixedSize(36, 36)
+            logo.setFixedSize(40, 40)
             logo.setStyleSheet(f"""
                 QFrame {{
                     background: qlineargradient(x1:0,y1:0,x2:1,y2:1,
@@ -472,20 +474,20 @@ class MainWindow(QMainWindow):
         title_col.setSpacing(1)
 
         t1 = QLabel("SparkHire")
-        f1 = QFont(T.FONT, T.FS_LG)
+        f1 = QFont(T.FONT, T.FS_XL)
         f1.setBold(True)
         t1.setFont(f1)
         t1.setStyleSheet(f"""
-            color: {T.TEAL_700};
+            color: {T.TEAL_800};
             background: transparent;
-            letter-spacing: -0.5px;
+            letter-spacing: -0.8px;
         """)
 
-        t2 = QLabel("AI")
-        f2 = QFont(T.FONT, T.FS_LG)
+        t2 = QLabel(" AI")
+        f2 = QFont(T.FONT, T.FS_XL)
         f2.setBold(True)
         t2.setFont(f2)
-        t2.setStyleSheet(f"color: {T.CORAL_500}; background: transparent;")
+        t2.setStyleSheet(f"color: {T.CORAL_500}; background: transparent; letter-spacing: -0.5px;")
 
         # Combined on one row
         title_row = QHBoxLayout()
@@ -496,8 +498,8 @@ class MainWindow(QMainWindow):
         title_row.addStretch()
 
         self._header_subtitle = QLabel(self.t("app_subtitle"))
-        self._header_subtitle.setFont(QFont(T.FONT_BODY, T.FS_XS))
-        self._header_subtitle.setStyleSheet(f"color: {T.TEXT_400}; background: transparent; letter-spacing: 0.3px;")
+        self._header_subtitle.setFont(QFont(T.FONT_BODY, T.FS_SM))
+        self._header_subtitle.setStyleSheet(f"color: {T.TEXT_400}; background: transparent; letter-spacing: 0.5px;")
 
         title_col.addLayout(title_row)
         title_col.addWidget(self._header_subtitle)
@@ -559,7 +561,7 @@ class MainWindow(QMainWindow):
         f_h1.setBold(True)
         h1.setFont(f_h1)
         h1.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        h1.setStyleSheet(f"color: {T.TEXT_900}; background: transparent; letter-spacing: -0.5px;")
+        h1.setStyleSheet(f"color: {T.TEXT_950}; background: transparent; letter-spacing: -1px;")
         root.addWidget(h1)
         root.addSpacing(T.SP_2)
 
@@ -591,7 +593,7 @@ class MainWindow(QMainWindow):
         self._confirm_btn.setFixedSize(260, 56)
         self._confirm_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._confirm_btn.setStyleSheet(StarkTheme.get_button_style("primary"))
-        eff = _shadow(28, 8, 55)
+        eff = _shadow(30, 10, 50, 12, 168, 153)
         self._confirm_btn.setGraphicsEffect(eff)
         self._confirm_btn.clicked.connect(self._on_lang_confirmed)
 
@@ -641,12 +643,12 @@ class MainWindow(QMainWindow):
 
         # Icon
         icon_frame = QFrame()
-        icon_frame.setFixedSize(72, 72)
+        icon_frame.setFixedSize(76, 76)
         icon_frame.setStyleSheet(f"""
             QFrame {{
                 background: qlineargradient(x1:0,y1:0,x2:1,y2:1,
-                    stop:0 {T.TEAL_400},stop:1 {T.TEAL_700});
-                border-radius: 20px;
+                    stop:0 {T.TEAL_400},stop:1 {T.TEAL_800});
+                border-radius: 22px;
             }}
         """)
         icon_frame.setGraphicsEffect(_shadow(20, 5, 70))
@@ -666,7 +668,7 @@ class MainWindow(QMainWindow):
         lay.addSpacing(T.SP_5)
 
         # Title
-        self._session_title = _label(self.t("enter_session"), T.FS_2XL, True, T.TEXT_900)
+        self._session_title = _label(self.t("enter_session"), T.FS_2XL, True, T.TEXT_950)
         self._session_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         lay.addWidget(self._session_title)
         lay.addSpacing(T.SP_2)
@@ -704,7 +706,7 @@ class MainWindow(QMainWindow):
         self._session_input = QLineEdit()
         self._session_input.setPlaceholderText(self.t("session_placeholder"))
         self._session_input.setFont(QFont(T.FONT_MONO, T.FS_MD))
-        self._session_input.setMinimumHeight(52)
+        self._session_input.setMinimumHeight(56)
         self._session_input.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._session_input.setStyleSheet(StarkTheme.input_style())
         lay.addWidget(self._session_input)

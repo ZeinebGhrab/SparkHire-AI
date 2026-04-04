@@ -183,8 +183,9 @@ class _SectionHeader(QWidget):
         self._lbl.setFont(f)
         self._lbl.setStyleSheet(f"""
             color: {T.TEXT_400};
-            letter-spacing: 1.5px;
+            letter-spacing: 2.5px;
             background: transparent;
+            font-size: 10px;
         """)
         h.addWidget(self._lbl)
         h.addStretch()
@@ -222,9 +223,9 @@ class _ProgressCard(QFrame):
         top.setSpacing(T.SP_2)
 
         self._q_lbl = QLabel("—  /  —")
-        f = QFont(T.FONT, T.FS_BASE); f.setBold(True)
+        f = QFont(T.FONT, T.FS_MD); f.setBold(True)
         self._q_lbl.setFont(f)
-        self._q_lbl.setStyleSheet(f"color: {T.TEXT_800}; background: transparent;")
+        self._q_lbl.setStyleSheet(f"color: {T.TEXT_900}; background: transparent; letter-spacing: -0.3px;")
         top.addWidget(self._q_lbl)
         top.addStretch()
 
@@ -233,11 +234,12 @@ class _ProgressCard(QFrame):
         f2 = QFont(T.FONT, T.FS_SM); f2.setBold(True)
         self._pct_badge.setFont(f2)
         self._pct_badge.setStyleSheet(f"""
-            color: {T.TEAL_700};
-            background: {T.TEAL_50};
+            color: {T.TEAL_800};
+            background: {T.TEAL_100};
             border: none;
             border-radius: {T.R_FULL}px;
-            padding: 2px 10px;
+            padding: 3px 12px;
+            font-size: 11px;
         """)
         top.addWidget(self._pct_badge)
         lay.addLayout(top)
@@ -354,7 +356,7 @@ class _InfoCard(QFrame):
         f_title = QFont(T.FONT, T.FS_LG); f_title.setBold(True)
         self._title.setFont(f_title)
         self._title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._title.setStyleSheet(f"color: {T.TEXT_900}; background: transparent;")
+        self._title.setStyleSheet(f"color: {T.TEXT_950}; background: transparent; letter-spacing: -0.3px;")
         lay.addWidget(self._title)
 
         # Light divider
@@ -362,11 +364,11 @@ class _InfoCard(QFrame):
 
         # ── Subtitle — readable, muted ─────────────────────────────
         self._sub = QLabel()
-        f_sub = QFont(T.FONT_BODY, T.FS_SM)
+        f_sub = QFont(T.FONT_BODY, T.FS_BASE)
         self._sub.setFont(f_sub)
         self._sub.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._sub.setWordWrap(True)
-        self._sub.setStyleSheet(f"color: {T.TEXT_500}; background: transparent;")
+        self._sub.setStyleSheet(f"color: {T.TEXT_500}; background: transparent; line-height: 1.6;")
         lay.addWidget(self._sub)
 
         # ── Duration badge — amber pill ────────────────────────────
@@ -386,14 +388,14 @@ class _InfoCard(QFrame):
         db.addWidget(clk)
 
         self._dur_lbl = QLabel()
-        f_dur = QFont(T.FONT, T.FS_SM); f_dur.setBold(True)
+        f_dur = QFont(T.FONT, T.FS_BASE); f_dur.setBold(True)
         self._dur_lbl.setFont(f_dur)
-        self._dur_lbl.setStyleSheet(f"color: {T.AMBER_600}; background: transparent;")
+        self._dur_lbl.setStyleSheet(f"color: {T.AMBER_700}; background: transparent; letter-spacing: 0.2px;")
         db.addWidget(self._dur_lbl)
 
         self._dur_badge.setStyleSheet(f"""
             QFrame {{
-                background: {T.AMBER_50};
+                background: {T.AMBER_100};
                 border: none;
                 border-radius: {T.R_FULL}px;
             }}
@@ -426,7 +428,7 @@ class _InfoCard(QFrame):
 
         # ── Countdown ─────────────────────────────────────────────
         self._countdown = QLabel()
-        f_cd = QFont(T.FONT, T.FS_BASE); f_cd.setBold(True)
+        f_cd = QFont(T.FONT, T.FS_MD); f_cd.setBold(True)
         self._countdown.setFont(f_cd)
         self._countdown.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._countdown.setVisible(False)
@@ -435,9 +437,9 @@ class _InfoCard(QFrame):
 
     _PILL_STATES = {
         "waiting":   (T.TEXT_400,    T.BG_PAGE,      T.BORDER,        T.TEXT_500),
-        "playing":   (T.AMBER_500,   T.AMBER_50,     T.AMBER_200,     T.AMBER_600),
-        "ready":     (T.GREEN_500,   T.GREEN_50,     T.GREEN_200,     T.GREEN_700),
-        "recording": (T.RED_400,     T.RED_50,       T.RED_200,       T.RED_600),
+        "playing":   (T.AMBER_500,   T.AMBER_100,    T.AMBER_200,     T.AMBER_700),
+        "ready":     (T.GREEN_500,   T.GREEN_100,    T.GREEN_200,     T.GREEN_700),
+        "recording": (T.RED_400,     T.RED_100,      T.RED_200,       T.RED_600),
     }
 
     def _set_pill(self, state: str, text: str = ""):
@@ -451,7 +453,7 @@ class _InfoCard(QFrame):
             }}
         """)
         self._pill_lbl.setStyleSheet(
-            f"color: {text_c}; font-weight: 600; background: transparent; letter-spacing: 0.2px;"
+            f"color: {text_c}; font-weight: 700; font-size: 12px; background: transparent; letter-spacing: 0.3px;"
         )
         if text:
             self._pill_lbl.setText(text)
@@ -630,9 +632,10 @@ class InterviewWidget(QWidget):
                     color: {T.TEXT_WHITE};
                     border: none;
                     border-radius: {T.R_LG}px;
-                    padding: 15px 32px;
+                    padding: 15px 34px;
                     font-size: {T.FS_MD}px;
                     font-weight: 700;
+                    letter-spacing: 0.4px;
                     font-family: {T.FONT};
                 }}
                 QPushButton:hover {{
@@ -646,7 +649,7 @@ class InterviewWidget(QWidget):
             """)
             eff = QGraphicsDropShadowEffect()
             eff.setBlurRadius(20); eff.setOffset(0, 5)
-            eff.setColor(QColor(220, 38, 38, 55))
+            eff.setColor(QColor(229, 62, 62, 65))
             self.record_btn.setGraphicsEffect(eff)
         else:
             self.record_btn.setText(self.t("start"))
