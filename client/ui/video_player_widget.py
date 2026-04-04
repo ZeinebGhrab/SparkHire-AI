@@ -92,8 +92,8 @@ class VideoPlayerWidget(QWidget):
         avatar_dot.setFixedSize(30, 30)
         avatar_dot.setStyleSheet(f"""
             QFrame {{
-                background: rgba(255,255,255,0.15);
-                border: 1px solid rgba(255,255,255,0.25);
+                background: rgba(255,255,255,0.18);
+                border: none;
                 border-radius: 8px;
             }}
         """)
@@ -136,8 +136,8 @@ class VideoPlayerWidget(QWidget):
         lb_lay.addWidget(live_txt)
         self._live_badge.setStyleSheet(f"""
             QFrame {{
-                background: rgba(255,255,255,0.12);
-                border: 1px solid rgba(255,255,255,0.20);
+                background: rgba(255,255,255,0.15);
+                border: none;
                 border-radius: {T.R_FULL}px;
             }}
         """)
@@ -184,7 +184,7 @@ class VideoPlayerWidget(QWidget):
         self._ic_cont.setStyleSheet(f"""
             QFrame {{
                 background: {T.GREEN_50};
-                border: 1px solid {T.GREEN_200};
+                border: none;
                 border-radius: 10px;
             }}
         """)
@@ -226,7 +226,7 @@ class VideoPlayerWidget(QWidget):
         self._state_badge.setStyleSheet(f"""
             color: {T.GREEN_700};
             background: {T.GREEN_50};
-            border: 1px solid {T.GREEN_200};
+            border: none;
             border-radius: {T.R_FULL}px;
             padding: 3px 12px;
         """)
@@ -330,7 +330,7 @@ class VideoPlayerWidget(QWidget):
         self._ic_cont.setStyleSheet(f"""
             QFrame {{
                 background: {ic_bg};
-                border: 1px solid {ic_border};
+                border: none;
                 border-radius: 10px;
             }}
         """)
@@ -342,7 +342,7 @@ class VideoPlayerWidget(QWidget):
         self._state_badge.setStyleSheet(f"""
             color: {badge_color};
             background: {badge_bg};
-            border: 1px solid {badge_border};
+            border: none;
             border-radius: {T.R_FULL}px;
             padding: 3px 12px;
         """)

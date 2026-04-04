@@ -269,7 +269,7 @@ class StatusChip(QFrame):
         self.setStyleSheet(f"""
             QFrame {{
                 background: {bg};
-                border: 1px solid {border};
+                border: none;
                 border-radius: {T.R_FULL}px;
             }}
         """)
@@ -430,24 +430,39 @@ class MainWindow(QMainWindow):
         lay.setContentsMargins(28, 0, 24, 0)
         lay.setSpacing(0)
 
-        # Logo badge
-        logo = QFrame()
+        # Logo — image depuis assets/, fallback gradient si absent
+        from PySide6.QtGui import QPixmap
+        _logo_path = Path(__file__).resolve().parent.parent.parent / "assets" / "pictures" / "logo.jpg"
+        logo = QLabel()
         logo.setFixedSize(36, 36)
-        logo.setStyleSheet(f"""
-            QFrame {{
-                background: qlineargradient(x1:0,y1:0,x2:1,y2:1,
-                    stop:0 {T.TEAL_400},stop:1 {T.TEAL_700});
-                border-radius: 10px;
-            }}
-        """)
-        logo_lay = QVBoxLayout(logo)
-        logo_lay.setContentsMargins(0, 0, 0, 0)
-        logo_lay.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        spark = QLabel("⚡")
-        spark.setFont(QFont("Segoe UI Emoji", 16))
-        spark.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        logo_lay.addWidget(spark)
-        logo.setGraphicsEffect(_shadow(16, 3, 50))
+        if _logo_path.exists():
+            _pix = QPixmap(str(_logo_path)).scaled(
+                36, 36,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+            logo.setPixmap(_pix)
+            logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            logo.setStyleSheet("background: transparent;")
+        else:
+            # Fallback : gradient teal avec ⚡
+            logo = QFrame()
+            logo.setFixedSize(36, 36)
+            logo.setStyleSheet(f"""
+                QFrame {{
+                    background: qlineargradient(x1:0,y1:0,x2:1,y2:1,
+                        stop:0 {T.TEAL_400},stop:1 {T.TEAL_700});
+                    border-radius: 10px;
+                }}
+            """)
+            _fl = QVBoxLayout(logo)
+            _fl.setContentsMargins(0, 0, 0, 0)
+            _fl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            _sp = QLabel("⚡")
+            _sp.setFont(QFont("Segoe UI Emoji", 16))
+            _sp.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            _fl.addWidget(_sp)
+        logo.setGraphicsEffect(_shadow(16, 3, 30))
 
         lay.addWidget(logo)
         lay.addSpacing(12)
@@ -528,7 +543,7 @@ class MainWindow(QMainWindow):
         tag.setStyleSheet(f"""
             color: {T.TEAL_700};
             background: {T.TEAL_50};
-            border: 1px solid {T.TEAL_200};
+            border: none;
             border-radius: {T.R_FULL}px;
             padding: 4px 14px;
             letter-spacing: 2.5px;
@@ -672,7 +687,7 @@ class MainWindow(QMainWindow):
         self._lang_pill.setStyleSheet(f"""
             QFrame {{
                 background: {T.TEAL_50};
-                border: 1px solid {T.TEAL_200};
+                border: none;
                 border-radius: {T.R_FULL}px;
             }}
         """)

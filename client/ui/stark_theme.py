@@ -1,10 +1,3 @@
-"""
-SparkHire AI — Design Tokens v7
-Aesthetic: Warm Premium Light — Crème/Ivory surfaces · Teal primary · Coral accent
-No dark motif. Clean, confident, HR-tech professional.
-"""
-
-
 class T:
     """Design token namespace — v7 Warm Premium Light."""
 
@@ -526,3 +519,4 @@ class StarkTheme:
     @classmethod
     def get_input_style(cls) -> str:
         return cls.input_style()
+

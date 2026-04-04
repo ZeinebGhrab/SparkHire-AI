@@ -207,7 +207,7 @@ class _ProgressCard(QFrame):
         self.setStyleSheet(f"""
             QFrame {{
                 background: {T.BG_CARD};
-                border: 1px solid {T.BORDER};
+                border: none;
                 border-radius: {T.R_LG}px;
             }}
         """)
@@ -235,6 +235,7 @@ class _ProgressCard(QFrame):
         self._pct_badge.setStyleSheet(f"""
             color: {T.TEAL_700};
             background: {T.TEAL_50};
+            border: none;
             border-radius: {T.R_FULL}px;
             padding: 2px 10px;
         """)
@@ -308,7 +309,7 @@ class _InfoCard(QFrame):
         self.setStyleSheet(f"""
             QFrame {{
                 background: {T.BG_CARD};
-                border: 1px solid {T.BORDER};
+                border: none;
                 border-radius: {T.R_XL}px;
             }}
         """)
@@ -393,7 +394,7 @@ class _InfoCard(QFrame):
         self._dur_badge.setStyleSheet(f"""
             QFrame {{
                 background: {T.AMBER_50};
-                border: 1px solid {T.AMBER_200};
+                border: none;
                 border-radius: {T.R_FULL}px;
             }}
         """)
@@ -445,7 +446,7 @@ class _InfoCard(QFrame):
         self._pill.setStyleSheet(f"""
             QFrame {{
                 background: {bg};
-                border: 1px solid {border};
+                border: none;
                 border-radius: {T.R_FULL}px;
             }}
         """)
