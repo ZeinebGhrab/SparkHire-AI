@@ -1,7 +1,7 @@
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QMessageBox, QLabel, QLineEdit, QPushButton, QFrame,
-    QGraphicsDropShadowEffect, QStackedWidget,
+    QGraphicsDropShadowEffect, QStackedWidget
 )
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QFont, QColor
@@ -136,7 +136,7 @@ class LanguageCard(QFrame):
         self._on_select = on_select
         self._selected  = False
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setFixedSize(200, 210)
+        self.setFixedSize(210, 220)
         self._build()
         self._refresh()
 
@@ -148,19 +148,19 @@ class LanguageCard(QFrame):
 
         # Flag bubble — clean circle
         flag_wrap = QFrame()
-        flag_wrap.setFixedSize(76, 76)
+        flag_wrap.setFixedSize(80, 80)
         flag_wrap.setStyleSheet(f"""
             QFrame {{
                 background: {T.BG_PAGE};
-                border: 1px solid {T.BORDER};
-                border-radius: 38px;
+                border: none;
+                border-radius: 40px;
             }}
         """)
         flag_inner = QVBoxLayout(flag_wrap)
         flag_inner.setContentsMargins(0, 0, 0, 0)
         flag_inner.setAlignment(Qt.AlignmentFlag.AlignCenter)
         flag = QLabel(self._data["flag"])
-        flag.setFont(QFont("Segoe UI Emoji, Apple Color Emoji, Noto Color Emoji", 34))
+        flag.setFont(QFont("Segoe UI Emoji, Apple Color Emoji, Noto Color Emoji", 36))
         flag.setAlignment(Qt.AlignmentFlag.AlignCenter)
         flag.setStyleSheet("background: transparent;")
         flag_inner.addWidget(flag)
@@ -194,7 +194,7 @@ class LanguageCard(QFrame):
                 }}
             """)
             # Soft indigo glow when selected
-            eff = _shadow(32, 8, 35, *self._hex_rgb(c['color']))
+            eff = _shadow(40, 10, 45, *self._hex_rgb(c['color']))
             self.setGraphicsEffect(eff)
         else:
             self.setStyleSheet(f"""
@@ -418,7 +418,7 @@ class MainWindow(QMainWindow):
     def _build_header(self) -> QFrame:
         hdr = QFrame()
         hdr.setObjectName("mainHeader")
-        hdr.setFixedHeight(64)
+        hdr.setFixedHeight(68)
         hdr.setStyleSheet(f"""
             #mainHeader {{
                 background: {T.BG_CARD};
@@ -517,7 +517,7 @@ class MainWindow(QMainWindow):
         # Separator
         sep = QFrame()
         sep.setFixedSize(1, 24)
-        sep.setStyleSheet(f"background: {T.BORDER}; border: none;")
+        sep.setStyleSheet(f"background: {T.BORDER_HOVER}; border: none; opacity: 0.5;")
         lay.addWidget(sep)
         lay.addSpacing(12)
 
@@ -574,7 +574,7 @@ class MainWindow(QMainWindow):
         # Language cards
         cards_row = QHBoxLayout()
         cards_row.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        cards_row.setSpacing(20)
+        cards_row.setSpacing(24)
         self._lang_cards = {}
         for ld in LANGUAGES:
             card = LanguageCard(ld, self._on_lang_select)
@@ -588,7 +588,7 @@ class MainWindow(QMainWindow):
         f_btn = QFont(T.FONT, T.FS_MD)
         f_btn.setBold(True)
         self._confirm_btn.setFont(f_btn)
-        self._confirm_btn.setFixedSize(240, 54)
+        self._confirm_btn.setFixedSize(260, 56)
         self._confirm_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._confirm_btn.setStyleSheet(StarkTheme.get_button_style("primary"))
         eff = _shadow(28, 8, 55)
@@ -625,15 +625,15 @@ class MainWindow(QMainWindow):
 
         # ── Main card ─────────────────────────────────────────────
         card = QFrame()
-        card.setFixedWidth(480)
+        card.setFixedWidth(500)
         card.setStyleSheet(f"""
             QFrame {{
                 background: {T.BG_CARD};
-                border: 1px solid {T.BORDER};
-                border-radius: {T.R_2XL}px;
+                border: none;
+                border-radius: 26px;
             }}
         """)
-        card.setGraphicsEffect(_shadow(40, 12, 30))
+        card.setGraphicsEffect(_shadow(60, 16, 22))
 
         lay = QVBoxLayout(card)
         lay.setContentsMargins(T.SP_10, T.SP_10, T.SP_10, T.SP_10)
@@ -714,7 +714,7 @@ class MainWindow(QMainWindow):
         self._connect_btn = QPushButton(self.t("start_btn"))
         f_conn = QFont(T.FONT, T.FS_MD); f_conn.setBold(True)
         self._connect_btn.setFont(f_conn)
-        self._connect_btn.setMinimumHeight(56)
+        self._connect_btn.setMinimumHeight(58)
         self._connect_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._connect_btn.setStyleSheet(StarkTheme.get_button_style("accent"))
         self._connect_btn.setGraphicsEffect(_shadow(26, 8, 45, 13, 148, 136))

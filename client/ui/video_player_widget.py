@@ -61,12 +61,12 @@ class VideoPlayerWidget(QWidget):
         wrapper.setStyleSheet(f"""
             #videoWrapper {{
                 background: {T.BG_CARD};
-                border: 1px solid {T.BORDER};
+                border: none;
                 border-radius: {T.R_2XL}px;
             }}
         """)
         # Soft shadow — feels embedded, not floating
-        wrapper.setGraphicsEffect(_sh(32, 8, 18))
+        wrapper.setGraphicsEffect(_sh(40, 10, 14))
 
         wrap_lay = QVBoxLayout(wrapper)
         wrap_lay.setContentsMargins(0, 0, 0, 0)
@@ -74,7 +74,7 @@ class VideoPlayerWidget(QWidget):
 
         # ── Top bar — clean dark gradient ─────────────────────────
         top_bar = QFrame()
-        top_bar.setFixedHeight(50)
+        top_bar.setFixedHeight(54)
         top_bar.setStyleSheet(f"""
             QFrame {{
                 background: qlineargradient(x1:0,y1:0,x2:1,y2:0,
@@ -84,17 +84,17 @@ class VideoPlayerWidget(QWidget):
             }}
         """)
         top_lay = QHBoxLayout(top_bar)
-        top_lay.setContentsMargins(18, 0, 18, 0)
+        top_lay.setContentsMargins(20, 0, 20, 0)
         top_lay.setSpacing(10)
 
         # Agent avatar — subtle glass button
         avatar_dot = QFrame()
-        avatar_dot.setFixedSize(30, 30)
+        avatar_dot.setFixedSize(34, 34)
         avatar_dot.setStyleSheet(f"""
             QFrame {{
                 background: rgba(255,255,255,0.18);
                 border: none;
-                border-radius: 8px;
+                border-radius: 10px;
             }}
         """)
         av_lay = QVBoxLayout(avatar_dot)
@@ -110,13 +110,13 @@ class VideoPlayerWidget(QWidget):
         name_col = QVBoxLayout()
         name_col.setSpacing(1)
         agent_name = QLabel("SparkHire Agent RH")
-        f_an = QFont(T.FONT, 10); f_an.setBold(True)
+        f_an = QFont(T.FONT, 11); f_an.setBold(True)
         agent_name.setFont(f_an)
         agent_name.setStyleSheet("color: rgba(255,255,255,0.92); background: transparent;")
         name_col.addWidget(agent_name)
 
         self._agent_status = QLabel("En attente…")
-        self._agent_status.setFont(QFont(T.FONT, 8))
+        self._agent_status.setFont(QFont(T.FONT, 9))
         self._agent_status.setStyleSheet("color: rgba(255,255,255,0.55); background: transparent;")
         name_col.addWidget(self._agent_status)
         top_lay.addLayout(name_col)
@@ -164,23 +164,23 @@ class VideoPlayerWidget(QWidget):
         # ── Bottom status bar — clean white bar ───────────────────
         bar = QFrame()
         bar.setObjectName("statusBar")
-        bar.setFixedHeight(56)
+        bar.setFixedHeight(60)
         bar.setStyleSheet(f"""
             #statusBar {{
                 background: {T.BG_CARD};
-                border-top: 1px solid {T.BORDER};
+                border-top: 1px solid {T.BG_PAGE};
                 border-bottom-left-radius:  {T.R_2XL - 1}px;
                 border-bottom-right-radius: {T.R_2XL - 1}px;
             }}
         """)
 
         bar_lay = QHBoxLayout(bar)
-        bar_lay.setContentsMargins(18, 0, 18, 0)
+        bar_lay.setContentsMargins(20, 0, 20, 0)
         bar_lay.setSpacing(12)
 
         # State icon — soft colored container
         self._ic_cont = QFrame()
-        self._ic_cont.setFixedSize(38, 38)
+        self._ic_cont.setFixedSize(40, 40)
         self._ic_cont.setStyleSheet(f"""
             QFrame {{
                 background: {T.GREEN_50};

@@ -208,13 +208,13 @@ class _ProgressCard(QFrame):
             QFrame {{
                 background: {T.BG_CARD};
                 border: none;
-                border-radius: {T.R_LG}px;
+                border-radius: {T.R_XL}px;
             }}
         """)
-        self.setGraphicsEffect(_shadow(16, 4, 12))
+        self.setGraphicsEffect(_shadow(20, 5, 10))
 
         lay = QVBoxLayout(self)
-        lay.setContentsMargins(T.SP_5, T.SP_4, T.SP_5, T.SP_4)
+        lay.setContentsMargins(T.SP_5, T.SP_5, T.SP_5, T.SP_5)
         lay.setSpacing(T.SP_3)
 
         # Top row: question label + percentage badge
@@ -313,23 +313,23 @@ class _InfoCard(QFrame):
                 border-radius: {T.R_XL}px;
             }}
         """)
-        self.setGraphicsEffect(_shadow(20, 6, 14))
+        self.setGraphicsEffect(_shadow(24, 6, 10))
 
         lay = QVBoxLayout(self)
-        lay.setContentsMargins(T.SP_6, T.SP_6, T.SP_6, T.SP_5)
-        lay.setSpacing(T.SP_4)
+        lay.setContentsMargins(T.SP_6, T.SP_8, T.SP_6, T.SP_6)
+        lay.setSpacing(T.SP_5)
 
         # ── Mic icon — centered, clean gradient bubble ─────────────
         icon_row = QHBoxLayout()
         icon_row.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         mic_wrap = QFrame()
-        mic_wrap.setFixedSize(60, 60)
+        mic_wrap.setFixedSize(68, 68)
         mic_wrap.setStyleSheet(f"""
             QFrame {{
                 background: qlineargradient(x1:0,y1:0,x2:1,y2:1,
                     stop:0 {T.TEAL_400},stop:1 {T.TEAL_700});
-                border-radius: 16px;
+                border-radius: 20px;
             }}
         """)
         # Subtle indigo glow on mic icon
@@ -342,7 +342,7 @@ class _InfoCard(QFrame):
         mic_inner.setContentsMargins(0, 0, 0, 0)
         mic_inner.setAlignment(Qt.AlignmentFlag.AlignCenter)
         mic_emoji = QLabel("🎤")
-        mic_emoji.setFont(QFont("Segoe UI Emoji, Apple Color Emoji", 24))
+        mic_emoji.setFont(QFont("Segoe UI Emoji, Apple Color Emoji", 26))
         mic_emoji.setAlignment(Qt.AlignmentFlag.AlignCenter)
         mic_inner.addWidget(mic_emoji)
 
@@ -351,7 +351,7 @@ class _InfoCard(QFrame):
 
         # ── Title — strong hierarchy ───────────────────────────────
         self._title = QLabel("Écoutez attentivement")
-        f_title = QFont(T.FONT, T.FS_MD); f_title.setBold(True)
+        f_title = QFont(T.FONT, T.FS_LG); f_title.setBold(True)
         self._title.setFont(f_title)
         self._title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._title.setStyleSheet(f"color: {T.TEXT_900}; background: transparent;")
@@ -374,7 +374,7 @@ class _InfoCard(QFrame):
         dur_row.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         self._dur_badge = QFrame()
-        self._dur_badge.setFixedHeight(30)
+        self._dur_badge.setFixedHeight(32)
         self._dur_badge.setVisible(False)
         db = QHBoxLayout(self._dur_badge)
         db.setContentsMargins(12, 0, 12, 0)
@@ -406,7 +406,7 @@ class _InfoCard(QFrame):
         pill_row.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         self._pill = QFrame()
-        self._pill.setFixedHeight(34)
+        self._pill.setFixedHeight(36)
         pill_inner = QHBoxLayout(self._pill)
         pill_inner.setContentsMargins(14, 0, 18, 0)
         pill_inner.setSpacing(T.SP_2)
@@ -497,8 +497,8 @@ class InterviewWidget(QWidget):
 
         root = QVBoxLayout(self)
         # 8px grid margins
-        root.setContentsMargins(T.SP_2, T.SP_3, T.SP_2, T.SP_3)
-        root.setSpacing(T.SP_3)
+        root.setContentsMargins(T.SP_3, T.SP_4, T.SP_3, T.SP_4)
+        root.setSpacing(T.SP_4)
 
         # ── Section header ─────────────────────────────────────────
         self._header = _SectionHeader()
@@ -520,7 +520,7 @@ class InterviewWidget(QWidget):
 
         # ── End button — ghost / danger ────────────────────────────
         self.end_btn = QPushButton()
-        self.end_btn.setMinimumHeight(38)
+        self.end_btn.setMinimumHeight(36)
         self.end_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.end_btn.setStyleSheet(StarkTheme.get_button_style("danger"))
         self.end_btn.clicked.connect(self.end_interview.emit)
@@ -534,7 +534,7 @@ class InterviewWidget(QWidget):
         btn = QPushButton()
         f = QFont(T.FONT, T.FS_MD); f.setBold(True)
         btn.setFont(f)
-        btn.setMinimumHeight(56)
+        btn.setMinimumHeight(58)
         btn.setCursor(Qt.CursorShape.PointingHandCursor)
         btn.setStyleSheet(StarkTheme.get_button_style("primary"))
         # Subtle indigo glow

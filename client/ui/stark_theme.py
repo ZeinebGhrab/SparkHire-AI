@@ -1,7 +1,9 @@
+
 class T:
 
+
     # ── Base Backgrounds — warm ivory palette ─────────────────────
-    BG_APP          = "#FAFAF8"   # warm off-white
+    BG_APP          = "#FAFAF7"   # warm off-white
     BG_PAGE         = "#F4F3EE"   # warm cream
     BG_CARD         = "#FFFFFF"   # pure white cards
     BG_CARD_ALT     = "#FFFFFE"
@@ -341,7 +343,7 @@ class StarkTheme:
             border: none;
             border-radius: 3px;
             background: {T.TEAL_100};
-            height: 6px;
+            height: 5px;
             text-align: center;
             color: transparent;
         }}
@@ -363,7 +365,7 @@ class StarkTheme:
                     padding: 14px 32px;
                     font-size: {T.FS_MD}px;
                     font-weight: 700;
-                    letter-spacing: 0.2px;
+                    letter-spacing: 0.3px;
                     font-family: {T.FONT};
                 }}
                 QPushButton:hover {{
@@ -518,4 +520,3 @@ class StarkTheme:
     @classmethod
     def get_input_style(cls) -> str:
         return cls.input_style()
-

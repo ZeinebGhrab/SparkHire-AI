@@ -152,8 +152,8 @@ class CameraPreviewWidget(QWidget):
         self._frame.setFixedSize(_W, _H)
         self._frame.setStyleSheet(f"""
             QFrame {{
-                background: #0F172A;
-                border: 2px solid rgba(255,255,255,0.18);
+                background: #1A2E2A;
+                border: none;
                 border-radius: {_RADIUS}px;
             }}
         """)
@@ -347,14 +347,14 @@ class CameraPreviewWidget(QWidget):
     def _show_placeholder(self):
         w, h = _W - 4, _VH
         img  = np.zeros((h, w, 3), dtype=np.uint8)
-        img[:, :] = (30, 41, 59)
+        img[:, :] = (20, 40, 36)
         cx, cy = w // 2, h // 2
-        cv2.rectangle(img, (cx - 22, cy - 14), (cx + 22, cy + 14), (71, 85, 105), -1)
-        cv2.rectangle(img, (cx - 22, cy - 14), (cx + 22, cy + 14), (100, 116, 139), 1)
+        cv2.rectangle(img, (cx - 22, cy - 14), (cx + 22, cy + 14), (45, 90, 80), -1)
+        cv2.rectangle(img, (cx - 22, cy - 14), (cx + 22, cy + 14), (70, 140, 120), 1)
         pts = np.array([[cx+22,cy-8],[cx+34,cy-16],[cx+34,cy+16],[cx+22,cy+8]])
-        cv2.fillPoly(img, [pts], (71, 85, 105))
-        cv2.circle(img, (cx, cy), 7, (100, 116, 139), -1)
-        cv2.circle(img, (cx, cy), 4, (30, 41, 59), -1)
+        cv2.fillPoly(img, [pts], (45, 90, 80))
+        cv2.circle(img, (cx, cy), 7, (70, 140, 120), -1)
+        cv2.circle(img, (cx, cy), 4, (20, 40, 36), -1)
         qt = QImage(img.tobytes(), w, h, w * 3, QImage.Format.Format_RGB888)
         self._img_lbl.setPixmap(QPixmap.fromImage(qt))
 
