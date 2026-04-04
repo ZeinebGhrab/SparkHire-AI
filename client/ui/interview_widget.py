@@ -2,8 +2,8 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QLabel, QProgressBar, QFrame, QGraphicsDropShadowEffect,
 )
-from PySide6.QtCore import Qt, Signal, QTimer
-from PySide6.QtGui import QFont, QColor, QPainter, QBrush
+from PySide6.QtCore import Qt, Signal, QTimer, QPropertyAnimation, QEasingCurve
+from PySide6.QtGui import QFont, QColor, QPainter, QBrush, QPen, QLinearGradient
 import sys
 from pathlib import Path
 
@@ -426,14 +426,7 @@ class _InfoCard(QFrame):
         pill_row.addWidget(self._pill)
         lay.addLayout(pill_row)
 
-        # ── Countdown ─────────────────────────────────────────────
-        self._countdown = QLabel()
-        f_cd = QFont(T.FONT, T.FS_MD); f_cd.setBold(True)
-        self._countdown.setFont(f_cd)
-        self._countdown.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._countdown.setVisible(False)
-        self._countdown.setStyleSheet(f"color: {T.RED_500}; background: transparent;")
-        lay.addWidget(self._countdown)
+
 
     _PILL_STATES = {
         "waiting":   (T.TEXT_400,    T.BG_PAGE,      T.BORDER,        T.TEXT_500),
@@ -467,9 +460,7 @@ class _InfoCard(QFrame):
         self._dur_lbl.setText(t)
         self._dur_badge.setVisible(bool(t))
     def set_countdown(self, text: str, color: str):
-        self._countdown.setText(text)
-        self._countdown.setStyleSheet(f"color: {color}; font-weight: 700; background: transparent;")
-        self._countdown.setVisible(bool(text))
+        pass  # supprimé — la pill affiche déjà le temps restant
     def set_pill_text(self, text: str):
         self._pill_lbl.setText(text)
 
@@ -591,11 +582,7 @@ class InterviewWidget(QWidget):
         self.start_recording.emit()
         self._header.set_recording(True)
         self._set_recording_style(True)
-        self._info_card.set_status("recording", "● " + self.t("stop"))
-        self._info_card.set_countdown(
-            self.t("recording_left", s=self._remaining),
-            T.RED_500
-        )
+        self._info_card.set_status("recording", "● " + self.t("recording_left", s=self._remaining))
         self._countdown_timer.start()
 
     def _stop_rec(self, auto: bool = False):
@@ -605,19 +592,15 @@ class InterviewWidget(QWidget):
         self._header.set_recording(False)
         self._set_recording_style(False)
         self.record_btn.setEnabled(False)
-        self._info_card.set_countdown("", "")
         if auto:
-            self._info_card.set_status("waiting", "")
-            self._info_card.set_pill_text(self.t("time_up"))
+            self._info_card.set_status("waiting", self.t("time_up"))
         else:
             self._info_card.set_status("waiting", self.t("waiting"))
 
     def _on_tick(self):
         self._remaining -= 1
         s = self._remaining
-        color = T.TEXT_600 if s > 30 else (T.AMBER_500 if s > 10 else T.RED_500)
         text = self.t("recording_left", s=s)
-        self._info_card.set_countdown(text, color)
         self._info_card.set_pill_text(text)
         if s <= 0:
             self._stop_rec(auto=True)
