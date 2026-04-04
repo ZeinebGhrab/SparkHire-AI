@@ -8,7 +8,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 class Settings(BaseSettings):
     # ================= API =================
-    API_TITLE: str = "Stark Recruitment AI API"
+    API_TITLE: str = "SparkHire-AI AI API"
     API_VERSION: str = "1.0.0"
     API_HOST: str = "0.0.0.0"
     API_PORT: int = 8000
@@ -16,7 +16,7 @@ class Settings(BaseSettings):
 
     # ================= Database =================
     MONGODB_URL: str = "mongodb://localhost:27017"
-    MONGODB_DB_NAME: str = "stark_recruitment"
+    MONGODB_DB_NAME: str = "SparkHire-AI"
 
     # ================= Security =================
     SECRET_KEY: str = "change-me-in-production"

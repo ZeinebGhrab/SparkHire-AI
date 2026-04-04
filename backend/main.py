@@ -1,5 +1,5 @@
 """
-Stark Recruitment AI — Backend FastAPI
+SparkHire AI — Backend FastAPI
 Pipeline : Voix → Whisper → Llama 3 → Score / Feedback
           Vidéo → MediaPipe + DeepFace → Métriques comportementales
 """
@@ -229,7 +229,7 @@ async def websocket_interview(
 @app.get("/")
 async def root():
     return {
-        "message":             "Stark Recruitment AI API",
+        "message":             "SparkHire AI API",
         "version":             settings.API_VERSION,
         "languages_supported": ["ar", "fr", "en"],
         "documentation":       "/docs",

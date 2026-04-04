@@ -7,7 +7,7 @@ load_dotenv()
 
 # Récupérer l'URL de MongoDB (par défaut : localhost)
 MONGODB_URL = os.getenv("MONGODB_URL", "mongodb://localhost:27017")
-DB_NAME = os.getenv("MONGODB_DB_NAME", "stark_recruitment")
+DB_NAME = os.getenv("MONGODB_DB_NAME", "SparkHire-AI")
 
 # Créer le client MongoDB
 client = MongoClient(MONGODB_URL)

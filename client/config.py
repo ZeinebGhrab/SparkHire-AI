@@ -20,7 +20,7 @@ class Settings(BaseSettings):
 
     # ================= Database =================
     MONGODB_URL: str = "mongodb://localhost:27017"
-    MONGODB_DB_NAME: str = "stark_recruitment"
+    MONGODB_DB_NAME: str = "SparkHire-AI"
 
     # ================= Security =================
     SECRET_KEY: str = "change-me-in-production"

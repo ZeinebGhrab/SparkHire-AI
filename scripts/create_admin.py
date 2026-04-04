@@ -9,8 +9,8 @@ project_root = Path(__file__).parent.parent
 load_dotenv(project_root / ".env")
 
 MONGODB_URL = os.getenv("MONGODB_URL", "mongodb://localhost:27017")
-DB_NAME = os.getenv("MONGODB_DB_NAME", "stark_recruitment")
-EMAIL = "rh@stark.tn"
+DB_NAME = os.getenv("MONGODB_DB_NAME", "SparkHire-AI")
+EMAIL = "admin@sparkhire.ai"
 PASSWORD = "admin123"
 
 def create_admin_user():

@@ -37,6 +37,12 @@ class T:
     VIOLET_400      = "#A78BFA"
     VIOLET_500      = "#8B5CF6"
     VIOLET_600      = "#7C3AED"
+    
+    
+    # ── Blue Accent  ───────────────────────
+    BLUE_400 = "#60A5FA"
+    BLUE_500 = "#3B82F6"
+    BLUE_600 = "#2563EB"
 
     # ── Cyan / Teal ───────────────────────────────────────────────
     CYAN_50         = "#ECFEFF"
@@ -125,14 +131,14 @@ class T:
 class StarkTheme:
     """Main theme class — all shared aliases and component styles, v6."""
 
-    # ─── Primary Gradients — indigo → violet ──────────────────────
+    # ─── Primary Gradients — indigo → Bleu ──────────────────────
     GRADIENT_PRIMARY = (
         f"qlineargradient(x1:0,y1:0,x2:1,y2:0,"
-        f"stop:0 {T.INDIGO_600},stop:1 {T.VIOLET_500})"
+        f"stop:0 {T.INDIGO_600},stop:1 {T.BLUE_500})"
     )
     GRADIENT_PRIMARY_HOVER = (
         f"qlineargradient(x1:0,y1:0,x2:1,y2:0,"
-        f"stop:0 {T.INDIGO_700},stop:1 {T.VIOLET_600})"
+        f"stop:0 {T.INDIGO_700},stop:1 {T.BLUE_600})"
     )
     GRADIENT_CYAN = (
         f"qlineargradient(x1:0,y1:0,x2:1,y2:0,"
@@ -140,7 +146,7 @@ class StarkTheme:
     )
     GRADIENT_ACCENT = (
         f"qlineargradient(x1:0,y1:0,x2:1,y2:0,"
-        f"stop:0 {T.INDIGO_500},stop:1 {T.VIOLET_500})"
+        f"stop:0 {T.INDIGO_500},stop:1 {T.BLUE_500})"
     )
     GRADIENT_HERO = (
         f"qlineargradient(x1:0,y1:0,x2:1,y2:1,"
@@ -340,7 +346,7 @@ class StarkTheme:
     @classmethod
     def get_button_style(cls, variant: str = "primary") -> str:
         variants = {
-            # ── Primary: indigo → violet gradient ────────────────
+            # ── Primary: indigo → Bleu gradient ────────────────
             "primary": f"""
                 QPushButton {{
                     background: {cls.GRADIENT_PRIMARY};
@@ -358,7 +364,7 @@ class StarkTheme:
                 }}
                 QPushButton:pressed {{
                     background: qlineargradient(x1:0,y1:0,x2:1,y2:0,
-                        stop:0 {T.INDIGO_800},stop:1 {T.VIOLET_600});
+                        stop:0 {T.INDIGO_800},stop:1 {T.BLUE_600});
                     padding-top: 15px; padding-bottom: 13px;
                 }}
                 QPushButton:disabled {{
@@ -386,7 +392,7 @@ class StarkTheme:
                 QPushButton:pressed {{
                     padding-top: 16px; padding-bottom: 14px;
                     background: qlineargradient(x1:0,y1:0,x2:1,y2:0,
-                        stop:0 {T.INDIGO_800},stop:1 {T.VIOLET_600});
+                        stop:0 {T.INDIGO_800},stop:1 {T.BLUE_600});
                 }}
                 QPushButton:disabled {{
                     background: {T.BG_PAGE};
