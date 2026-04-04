@@ -1,5 +1,4 @@
 class T:
-    """Design token namespace — v7 Warm Premium Light."""
 
     # ── Base Backgrounds — warm ivory palette ─────────────────────
     BG_APP          = "#FAFAF8"   # warm off-white

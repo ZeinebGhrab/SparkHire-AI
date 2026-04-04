@@ -1,10 +1,10 @@
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QMessageBox, QLabel, QLineEdit, QPushButton, QFrame,
-    QGraphicsDropShadowEffect, QStackedWidget, QSpacerItem, QSizePolicy,
+    QGraphicsDropShadowEffect, QStackedWidget,
 )
-from PySide6.QtCore import Qt, QTimer, QSize
-from PySide6.QtGui import QFont, QColor, QPainter, QBrush, QPen, QLinearGradient
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QFont, QColor
 import sys, os, base64, time, wave, tempfile, logging
 from pathlib import Path
 import pygame

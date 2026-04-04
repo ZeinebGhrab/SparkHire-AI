@@ -1,11 +1,3 @@
-"""
-Icônes SVG Premium - Stark Solutions
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Bibliothèque : Lucide Icons  https://lucide.dev/
-Technique     : textPath SVG — texte épousant les contours
-Rendu         : PySide6 QSvgRenderer
-"""
-
 from PySide6.QtGui  import QIcon, QPixmap, QPainter
 from PySide6.QtSvg  import QSvgRenderer
 from PySide6.QtCore import QByteArray, QSize, Qt
