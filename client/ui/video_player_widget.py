@@ -251,9 +251,9 @@ class VideoPlayerWidget(QWidget):
         self.timer.timeout.connect(self._update_frame)
         self.current_state = "idle"
 
-        # ── PiP camera overlay ────────────────────────────────────
+        # ── PiP camera overlay — parent = zone vidéo pure ────────
         from client.ui.camera_preview_widget import CameraPreviewWidget
-        self._camera_preview = CameraPreviewWidget(parent=self)
+        self._camera_preview = CameraPreviewWidget(parent=self.avatar_display)
         self._camera_preview.hide()
 
         self.set_idle()
@@ -316,7 +316,8 @@ class VideoPlayerWidget(QWidget):
 
     def resizeEvent(self, e):
         super().resizeEvent(e)
-        if hasattr(self, "_camera_preview"):
+        if hasattr(self, "_camera_preview") and hasattr(self, "avatar_display"):
+            self.avatar_display.resizeEvent(e)
             self._camera_preview.reposition()
 
     # ── State helpers ─────────────────────────────────────────────

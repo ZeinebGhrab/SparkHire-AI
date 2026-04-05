@@ -359,8 +359,12 @@ class CameraPreviewWidget(QWidget):
         self._img_lbl.setPixmap(QPixmap.fromImage(qt))
 
     def reposition(self):
-        if self.parent():
-            self.move(_MARGIN, self.parent().height() - self.height() - _MARGIN)
+        p = self.parent()
+        if p:
+            x = _MARGIN
+            y = p.height() - self.height() - _MARGIN
+            self.move(x, y)
+            self.raise_()   # toujours au-dessus de l'image vidéo
 
     def cleanup(self):
         if self._face_mesh:
