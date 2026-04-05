@@ -848,20 +848,62 @@ class MainWindow(QMainWindow):
             self._tmp_audio_path = None
 
     def _reset_ui_for_new_session(self):
+        # ── 1. Incrémenter le token pour invalider tout callback en vol ────────
+        self._session_token += 1
+
+        # ── 2. Arrêter et déconnecter proprement le WebSocket ─────────────────
+        if self.websocket_client:
+            try:
+                self.websocket_client.disconnected.disconnect()
+                self.websocket_client.connected.disconnect()
+                self.websocket_client.message_received.disconnect()
+                self.websocket_client.error_occurred.disconnect()
+            except Exception:
+                pass
+            try:
+                self.websocket_client.disconnect_from_server()
+            except Exception:
+                pass
+            self.websocket_client = None
+
+        # ── 3. Reset des flags d'état ─────────────────────────────────────────
+        self.is_connecting = False
+        self.session_id    = None
+
+        # ── 4. Caméra et vidéo ────────────────────────────────────────────────
         if self._video_collector and self._video_collector.is_capturing:
             self._video_collector.stop_capture()
         self.video_player.camera_preview.hide()
         self.video_player.camera_preview.set_recording(False)
-        self.stacked.setVisible(True); self.stacked.setCurrentIndex(0)
+
+        # ── 5. Restaurer l'UI vers l'écran de session ─────────────────────────
+        self.stacked.setVisible(True)
+        self.stacked.setCurrentIndex(1)          # → écran session directement
         self.interview_container.setVisible(False)
-        self._connect_btn.setEnabled(True); self._connect_btn.setText(self.t("start_btn"))
-        self._session_input.setEnabled(True); self._session_input.clear()
+        self._connect_btn.setEnabled(True)
+        self._connect_btn.setText(self.t("start_btn"))
+        self._session_input.setEnabled(True)
+        self._session_input.clear()
+        self._session_input.setFocus()           # focus prêt à taper
+
+        # ── 6. Status chip ────────────────────────────────────────────────────
         self.status_chip.lbl_main.setText(self.t("status_disconnected"))
         self.status_chip.set_state("disconnected")
         self.statusBar().showMessage(self.t("vocal_mode_label"))
+
+        # ── 7. Reset interview widget ─────────────────────────────────────────
+        if hasattr(self, "interview_widget"):
+            self.interview_widget.enable_recording(False)
+            if self.interview_widget.is_recording:
+                try: self.interview_widget._stop_rec(auto=False)
+                except Exception: pass
+
+        # ── 8. Audio recorder ─────────────────────────────────────────────────
         if self.audio_recorder:
-            try: self.audio_recorder.cleanup()
-            except Exception: pass
+            try:
+                self.audio_recorder.cleanup()
+            except Exception:
+                pass
             self.audio_recorder = None
 
     # ══════════════════════════════════════════════════════════════
@@ -918,7 +960,10 @@ class MainWindow(QMainWindow):
         if not self._is_active(tok): return
         if self.is_connecting:
             self._handle_conn_failure(reason or f"Code {code}"); return
-        self._reset_audio_state(); self._reset_ui_for_new_session()
+        # Déconnexion en cours d'entretien (inattendue) — reset complet
+        if self.interview_container.isVisible():
+            self._reset_audio_state()
+            self._reset_ui_for_new_session()
 
     def _on_ws_error(self, error, tok):
         if not self._is_active(tok): return
@@ -1121,11 +1166,9 @@ class MainWindow(QMainWindow):
             self.websocket_client.send_message({"type": "end_interview"})
 
     def _handle_conn_failure(self, msg: str):
-        self.is_connecting = False; self._reset_audio_state()
-        self._connect_btn.setEnabled(True); self._connect_btn.setText(self.t("start_btn"))
-        self._session_input.setEnabled(True)
-        self.status_chip.set_state("error")
-        self.status_chip.lbl_main.setText(self.t("status_disconnected"))
+        self.is_connecting = False
+        self._reset_audio_state()
+        # Nettoyer le websocket
         if self.websocket_client:
             try:
                 self.websocket_client.disconnected.disconnect()
@@ -1136,6 +1179,13 @@ class MainWindow(QMainWindow):
             try: self.websocket_client.disconnect_from_server()
             except Exception: pass
             self.websocket_client = None
+        # Réactiver l'UI
+        self._connect_btn.setEnabled(True)
+        self._connect_btn.setText(self.t("start_btn"))
+        self._session_input.setEnabled(True)
+        self._session_input.setFocus()
+        self.status_chip.set_state("error")
+        self.status_chip.lbl_main.setText(self.t("status_disconnected"))
         self._show_error(self.t("error_title"), msg)
 
     def _show_error(self, title, msg):
