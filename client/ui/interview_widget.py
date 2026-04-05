@@ -160,7 +160,7 @@ def _divider(vertical=False):
     else:
         d.setFrameShape(QFrame.Shape.HLine)
         d.setFixedHeight(1)
-    d.setStyleSheet(f"background: {T.BORDER}; border: none;")
+    d.setStyleSheet(f"background: {T.BORDER}; border: none; opacity: 0.6;")
     return d
 
 
@@ -175,7 +175,7 @@ class _SectionHeader(QWidget):
         h.setContentsMargins(0, 0, 0, 0)
         h.setSpacing(T.SP_2)
 
-        self._dot = PulseDot(T.TEAL_500, 7)
+        self._dot = PulseDot(T.TEAL_400, 8)
         h.addWidget(self._dot)
 
         self._lbl = QLabel(text)
@@ -249,13 +249,13 @@ class _ProgressCard(QFrame):
         self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(0)
         self.progress_bar.setTextVisible(False)
-        self.progress_bar.setFixedHeight(4)
+        self.progress_bar.setFixedHeight(5)
         self.progress_bar.setStyleSheet(StarkTheme.progress_style())
         lay.addWidget(self.progress_bar)
 
         # Dot indicators
         self._dots_row = QHBoxLayout()
-        self._dots_row.setSpacing(5)
+        self._dots_row.setSpacing(6)
         self._dots: list[QLabel] = []
         self._total_dots = 0
         lay.addLayout(self._dots_row)
@@ -272,7 +272,7 @@ class _ProgressCard(QFrame):
             self._total_dots = total
             for i in range(total):
                 d = QLabel()
-                d.setFixedSize(7, 7)
+                d.setFixedSize(8, 8)
                 d.setStyleSheet(f"""
                     QLabel {{
                         background: {T.BORDER};
@@ -336,8 +336,8 @@ class _InfoCard(QFrame):
         """)
         # Subtle indigo glow on mic icon
         mic_glow = QGraphicsDropShadowEffect()
-        mic_glow.setBlurRadius(18); mic_glow.setOffset(0, 4)
-        mic_glow.setColor(QColor(13, 148, 136, 50))
+        mic_glow.setBlurRadius(22); mic_glow.setOffset(0, 6)
+        mic_glow.setColor(QColor(10, 114, 105, 70))
         mic_wrap.setGraphicsEffect(mic_glow)
 
         mic_inner = QVBoxLayout(mic_wrap)
@@ -410,7 +410,7 @@ class _InfoCard(QFrame):
         self._pill = QFrame()
         self._pill.setFixedHeight(36)
         pill_inner = QHBoxLayout(self._pill)
-        pill_inner.setContentsMargins(14, 0, 18, 0)
+        pill_inner.setContentsMargins(16, 0, 20, 0)
         pill_inner.setSpacing(T.SP_2)
 
         self._pill_dot = PulseDot(T.TEXT_400, 7)
@@ -513,7 +513,7 @@ class InterviewWidget(QWidget):
 
         # ── End button — ghost / danger ────────────────────────────
         self.end_btn = QPushButton()
-        self.end_btn.setMinimumHeight(36)
+        self.end_btn.setMinimumHeight(34)
         self.end_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.end_btn.setStyleSheet(StarkTheme.get_button_style("danger"))
         self.end_btn.clicked.connect(self.end_interview.emit)
@@ -527,12 +527,12 @@ class InterviewWidget(QWidget):
         btn = QPushButton()
         f = QFont(T.FONT, T.FS_MD); f.setBold(True)
         btn.setFont(f)
-        btn.setMinimumHeight(58)
+        btn.setMinimumHeight(60)
         btn.setCursor(Qt.CursorShape.PointingHandCursor)
         btn.setStyleSheet(StarkTheme.get_button_style("primary"))
         # Subtle indigo glow
         eff = QGraphicsDropShadowEffect()
-        eff.setBlurRadius(20); eff.setOffset(0, 5)
+        eff.setBlurRadius(22); eff.setOffset(0, 6)
         eff.setColor(QColor(13, 148, 136, 45))
         btn.setGraphicsEffect(eff)
         btn.clicked.connect(self._toggle_record)
@@ -631,14 +631,14 @@ class InterviewWidget(QWidget):
                 }}
             """)
             eff = QGraphicsDropShadowEffect()
-            eff.setBlurRadius(20); eff.setOffset(0, 5)
-            eff.setColor(QColor(229, 62, 62, 65))
+            eff.setBlurRadius(22); eff.setOffset(0, 6)
+            eff.setColor(QColor(197, 48, 48, 75))
             self.record_btn.setGraphicsEffect(eff)
         else:
             self.record_btn.setText(self.t("start"))
             self.record_btn.setStyleSheet(StarkTheme.get_button_style("primary"))
             eff = QGraphicsDropShadowEffect()
-            eff.setBlurRadius(20); eff.setOffset(0, 5)
+            eff.setBlurRadius(22); eff.setOffset(0, 6)
             eff.setColor(QColor(13, 148, 136, 45))
             self.record_btn.setGraphicsEffect(eff)
 

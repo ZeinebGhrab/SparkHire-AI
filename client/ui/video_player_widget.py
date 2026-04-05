@@ -62,7 +62,7 @@ class VideoPlayerWidget(QWidget):
             #videoWrapper {{
                 background: {T.BG_CARD};
                 border: none;
-                border-radius: {T.R_2XL}px;
+                border-radius: 24px;
             }}
         """)
         # Soft shadow — feels embedded, not floating
@@ -77,10 +77,10 @@ class VideoPlayerWidget(QWidget):
         top_bar.setFixedHeight(54)
         top_bar.setStyleSheet(f"""
             QFrame {{
-                background: qlineargradient(x1:0,y1:0,x2:1,y2:0,
-                    stop:0 {T.TEAL_900},stop:0.6 {T.TEAL_800},stop:1 {T.TEAL_700});
-                border-top-left-radius:  {T.R_2XL - 1}px;
-                border-top-right-radius: {T.R_2XL - 1}px;
+                background: qlineargradient(x1:0,y1:0,x2:1,y2:1,
+                    stop:0 {T.TEAL_900},stop:0.5 {T.TEAL_800},stop:1 #0B6B62);
+                border-top-left-radius:  23px;
+                border-top-right-radius: 23px;
             }}
         """)
         top_lay = QHBoxLayout(top_bar)
@@ -124,7 +124,7 @@ class VideoPlayerWidget(QWidget):
 
         # LIVE badge — refined pill
         self._live_badge = QFrame()
-        self._live_badge.setFixedHeight(22)
+        self._live_badge.setFixedHeight(24)
         lb_lay = QHBoxLayout(self._live_badge)
         lb_lay.setContentsMargins(8, 0, 10, 0)
         lb_lay.setSpacing(5)
@@ -151,10 +151,10 @@ class VideoPlayerWidget(QWidget):
         # Very subtle gradient background — soft, not harsh
         self.avatar_display.setStyleSheet(f"""
             QLabel {{
-                background: qlineargradient(x1:0.3,y1:0,x2:0.7,y2:1,
-                    stop:0 #EAF8F4,
-                    stop:0.4 #F5F4EF,
-                    stop:1 #E4F6F1);
+                background: qlineargradient(x1:0,y1:0,x2:0,y2:1,
+                    stop:0 #E8F9F5,
+                    stop:0.5 #F5F4EF,
+                    stop:1 #EAF6F2);
                 border: none;
             }}
         """)
@@ -167,10 +167,10 @@ class VideoPlayerWidget(QWidget):
         bar.setFixedHeight(60)
         bar.setStyleSheet(f"""
             #statusBar {{
-                background: {T.BG_CARD};
+                background: #FEFEFE;
                 border-top: 1px solid {T.BG_PAGE};
-                border-bottom-left-radius:  {T.R_2XL - 1}px;
-                border-bottom-right-radius: {T.R_2XL - 1}px;
+                border-bottom-left-radius:  23px;
+                border-bottom-right-radius: 23px;
             }}
         """)
 
@@ -185,7 +185,7 @@ class VideoPlayerWidget(QWidget):
             QFrame {{
                 background: {T.GREEN_50};
                 border: none;
-                border-radius: 10px;
+                border-radius: 12px;
             }}
         """)
         ic_inner = QVBoxLayout(self._ic_cont)

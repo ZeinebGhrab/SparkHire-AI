@@ -156,6 +156,7 @@ class LanguageCard(QFrame):
                 border-radius: 40px;
             }}
         """)
+        self._flag_wrap = flag_wrap
         flag_inner = QVBoxLayout(flag_wrap)
         flag_inner.setContentsMargins(0, 0, 0, 0)
         flag_inner.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -188,26 +189,41 @@ class LanguageCard(QFrame):
             self.setStyleSheet(f"""
                 LanguageCard {{
                     background: {T.BG_CARD};
-                    border: 2px solid {c['color']};
-                    border-radius: {T.R_XL}px;
+                    border: 2.5px solid {c['color']};
+                    border-radius: {T.R_2XL}px;
                 }}
             """)
-            # Soft indigo glow when selected
-            eff = _shadow(40, 10, 45, *self._hex_rgb(c['color']))
+            if hasattr(self, '_flag_wrap'):
+                self._flag_wrap.setStyleSheet(f"""
+                    QFrame {{
+                        background: {T.TEAL_100};
+                        border: none;
+                        border-radius: 40px;
+                    }}
+                """)
+            eff = _shadow(44, 12, 48, *self._hex_rgb(c['color']))
             self.setGraphicsEffect(eff)
         else:
             self.setStyleSheet(f"""
                 LanguageCard {{
                     background: {T.BG_CARD};
-                    border: 1px solid {T.BORDER};
-                    border-radius: {T.R_XL}px;
+                    border: 1.5px solid {T.BORDER};
+                    border-radius: {T.R_2XL}px;
                 }}
                 LanguageCard:hover {{
                     background: {T.BG_HOVER};
                     border-color: {T.BORDER_HOVER};
                 }}
             """)
-            self.setGraphicsEffect(_soft_shadow(16, 4, 10))
+            if hasattr(self, '_flag_wrap'):
+                self._flag_wrap.setStyleSheet(f"""
+                    QFrame {{
+                        background: {T.BG_PAGE};
+                        border: none;
+                        border-radius: 40px;
+                    }}
+                """)
+            self.setGraphicsEffect(_soft_shadow(16, 4, 8))
 
     @staticmethod
     def _hex_rgb(h):
@@ -235,29 +251,24 @@ class StatusChip(QFrame):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setFixedHeight(36)
+        self.setFixedHeight(34)
 
         lay = QHBoxLayout(self)
-        lay.setContentsMargins(12, 0, 16, 0)
-        lay.setSpacing(8)
+        lay.setContentsMargins(10, 0, 14, 0)
+        lay.setSpacing(7)
 
         self._dot = QLabel("●")
-        f = QFont(T.FONT, 8); self._dot.setFont(f)
+        f = QFont(T.FONT, 7); self._dot.setFont(f)
         lay.addWidget(self._dot)
 
-        col = QVBoxLayout(); col.setSpacing(0)
         self.lbl_main = QLabel("Déconnecté")
         f2 = QFont(T.FONT, T.FS_SM); f2.setBold(True)
         self.lbl_main.setFont(f2)
+        lay.addWidget(self.lbl_main)
 
-        self.lbl_detail = QLabel("En attente")
-        f3 = QFont(T.FONT, T.FS_2XS)
-        self.lbl_detail.setFont(f3)
-        self.lbl_detail.setStyleSheet(f"color: {T.TEXT_400}; background: transparent;")
-
-        col.addWidget(self.lbl_main)
-        col.addWidget(self.lbl_detail)
-        lay.addLayout(col)
+        # lbl_detail conservé pour compat mais caché
+        self.lbl_detail = QLabel("")
+        self.lbl_detail.setVisible(False)
         self.set_state("disconnected")
 
     def set_state(self, state):
@@ -394,7 +405,7 @@ class MainWindow(QMainWindow):
         root_w.setObjectName("appRoot")
         root_w.setStyleSheet(f"""
             #appRoot {{
-                background: {T.BG_PAGE};
+                background: {T.BG_APP};
             }}
         """)
         self.setCentralWidget(root_w)
@@ -638,7 +649,7 @@ class MainWindow(QMainWindow):
         card.setGraphicsEffect(_shadow(60, 16, 22))
 
         lay = QVBoxLayout(card)
-        lay.setContentsMargins(T.SP_10, T.SP_10, T.SP_10, T.SP_10)
+        lay.setContentsMargins(T.SP_10, T.SP_8, T.SP_10, T.SP_10)
         lay.setSpacing(0)
 
         # Icon
@@ -745,8 +756,8 @@ class MainWindow(QMainWindow):
     def _build_interview_container(self) -> QWidget:
         w = QWidget()
         lay = QHBoxLayout(w)
-        lay.setContentsMargins(T.SP_4, T.SP_4, T.SP_4, T.SP_4)
-        lay.setSpacing(T.SP_4)
+        lay.setContentsMargins(T.SP_4, T.SP_3, T.SP_4, T.SP_4)
+        lay.setSpacing(T.SP_3)
 
         self.video_player = VideoPlayerWidget()
         lay.addWidget(self.video_player, stretch=2)

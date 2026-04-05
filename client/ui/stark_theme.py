@@ -1,4 +1,3 @@
-
 class T:
     # ── Backgrounds — couches bien définies ───────────────────────
     BG_APP          = "#F5F4EF"   # crème profond — fond de page
@@ -329,7 +328,7 @@ class StarkTheme:
                 QPushButton {{
                     background: transparent;
                     color: {T.TEXT_600};
-                    border: 1.5px solid {T.BORDER};
+                    border: 1px solid {T.BORDER};
                     border-radius: {T.R_MD}px;
                     padding: 10px 24px;
                     font-size: {T.FS_SM}px;
