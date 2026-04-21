@@ -34,6 +34,12 @@ pygame.mixer.pre_init(
 )
 pygame.init()
 
+# Types d'audio après lesquels l'enregistrement doit s'activer.
+# Pour tout autre type (welcome, followup_thanks, interview_completed…),
+# _check_audio ne déclenche PAS enable_recording — c'est la cause du "rechargement"
+# visible entre le message de bienvenue et la première question.
+_RECORDING_TRIGGER_TYPES = {"question", "followup_question"}
+
 # ── i18n ─────────────────────────────────────────────────────────────────────
 
 UI_TEXTS = {
@@ -134,7 +140,7 @@ def _divider():
 class LanguageCard(QFrame):
     def __init__(self, data, on_select, parent=None):
         super().__init__(parent)
-        self._data     = data
+        self._data      = data
         self._on_select = on_select
         self._selected  = False
         self.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -150,13 +156,7 @@ class LanguageCard(QFrame):
 
         flag_wrap = QFrame()
         flag_wrap.setFixedSize(80, 80)
-        flag_wrap.setStyleSheet(f"""
-            QFrame {{
-                background: {T.BG_PAGE};
-                border: none;
-                border-radius: 40px;
-            }}
-        """)
+        flag_wrap.setStyleSheet(f"QFrame {{ background: {T.BG_PAGE}; border: none; border-radius: 40px; }}")
         self._flag_wrap = flag_wrap
         flag_inner = QVBoxLayout(flag_wrap)
         flag_inner.setContentsMargins(0, 0, 0, 0)
@@ -175,11 +175,7 @@ class LanguageCard(QFrame):
         tag = QLabel(self._data["native"])
         tag.setFont(QFont(T.FONT_BODY, T.FS_SM))
         tag.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        tag.setStyleSheet(f"""
-            color: {T.TEXT_400};
-            background: transparent;
-            padding: 2px 8px;
-        """)
+        tag.setStyleSheet(f"color: {T.TEXT_400}; background: transparent; padding: 2px 8px;")
         lay.addWidget(tag, alignment=Qt.AlignmentFlag.AlignCenter)
 
     def _refresh(self):
@@ -193,15 +189,10 @@ class LanguageCard(QFrame):
                 }}
             """)
             if hasattr(self, '_flag_wrap'):
-                self._flag_wrap.setStyleSheet(f"""
-                    QFrame {{
-                        background: {T.TEAL_100};
-                        border: none;
-                        border-radius: 40px;
-                    }}
-                """)
-            eff = _shadow(44, 12, 48, *self._hex_rgb(c['color']))
-            self.setGraphicsEffect(eff)
+                self._flag_wrap.setStyleSheet(
+                    f"QFrame {{ background: {T.TEAL_100}; border: none; border-radius: 40px; }}"
+                )
+            self.setGraphicsEffect(_shadow(44, 12, 48, *self._hex_rgb(c['color'])))
         else:
             self.setStyleSheet(f"""
                 LanguageCard {{
@@ -215,13 +206,9 @@ class LanguageCard(QFrame):
                 }}
             """)
             if hasattr(self, '_flag_wrap'):
-                self._flag_wrap.setStyleSheet(f"""
-                    QFrame {{
-                        background: {T.BG_PAGE};
-                        border: none;
-                        border-radius: 40px;
-                    }}
-                """)
+                self._flag_wrap.setStyleSheet(
+                    f"QFrame {{ background: {T.BG_PAGE}; border: none; border-radius: 40px; }}"
+                )
             self.setGraphicsEffect(_soft_shadow(16, 4, 8))
 
     @staticmethod
@@ -240,22 +227,21 @@ class LanguageCard(QFrame):
 
 class StatusChip(QFrame):
     STATES = {
-        "disconnected": (T.TEXT_400,    "●", T.BG_PAGE,  T.BORDER,     T.TEXT_500),
-        "validating":   (T.AMBER_500,   "◌", T.AMBER_50, T.AMBER_200,  T.AMBER_600),
-        "connected":    (T.TEAL_500,    "●", T.TEAL_50,  T.TEAL_200,   T.TEAL_700),
-        "error":        (T.RED_500,     "●", T.RED_50,   T.RED_200,    T.RED_600),
+        "disconnected": (T.TEXT_400,  "●", T.BG_PAGE,  T.BORDER,    T.TEXT_500),
+        "validating":   (T.AMBER_500, "◌", T.AMBER_50, T.AMBER_200, T.AMBER_600),
+        "connected":    (T.TEAL_500,  "●", T.TEAL_50,  T.TEAL_200,  T.TEAL_700),
+        "error":        (T.RED_500,   "●", T.RED_50,   T.RED_200,   T.RED_600),
     }
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setFixedHeight(34)
-
         lay = QHBoxLayout(self)
         lay.setContentsMargins(10, 0, 14, 0)
         lay.setSpacing(7)
 
         self._dot = QLabel("●")
-        f = QFont(T.FONT, 7); self._dot.setFont(f)
+        self._dot.setFont(QFont(T.FONT, 7))
         lay.addWidget(self._dot)
 
         self.lbl_main = QLabel("Déconnecté")
@@ -272,7 +258,8 @@ class StatusChip(QFrame):
         self._dot.setText(dot_txt)
         self._dot.setStyleSheet(f"color: {dot_c}; background: transparent;")
         self.lbl_main.setStyleSheet(
-            f"color: {text_c}; font-weight: 700; font-size: 11px; background: transparent; letter-spacing: 0.2px;"
+            f"color: {text_c}; font-weight: 700; font-size: 11px; "
+            f"background: transparent; letter-spacing: 0.2px;"
         )
         self.setStyleSheet(f"""
             QFrame {{
@@ -301,17 +288,20 @@ class MainWindow(QMainWindow):
         self._lang_cards: dict = {}
 
         # Audio state
-        self._tmp_audio_path     = None
-        self._audio_play_start   = 0.0
-        self._audio_min_duration = 0.0
-        self.audio_check_timer   = None
-        self._audio_sample_rate  = -1
-        self._audio_channels     = -1
-        self._audio_bits         = -1
-        self._pending_msg_type   = ""
-        self._pending_msg_data   = {}
-        self._audio_chunks: list = []
-        self._audio_total_chunks = 0
+        self._tmp_audio_path      = None
+        self._audio_play_start    = 0.0
+        self._audio_min_duration  = 0.0
+        self.audio_check_timer    = None
+        self._audio_sample_rate   = -1
+        self._audio_channels      = -1
+        self._audio_bits          = -1
+        self._pending_msg_type    = ""
+        self._pending_msg_data    = {}
+        self._audio_chunks: list  = []
+        self._audio_total_chunks  = 0
+        # Dernier type de message audio joué.
+        # Utilisé par _check_audio pour décider si l'enregistrement doit s'activer.
+        self._last_played_msg_type = ""
 
         # Video state
         self._video_collector: VideoFrameCollector | None = None
@@ -343,8 +333,7 @@ class MainWindow(QMainWindow):
         self._video_collector.camera_ready.connect(self._on_camera_ready)
         self._video_collector.camera_error.connect(self._on_camera_error)
         self._video_collector.frame_captured.connect(self._on_video_frame)
-        available = self._video_collector.is_camera_available(0)
-        self._camera_available = available
+        self._camera_available = self._video_collector.is_camera_available(0)
 
     def _update_camera_indicator(self, available: bool):
         if self._camera_lbl is None:
@@ -355,11 +344,15 @@ class MainWindow(QMainWindow):
         if available:
             self._camera_lbl.setText("🎥")
             self._camera_lbl.setToolTip(self.t("camera_ok"))
-            self._camera_lbl.setStyleSheet(f"color: {T.GREEN_600}; background: transparent; font-size: 15px;")
+            self._camera_lbl.setStyleSheet(
+                f"color: {T.GREEN_600}; background: transparent; font-size: 15px;"
+            )
         else:
             self._camera_lbl.setText("⚠️")
             self._camera_lbl.setToolTip(self.t("camera_off"))
-            self._camera_lbl.setStyleSheet(f"color: {T.AMBER_500}; background: transparent; font-size: 15px;")
+            self._camera_lbl.setStyleSheet(
+                f"color: {T.AMBER_500}; background: transparent; font-size: 15px;"
+            )
 
     def _on_camera_ready(self, ok: bool):
         self._camera_available = ok
@@ -381,7 +374,9 @@ class MainWindow(QMainWindow):
             return
         try:
             b64 = base64.b64encode(jpeg_bytes).decode()
-            self.websocket_client.send_message({"type": "video_frame", "data": {"frame": b64}})
+            self.websocket_client.send_message(
+                {"type": "video_frame", "data": {"frame": b64}}
+            )
         except Exception as e:
             logger.debug(f"Frame vidéo: {e}")
 
@@ -399,11 +394,7 @@ class MainWindow(QMainWindow):
 
         root_w = QWidget()
         root_w.setObjectName("appRoot")
-        root_w.setStyleSheet(f"""
-            #appRoot {{
-                background: {T.BG_APP};
-            }}
-        """)
+        root_w.setStyleSheet(f"#appRoot {{ background: {T.BG_APP}; }}")
         self.setCentralWidget(root_w)
         self.setStyleSheet(StarkTheme.global_stylesheet())
 
@@ -440,10 +431,13 @@ class MainWindow(QMainWindow):
         lay.setSpacing(0)
 
         from PySide6.QtGui import QPixmap
-        _logo_path = Path(__file__).resolve().parent.parent.parent / "assets" / "pictures" / "logo.jpg"
-        logo = QLabel()
-        logo.setFixedSize(40, 40)
+        _logo_path = (
+            Path(__file__).resolve().parent.parent.parent
+            / "assets" / "pictures" / "logo.jpg"
+        )
         if _logo_path.exists():
+            logo = QLabel()
+            logo.setFixedSize(40, 40)
             _pix = QPixmap(str(_logo_path)).scaled(
                 40, 40,
                 Qt.AspectRatioMode.KeepAspectRatio,
@@ -470,44 +464,37 @@ class MainWindow(QMainWindow):
             _sp.setAlignment(Qt.AlignmentFlag.AlignCenter)
             _fl.addWidget(_sp)
         logo.setGraphicsEffect(_shadow(16, 3, 30))
-
         lay.addWidget(logo)
         lay.addSpacing(12)
 
         title_col = QVBoxLayout()
         title_col.setSpacing(1)
-
         t1 = QLabel("SparkHire")
-        f1 = QFont(T.FONT, T.FS_XL)
-        f1.setBold(True)
+        f1 = QFont(T.FONT, T.FS_XL); f1.setBold(True)
         t1.setFont(f1)
-        t1.setStyleSheet(f"""
-            color: {T.TEAL_800};
-            background: transparent;
-            letter-spacing: -0.8px;
-        """)
-
+        t1.setStyleSheet(
+            f"color: {T.TEAL_800}; background: transparent; letter-spacing: -0.8px;"
+        )
         t2 = QLabel(" AI")
-        f2 = QFont(T.FONT, T.FS_XL)
-        f2.setBold(True)
+        f2 = QFont(T.FONT, T.FS_XL); f2.setBold(True)
         t2.setFont(f2)
-        t2.setStyleSheet(f"color: {T.CORAL_500}; background: transparent; letter-spacing: -0.5px;")
-
+        t2.setStyleSheet(
+            f"color: {T.CORAL_500}; background: transparent; letter-spacing: -0.5px;"
+        )
         title_row = QHBoxLayout()
         title_row.setSpacing(4)
         title_row.setContentsMargins(0, 0, 0, 0)
         title_row.addWidget(t1)
         title_row.addWidget(t2)
         title_row.addStretch()
-
         self._header_subtitle = QLabel(self.t("app_subtitle"))
         self._header_subtitle.setFont(QFont(T.FONT_BODY, T.FS_SM))
-        self._header_subtitle.setStyleSheet(f"color: {T.TEXT_400}; background: transparent; letter-spacing: 0.5px;")
-
+        self._header_subtitle.setStyleSheet(
+            f"color: {T.TEXT_400}; background: transparent; letter-spacing: 0.5px;"
+        )
         title_col.addLayout(title_row)
         title_col.addWidget(self._header_subtitle)
         lay.addLayout(title_col)
-
         lay.addStretch()
 
         self._camera_lbl = QLabel("")
@@ -526,7 +513,6 @@ class MainWindow(QMainWindow):
 
         self.status_chip = StatusChip()
         lay.addWidget(self.status_chip)
-
         return hdr
 
     # ── Language selection screen ─────────────────────────────────
@@ -543,24 +529,21 @@ class MainWindow(QMainWindow):
         tag = QLabel("SÉLECTION DE LA LANGUE")
         tag.setFont(QFont(T.FONT, T.FS_2XS))
         tag.setStyleSheet(f"""
-            color: {T.TEAL_700};
-            background: {T.TEAL_50};
-            border: none;
-            border-radius: {T.R_FULL}px;
-            padding: 4px 14px;
-            letter-spacing: 2.5px;
-            font-weight: 700;
+            color: {T.TEAL_700}; background: {T.TEAL_50}; border: none;
+            border-radius: {T.R_FULL}px; padding: 4px 14px;
+            letter-spacing: 2.5px; font-weight: 700;
         """)
         tag_row.addWidget(tag)
         root.addLayout(tag_row)
         root.addSpacing(T.SP_5)
 
         h1 = QLabel(self.t("choose_language"))
-        f_h1 = QFont(T.FONT, T.FS_3XL)
-        f_h1.setBold(True)
+        f_h1 = QFont(T.FONT, T.FS_3XL); f_h1.setBold(True)
         h1.setFont(f_h1)
         h1.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        h1.setStyleSheet(f"color: {T.TEXT_950}; background: transparent; letter-spacing: -1px;")
+        h1.setStyleSheet(
+            f"color: {T.TEXT_950}; background: transparent; letter-spacing: -1px;"
+        )
         root.addWidget(h1)
         root.addSpacing(T.SP_2)
 
@@ -583,14 +566,12 @@ class MainWindow(QMainWindow):
         root.addSpacing(T.SP_10)
 
         self._confirm_btn = QPushButton("Continuer  →")
-        f_btn = QFont(T.FONT, T.FS_MD)
-        f_btn.setBold(True)
+        f_btn = QFont(T.FONT, T.FS_MD); f_btn.setBold(True)
         self._confirm_btn.setFont(f_btn)
         self._confirm_btn.setFixedSize(260, 56)
         self._confirm_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._confirm_btn.setStyleSheet(StarkTheme.get_button_style("primary"))
-        eff = _shadow(30, 10, 50, 12, 168, 153)
-        self._confirm_btn.setGraphicsEffect(eff)
+        self._confirm_btn.setGraphicsEffect(_shadow(30, 10, 50, 12, 168, 153))
         self._confirm_btn.clicked.connect(self._on_lang_confirmed)
 
         btn_row = QHBoxLayout()
@@ -624,11 +605,7 @@ class MainWindow(QMainWindow):
         card = QFrame()
         card.setFixedWidth(500)
         card.setStyleSheet(f"""
-            QFrame {{
-                background: {T.BG_CARD};
-                border: none;
-                border-radius: 26px;
-            }}
+            QFrame {{ background: {T.BG_CARD}; border: none; border-radius: 26px; }}
         """)
         card.setGraphicsEffect(_shadow(60, 16, 22))
 
@@ -655,9 +632,7 @@ class MainWindow(QMainWindow):
         icon_inner.addWidget(key_e)
 
         icon_row = QHBoxLayout()
-        icon_row.addStretch()
-        icon_row.addWidget(icon_frame)
-        icon_row.addStretch()
+        icon_row.addStretch(); icon_row.addWidget(icon_frame); icon_row.addStretch()
         lay.addLayout(icon_row)
         lay.addSpacing(T.SP_5)
 
@@ -676,14 +651,12 @@ class MainWindow(QMainWindow):
         self._pill_lbl = QLabel()
         f_pill = QFont(T.FONT, T.FS_XS); f_pill.setBold(True)
         self._pill_lbl.setFont(f_pill)
-        self._pill_lbl.setStyleSheet(f"color: {T.TEAL_700}; background: transparent; letter-spacing: 0.3px;")
+        self._pill_lbl.setStyleSheet(
+            f"color: {T.TEAL_700}; background: transparent; letter-spacing: 0.3px;"
+        )
         pill_inner.addWidget(self._pill_lbl)
         self._lang_pill.setStyleSheet(f"""
-            QFrame {{
-                background: {T.TEAL_50};
-                border: none;
-                border-radius: {T.R_FULL}px;
-            }}
+            QFrame {{ background: {T.TEAL_50}; border: none; border-radius: {T.R_FULL}px; }}
         """)
         pill_row.addWidget(self._lang_pill)
         lay.addLayout(pill_row)
@@ -756,9 +729,8 @@ class MainWindow(QMainWindow):
         return w
 
     def _setup_statusbar(self):
-        sb = self.statusBar()
-        sb.setFixedHeight(26)
-        sb.showMessage(self.t("vocal_mode_label"))
+        self.statusBar().setFixedHeight(26)
+        self.statusBar().showMessage(self.t("vocal_mode_label"))
 
     def _sync_texts(self):
         self._header_subtitle.setText(self.t("app_subtitle"))
@@ -786,7 +758,9 @@ class MainWindow(QMainWindow):
         sr   = sr   if sr   > 0 else _MIXER_FREQUENCY
         ch   = ch   if ch   > 0 else _MIXER_CHANNELS
         bits = bits if bits > 0 else 16
-        if sr == self._audio_sample_rate and ch == self._audio_channels and bits == self._audio_bits:
+        if (sr == self._audio_sample_rate
+                and ch == self._audio_channels
+                and bits == self._audio_bits):
             return
         try:
             pygame.mixer.music.stop(); pygame.mixer.music.unload()
@@ -795,12 +769,16 @@ class MainWindow(QMainWindow):
         try:
             pygame.mixer.quit()
             pygame.mixer.init(frequency=sr, size=-bits, channels=ch, buffer=4096)
-            self._audio_sample_rate, self._audio_channels, self._audio_bits = sr, ch, bits
+            self._audio_sample_rate = sr
+            self._audio_channels    = ch
+            self._audio_bits        = bits
         except Exception as e:
             logger.error(f"pygame mixer: {e}")
             try:
-                pygame.mixer.init(frequency=_MIXER_FREQUENCY, size=_MIXER_SIZE,
-                                  channels=_MIXER_CHANNELS, buffer=_MIXER_BUFFER)
+                pygame.mixer.init(
+                    frequency=_MIXER_FREQUENCY, size=_MIXER_SIZE,
+                    channels=_MIXER_CHANNELS, buffer=_MIXER_BUFFER,
+                )
                 self._audio_sample_rate = _MIXER_FREQUENCY
                 self._audio_channels    = _MIXER_CHANNELS
                 self._audio_bits        = 16
@@ -817,6 +795,7 @@ class MainWindow(QMainWindow):
         self._audio_sample_rate = self._audio_channels = self._audio_bits = -1
         self._audio_chunks = []; self._audio_total_chunks = 0
         self._pending_msg_type = ""; self._pending_msg_data = {}
+        self._last_played_msg_type = ""
 
     def _cleanup_tmp_file(self):
         if self._tmp_audio_path:
@@ -902,19 +881,31 @@ class MainWindow(QMainWindow):
         self.interview_widget.set_language(self._language)
         self._refresh_pill()
 
-        self.session_id = session_id
+        self.session_id    = session_id
         self.is_connecting = True
-        self._connect_btn.setEnabled(False); self._connect_btn.setText(self.t("connecting"))
+        self._connect_btn.setEnabled(False)
+        self._connect_btn.setText(self.t("connecting"))
         self._session_input.setEnabled(False)
         self.status_chip.set_state("validating")
         self.status_chip.lbl_main.setText(self.t("status_validating"))
 
-        ws_url = f"{settings.WEBSOCKET_URL}/ws/interview/{session_id}?lang={self._language}"
+        ws_url = (
+            f"{settings.WEBSOCKET_URL}/ws/interview/{session_id}"
+            f"?lang={self._language}"
+        )
         self.websocket_client = WebSocketClient(ws_url)
-        self.websocket_client.disconnected.connect(lambda c, r: self._on_ws_disconnected(c, r, tok))
-        self.websocket_client.connected.connect(lambda: self._on_ws_connected(tok))
-        self.websocket_client.message_received.connect(lambda d: self._on_ws_message(d, tok))
-        self.websocket_client.error_occurred.connect(lambda e: self._on_ws_error(e, tok))
+        self.websocket_client.disconnected.connect(
+            lambda c, r: self._on_ws_disconnected(c, r, tok)
+        )
+        self.websocket_client.connected.connect(
+            lambda: self._on_ws_connected(tok)
+        )
+        self.websocket_client.message_received.connect(
+            lambda d: self._on_ws_message(d, tok)
+        )
+        self.websocket_client.error_occurred.connect(
+            lambda e: self._on_ws_error(e, tok)
+        )
         self.websocket_client.connect_to_server()
         self.statusBar().showMessage("Connexion en cours…")
 
@@ -941,6 +932,7 @@ class MainWindow(QMainWindow):
         if not self._is_active(tok): return
         mt = data.get("type"); md = data.get("data", {})
 
+        # ── Erreur serveur ────────────────────────────────────────
         if mt == "error":
             err = md.get("message", "Erreur")
             if md.get("error_type") == "SESSION_INVALID":
@@ -949,62 +941,100 @@ class MainWindow(QMainWindow):
                 self._show_error(self.t("error_title"), err)
             return
 
+        # ── Pré-chargement question (pas d'audio, juste mise à jour UI) ──
         if mt == "question_loading":
             self.interview_widget.update_question(md.get("progress", {}))
             self.statusBar().showMessage(self.t("generating_audio"))
-            self.video_player.set_speaking(); return
+            self.video_player.set_speaking()
+            return
 
-        # ── Messages avec audio chunked ───────────────────────────────────────
-        # FIX : ajout de followup_question et followup_thanks dans la liste,
-        #       et appel immédiat à set_speaking() dès réception du header.
+        # ── Messages avec audio chunked ───────────────────────────────────
+        # FIX A : followup_question et followup_thanks dans la liste.
+        # FIX B : set_speaking() immédiatement dès le header — l'avatar ne
+        #         reste plus en idle pendant la collecte des chunks.
         if mt in ("welcome", "welcome_back", "question", "interview_completed",
                   "followup_question", "followup_thanks"):
             if md.get("audio_mode") == "chunked":
-                self._pending_msg_type = mt; self._pending_msg_data = md
-                self._audio_chunks = []; self._audio_total_chunks = md.get("total_chunks", 0)
-                sr   = md.get("sample_rate", _MIXER_FREQUENCY)
-                ch   = md.get("channels", _MIXER_CHANNELS)
+                self._pending_msg_type   = mt
+                self._pending_msg_data   = md
+                self._audio_chunks       = []
+                self._audio_total_chunks = md.get("total_chunks", 0)
+                sr   = md.get("sample_rate",     _MIXER_FREQUENCY)
+                ch   = md.get("channels",        _MIXER_CHANNELS)
                 bits = md.get("bits_per_sample", 16)
                 self._ensure_audio_format(sr, ch, bits)
                 if mt == "question":
-                    self.interview_widget.set_max_recording_seconds(md.get("max_duration", 90))
+                    self.interview_widget.set_max_recording_seconds(
+                        md.get("max_duration", 90)
+                    )
                     self.interview_widget.enable_recording(False)
-                # FIX : passer l'avatar en mode parole dès réception du header,
-                # quel que soit le type de message audio.
+                # Avatar en mode parole dès réception du header
                 self.video_player.set_speaking()
                 return
+            # Fallback non-chunked
             ab = md.get("audio_data")
-            if ab: self._play_bytes_direct(base64.b64decode(ab))
-            self._finalize_msg(mt, md); return
+            if ab:
+                self._last_played_msg_type = mt
+                self._play_bytes_direct(base64.b64decode(ab))
+            self._finalize_msg(mt, md)
+            return
 
+        # ── Collecte des chunks ───────────────────────────────────
         if mt == "audio_chunk_data":
-            self._audio_chunks.append(md.get("data", "")); return
+            self._audio_chunks.append(md.get("data", ""))
+            return
 
+        # ── Fin des chunks : lancer la lecture ────────────────────
         if mt == "audio_chunk_end":
-            if self._audio_chunks:
-                try: self._play_pcm(b"".join(base64.b64decode(c) for c in self._audio_chunks))
-                except Exception as e: logger.error(e); self.interview_widget.enable_recording(True)
-            else:
-                self.interview_widget.enable_recording(True)
-            self._finalize_msg(self._pending_msg_type, self._pending_msg_data)
-            self._audio_chunks = []; self._pending_msg_type = ""; self._pending_msg_data = {}; return
+            # Mémoriser avant de vider l'état courant
+            self._last_played_msg_type = self._pending_msg_type
+            saved_type = self._pending_msg_type
+            saved_data = self._pending_msg_data
 
+            if self._audio_chunks:
+                try:
+                    pcm = b"".join(base64.b64decode(c) for c in self._audio_chunks)
+                    self._play_pcm(pcm)
+                except Exception as e:
+                    logger.error(f"audio_chunk_end decode: {e}")
+                    if saved_type in _RECORDING_TRIGGER_TYPES:
+                        self.interview_widget.enable_recording(True)
+            else:
+                if saved_type in _RECORDING_TRIGGER_TYPES:
+                    self.interview_widget.enable_recording(True)
+
+            self._audio_chunks     = []
+            self._pending_msg_type = ""
+            self._pending_msg_data = {}
+            self._finalize_msg(saved_type, saved_data)
+            return
+
+        # ── Réponse sauvegardée ───────────────────────────────────
         if mt == "answer_saved":
             self.statusBar().showMessage(self.t("answer_saved"))
-            self.video_player.set_idle(); self.status_chip.set_state("connected"); return
+            self.video_player.set_idle()
+            self.status_chip.set_state("connected")
+            return
 
+        # ── Réponse évaluée ───────────────────────────────────────
         if mt == "answer_evaluated":
-            self.statusBar().showMessage(self.t("answer_saved")); return
+            self.statusBar().showMessage(self.t("answer_saved"))
+            return
 
+        # ── Question de suivi annoncée ────────────────────────────
         if mt == "followup_incoming":
-            # Serveur annonce qu'une question de suivi va arriver
             self.video_player.set_speaking()
-            self.statusBar().showMessage(self.t("followup_status")); return
+            self.statusBar().showMessage(self.t("followup_status"))
+            return
 
+        # ── Suivi terminé ─────────────────────────────────────────
         if mt == "answer_followup_completed":
-            self.video_player.set_idle(); return
+            self.video_player.set_idle()
+            return
 
     def _finalize_msg(self, mt, md):
+        """Met à jour l'UI après qu'un message audio ait été déclenché."""
+
         if mt == "welcome":
             self._on_session_started(md)
 
@@ -1013,15 +1043,17 @@ class MainWindow(QMainWindow):
             self.status_chip.lbl_main.setText(self.t("status_connected"))
             self.status_chip.lbl_detail.setText(self.t("vocal_mode_active"))
             self.status_chip.set_state("connected")
-            self.stacked.setVisible(False); self.interview_container.setVisible(True)
+            self.stacked.setVisible(False)
+            self.interview_container.setVisible(True)
             if not self.audio_recorder:
                 self.audio_recorder = AudioRecorder()
                 self.audio_recorder.audio_chunk_ready.connect(self._on_audio_chunk)
-            idx = md.get("current_question_index", 0)
+            idx   = md.get("current_question_index", 0)
             total = md.get("total_questions", 0)
             if total > 0:
                 self.interview_widget.update_question({
-                    "current": idx + 1, "total": total,
+                    "current":    idx + 1,
+                    "total":      total,
                     "percentage": int((idx + 1) / total * 100),
                 })
             self.video_player.set_speaking()
@@ -1037,12 +1069,11 @@ class MainWindow(QMainWindow):
             self.video_player.set_speaking()
             self.statusBar().showMessage(self.t("question_status"))
 
-        # FIX : question de suivi — avatar en mode parole + barre de statut
+        # FIX C : nouveaux cas pour les messages de suivi
         elif mt == "followup_question":
             self.video_player.set_speaking()
             self.statusBar().showMessage(self.t("followup_status"))
 
-        # FIX : remerciement de suivi — avatar en mode parole
         elif mt == "followup_thanks":
             self.video_player.set_speaking()
 
@@ -1051,15 +1082,19 @@ class MainWindow(QMainWindow):
                 self._video_collector.stop_capture()
             self._show_info(self.t("interview_complete"), self.t("thanks_message"))
             self.statusBar().showMessage("✓ " + self.t("interview_complete"))
-            # FIX : reset différé pour ne pas couper l'audio de remerciement
-            QTimer.singleShot(500, lambda: (self._reset_audio_state(), self._reset_ui_for_new_session()))
+            # FIX D : reset différé pour ne pas couper l'audio de fin
+            QTimer.singleShot(
+                500,
+                lambda: (self._reset_audio_state(), self._reset_ui_for_new_session()),
+            )
 
     def _on_session_started(self, md):
         self.is_connecting = False
         self.status_chip.lbl_main.setText(self.t("status_connected"))
         self.status_chip.lbl_detail.setText(self.t("vocal_mode_active"))
         self.status_chip.set_state("connected")
-        self.stacked.setVisible(False); self.interview_container.setVisible(True)
+        self.stacked.setVisible(False)
+        self.interview_container.setVisible(True)
         if not self.audio_recorder:
             self.audio_recorder = AudioRecorder()
             self.audio_recorder.audio_chunk_ready.connect(self._on_audio_chunk)
@@ -1071,52 +1106,82 @@ class MainWindow(QMainWindow):
 
     def _play_pcm(self, pcm: bytes):
         try:
-            if self.audio_check_timer: self.audio_check_timer.stop(); self.audio_check_timer = None
+            if self.audio_check_timer:
+                self.audio_check_timer.stop(); self.audio_check_timer = None
             try: pygame.mixer.music.stop(); pygame.mixer.music.unload()
             except Exception: pass
             self._cleanup_tmp_file()
+
             tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
             self._tmp_audio_path = tmp.name; tmp.close()
+
             sr   = self._audio_sample_rate if self._audio_sample_rate > 0 else _MIXER_FREQUENCY
             ch   = self._audio_channels    if self._audio_channels    > 0 else _MIXER_CHANNELS
             bits = self._audio_bits        if self._audio_bits        > 0 else 16
+
             with wave.open(self._tmp_audio_path, "wb") as wf:
-                wf.setnchannels(ch); wf.setsampwidth(bits // 8)
-                wf.setframerate(sr); wf.writeframes(pcm)
+                wf.setnchannels(ch)
+                wf.setsampwidth(bits // 8)
+                wf.setframerate(sr)
+                wf.writeframes(pcm)
+
             bps = sr * ch * (bits // 8)
-            self._audio_min_duration = max((len(pcm) / bps * 1000) if bps > 0 else 3000, 800) * 0.9
-            self._audio_play_start   = time.monotonic() * 1000
+            self._audio_min_duration = (
+                max((len(pcm) / bps * 1000) if bps > 0 else 3000, 800) * 0.9
+            )
+            self._audio_play_start = time.monotonic() * 1000
             pygame.mixer.music.load(self._tmp_audio_path)
             pygame.mixer.music.play()
+
             self.audio_check_timer = QTimer()
             self.audio_check_timer.timeout.connect(self._check_audio)
             self.audio_check_timer.start(200)
+
         except Exception as e:
             logger.error(f"_play_pcm: {e}")
-            self._cleanup_tmp_file(); self.interview_widget.enable_recording(True)
+            self._cleanup_tmp_file()
+            if self._last_played_msg_type in _RECORDING_TRIGGER_TYPES:
+                self.interview_widget.enable_recording(True)
 
     def _check_audio(self):
-        if (time.monotonic() * 1000 - self._audio_play_start) < self._audio_min_duration: return
+        if (time.monotonic() * 1000 - self._audio_play_start) < self._audio_min_duration:
+            return
         if not pygame.mixer.music.get_busy():
-            if self.audio_check_timer: self.audio_check_timer.stop(); self.audio_check_timer = None
+            if self.audio_check_timer:
+                self.audio_check_timer.stop(); self.audio_check_timer = None
             try: pygame.mixer.music.unload()
             except Exception: pass
-            self._cleanup_tmp_file(); self.video_player.set_idle()
-            if self.websocket_client: self.websocket_client.send_message({"type": "audio_finished"})
-            self.interview_widget.enable_recording(True)
-            self.statusBar().showMessage(self.t("answer_status"))
+            self._cleanup_tmp_file()
+            self.video_player.set_idle()
+
+            # Notifier le serveur
+            if self.websocket_client:
+                self.websocket_client.send_message({"type": "audio_finished"})
+
+            # FIX E — CORRECTION PRINCIPALE du "rechargement" entre bienvenue et Q1 :
+            # On n'active l'enregistrement QUE si le dernier audio joué était une
+            # question ou une question de suivi.
+            # Avant ce fix, enable_recording(True) était appelé pour TOUS les types
+            # (welcome inclus), ce qui démarrait le timer de décompte et changeait
+            # l'apparence du bouton, puis question_loading arrivait et tout se
+            # réinitialisait — donnant l'impression d'un rechargement de page.
+            if self._last_played_msg_type in _RECORDING_TRIGGER_TYPES:
+                self.interview_widget.enable_recording(True)
+                self.statusBar().showMessage(self.t("answer_status"))
 
     def _play_bytes_direct(self, audio: bytes):
         if audio[:4] == b"RIFF":
             import struct
-            fi = audio.find(b"fmt ", 12); di = audio.find(b"data", 12)
+            fi = audio.find(b"fmt ", 12)
+            di = audio.find(b"data", 12)
             if fi != -1 and di != -1:
                 self._ensure_audio_format(
                     struct.unpack_from("<I", audio, fi + 12)[0],
                     struct.unpack_from("<H", audio, fi + 10)[0],
                     struct.unpack_from("<H", audio, fi + 22)[0],
                 )
-                self._play_pcm(audio[di + 8:]); return
+                self._play_pcm(audio[di + 8:])
+                return
         self._play_pcm(audio)
 
     def _on_start_recording(self):
@@ -1125,7 +1190,8 @@ class MainWindow(QMainWindow):
             self.video_player.set_listening()
             self.statusBar().showMessage("● REC")
         if (self._video_collector and self._facial_enabled
-                and self._camera_available and not self._video_collector.is_capturing):
+                and self._camera_available
+                and not self._video_collector.is_capturing):
             if self._video_collector.start_capture():
                 logger.info("Capture vidéo démarrée")
         self.video_player.camera_preview.set_recording(True)
@@ -1144,14 +1210,14 @@ class MainWindow(QMainWindow):
     def _on_audio_chunk(self, audio_data: bytes):
         if self.websocket_client:
             self.websocket_client.send_message({
-                "type": "audio_chunk",
-                "audio_data": base64.b64encode(audio_data).decode()
+                "type":       "audio_chunk",
+                "audio_data": base64.b64encode(audio_data).decode(),
             })
 
     def _on_end_interview(self):
         r = QMessageBox.question(
             self, self.t("end_title"), self.t("end_confirm"),
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if r == QMessageBox.StandardButton.Yes and self.websocket_client:
             if self._video_collector and self._video_collector.is_capturing:
@@ -1180,15 +1246,18 @@ class MainWindow(QMainWindow):
         self._show_error(self.t("error_title"), msg)
 
     def _show_error(self, title, msg):
-        b = QMessageBox(self); b.setIcon(QMessageBox.Icon.Critical)
+        b = QMessageBox(self)
+        b.setIcon(QMessageBox.Icon.Critical)
         b.setWindowTitle(title); b.setText(msg); b.exec()
 
     def _show_info(self, title, msg):
-        b = QMessageBox(self); b.setIcon(QMessageBox.Icon.Information)
+        b = QMessageBox(self)
+        b.setIcon(QMessageBox.Icon.Information)
         b.setWindowTitle(title); b.setText(msg); b.exec()
 
     def closeEvent(self, event):
-        if self._video_collector: self._video_collector.cleanup()
+        if self._video_collector:
+            self._video_collector.cleanup()
         if self.websocket_client:
             try:
                 self.websocket_client.disconnected.disconnect()
@@ -1197,8 +1266,10 @@ class MainWindow(QMainWindow):
                 self.websocket_client.error_occurred.disconnect()
             except Exception: pass
             self.websocket_client.disconnect_from_server()
-        if self.audio_recorder: self.audio_recorder.cleanup()
-        if self.audio_check_timer: self.audio_check_timer.stop()
+        if self.audio_recorder:
+            self.audio_recorder.cleanup()
+        if self.audio_check_timer:
+            self.audio_check_timer.stop()
         try: pygame.mixer.music.stop(); pygame.mixer.music.unload()
         except Exception: pass
         self._cleanup_tmp_file()
