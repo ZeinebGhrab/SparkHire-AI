@@ -54,6 +54,7 @@ UI_TEXTS = {
         "error_title": "خطأ", "end_title": "إنهاء", "back_btn": "رجوع", "confirm_btn": "تأكيد",
         "welcome_back_status": "مرحباً بعودتك — نستأنف المقابلة",
         "camera_ok": "الكاميرا نشطة", "camera_off": "الكاميرا غير متوفرة",
+        "followup_status": "سؤال متابعة",
     },
     "fr": {
         "app_title": "SparkHire AI", "app_subtitle": "Entretien vocal intelligent",
@@ -73,6 +74,7 @@ UI_TEXTS = {
         "error_title": "Erreur", "end_title": "Terminer", "back_btn": "Retour", "confirm_btn": "Confirmer",
         "welcome_back_status": "Bon retour — reprise de l'entretien",
         "camera_ok": "Caméra active", "camera_off": "Caméra non disponible",
+        "followup_status": "Question de suivi en lecture",
     },
     "en": {
         "app_title": "SparkHire AI", "app_subtitle": "AI-powered voice interview",
@@ -92,6 +94,7 @@ UI_TEXTS = {
         "error_title": "Error", "end_title": "End Interview", "back_btn": "Back", "confirm_btn": "Confirm",
         "welcome_back_status": "Welcome back — resuming interview",
         "camera_ok": "Camera active", "camera_off": "Camera unavailable",
+        "followup_status": "Follow-up question playing",
     },
 }
 
@@ -110,7 +113,6 @@ def _shadow(blur=20, dy=4, alpha=20, r=79, g=70, b=229):
     s.setColor(QColor(r, g, b, alpha)); return s
 
 def _soft_shadow(blur=24, dy=6, alpha=18):
-    """Soft neutral shadow — no color tint."""
     s = QGraphicsDropShadowEffect()
     s.setBlurRadius(blur); s.setOffset(0, dy)
     s.setColor(QColor(0, 0, 0, alpha)); return s
@@ -146,7 +148,6 @@ class LanguageCard(QFrame):
         lay.setSpacing(T.SP_2)
         lay.setContentsMargins(T.SP_5, T.SP_6, T.SP_5, T.SP_5)
 
-        # Flag bubble — clean circle
         flag_wrap = QFrame()
         flag_wrap.setFixedSize(80, 80)
         flag_wrap.setStyleSheet(f"""
@@ -167,12 +168,10 @@ class LanguageCard(QFrame):
         flag_inner.addWidget(flag)
         lay.addWidget(flag_wrap, alignment=Qt.AlignmentFlag.AlignCenter)
 
-        # Language name — strong weight
         name = _label(self._data["name"], T.FS_XL, True, T.TEXT_950)
         name.setAlignment(Qt.AlignmentFlag.AlignCenter)
         lay.addWidget(name)
 
-        # Native tag — soft pill
         tag = QLabel(self._data["native"])
         tag.setFont(QFont(T.FONT_BODY, T.FS_SM))
         tag.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -240,8 +239,6 @@ class LanguageCard(QFrame):
 # ── Status Chip ───────────────────────────────────────────────────────────────
 
 class StatusChip(QFrame):
-    """Connection status indicator — clean pill."""
-
     STATES = {
         "disconnected": (T.TEXT_400,    "●", T.BG_PAGE,  T.BORDER,     T.TEXT_500),
         "validating":   (T.AMBER_500,   "◌", T.AMBER_50, T.AMBER_200,  T.AMBER_600),
@@ -266,7 +263,6 @@ class StatusChip(QFrame):
         self.lbl_main.setFont(f2)
         lay.addWidget(self.lbl_main)
 
-        # lbl_detail conservé pour compat mais caché
         self.lbl_detail = QLabel("")
         self.lbl_detail.setVisible(False)
         self.set_state("disconnected")
@@ -443,7 +439,6 @@ class MainWindow(QMainWindow):
         lay.setContentsMargins(28, 0, 24, 0)
         lay.setSpacing(0)
 
-        # Logo — image depuis assets/, fallback gradient si absent
         from PySide6.QtGui import QPixmap
         _logo_path = Path(__file__).resolve().parent.parent.parent / "assets" / "pictures" / "logo.jpg"
         logo = QLabel()
@@ -458,7 +453,6 @@ class MainWindow(QMainWindow):
             logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
             logo.setStyleSheet("background: transparent;")
         else:
-            # Fallback : gradient teal avec ⚡
             logo = QFrame()
             logo.setFixedSize(40, 40)
             logo.setStyleSheet(f"""
@@ -480,7 +474,6 @@ class MainWindow(QMainWindow):
         lay.addWidget(logo)
         lay.addSpacing(12)
 
-        # Title
         title_col = QVBoxLayout()
         title_col.setSpacing(1)
 
@@ -500,7 +493,6 @@ class MainWindow(QMainWindow):
         t2.setFont(f2)
         t2.setStyleSheet(f"color: {T.CORAL_500}; background: transparent; letter-spacing: -0.5px;")
 
-        # Combined on one row
         title_row = QHBoxLayout()
         title_row.setSpacing(4)
         title_row.setContentsMargins(0, 0, 0, 0)
@@ -518,7 +510,6 @@ class MainWindow(QMainWindow):
 
         lay.addStretch()
 
-        # Camera indicator
         self._camera_lbl = QLabel("")
         self._camera_lbl.setFont(QFont("Segoe UI Emoji", 14))
         self._camera_lbl.setStyleSheet("background: transparent;")
@@ -527,7 +518,6 @@ class MainWindow(QMainWindow):
         lay.addWidget(self._camera_lbl)
         lay.addSpacing(12)
 
-        # Separator
         sep = QFrame()
         sep.setFixedSize(1, 24)
         sep.setStyleSheet(f"background: {T.BORDER_HOVER}; border: none; opacity: 0.5;")
@@ -548,7 +538,6 @@ class MainWindow(QMainWindow):
         root.setContentsMargins(T.SP_10, T.SP_8, T.SP_10, T.SP_8)
         root.setSpacing(0)
 
-        # Eyebrow tag
         tag_row = QHBoxLayout()
         tag_row.setAlignment(Qt.AlignmentFlag.AlignCenter)
         tag = QLabel("SÉLECTION DE LA LANGUE")
@@ -566,7 +555,6 @@ class MainWindow(QMainWindow):
         root.addLayout(tag_row)
         root.addSpacing(T.SP_5)
 
-        # Heading
         h1 = QLabel(self.t("choose_language"))
         f_h1 = QFont(T.FONT, T.FS_3XL)
         f_h1.setBold(True)
@@ -576,7 +564,6 @@ class MainWindow(QMainWindow):
         root.addWidget(h1)
         root.addSpacing(T.SP_2)
 
-        # Subtitle
         sub = QLabel(self.t("choose_subtitle"))
         sub.setFont(QFont(T.FONT_BODY, T.FS_MD))
         sub.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -584,7 +571,6 @@ class MainWindow(QMainWindow):
         root.addWidget(sub)
         root.addSpacing(T.SP_10)
 
-        # Language cards
         cards_row = QHBoxLayout()
         cards_row.setAlignment(Qt.AlignmentFlag.AlignCenter)
         cards_row.setSpacing(24)
@@ -596,7 +582,6 @@ class MainWindow(QMainWindow):
         root.addLayout(cards_row)
         root.addSpacing(T.SP_10)
 
-        # Confirm button
         self._confirm_btn = QPushButton("Continuer  →")
         f_btn = QFont(T.FONT, T.FS_MD)
         f_btn.setBold(True)
@@ -636,7 +621,6 @@ class MainWindow(QMainWindow):
         outer_lay.setAlignment(Qt.AlignmentFlag.AlignCenter)
         outer_lay.setContentsMargins(0, 0, 0, 0)
 
-        # ── Main card ─────────────────────────────────────────────
         card = QFrame()
         card.setFixedWidth(500)
         card.setStyleSheet(f"""
@@ -652,7 +636,6 @@ class MainWindow(QMainWindow):
         lay.setContentsMargins(T.SP_10, T.SP_8, T.SP_10, T.SP_10)
         lay.setSpacing(0)
 
-        # Icon
         icon_frame = QFrame()
         icon_frame.setFixedSize(76, 76)
         icon_frame.setStyleSheet(f"""
@@ -678,13 +661,11 @@ class MainWindow(QMainWindow):
         lay.addLayout(icon_row)
         lay.addSpacing(T.SP_5)
 
-        # Title
         self._session_title = _label(self.t("enter_session"), T.FS_2XL, True, T.TEXT_950)
         self._session_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         lay.addWidget(self._session_title)
         lay.addSpacing(T.SP_2)
 
-        # Language pill
         pill_row = QHBoxLayout()
         pill_row.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._lang_pill = QFrame()
@@ -709,11 +690,9 @@ class MainWindow(QMainWindow):
         self._refresh_pill()
         lay.addSpacing(T.SP_6)
 
-        # Separator
         lay.addWidget(_divider())
         lay.addSpacing(T.SP_6)
 
-        # Input
         self._session_input = QLineEdit()
         self._session_input.setPlaceholderText(self.t("session_placeholder"))
         self._session_input.setFont(QFont(T.FONT_MONO, T.FS_MD))
@@ -723,7 +702,6 @@ class MainWindow(QMainWindow):
         lay.addWidget(self._session_input)
         lay.addSpacing(T.SP_4)
 
-        # Connect button
         self._connect_btn = QPushButton(self.t("start_btn"))
         f_conn = QFont(T.FONT, T.FS_MD); f_conn.setBold(True)
         self._connect_btn.setFont(f_conn)
@@ -735,7 +713,6 @@ class MainWindow(QMainWindow):
         lay.addWidget(self._connect_btn)
         lay.addSpacing(T.SP_3)
 
-        # Back button
         self._back_btn = QPushButton(f"← {self.t('back_btn')}")
         self._back_btn.setFont(QFont(T.FONT, T.FS_SM))
         self._back_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -848,10 +825,8 @@ class MainWindow(QMainWindow):
             self._tmp_audio_path = None
 
     def _reset_ui_for_new_session(self):
-        # ── 1. Incrémenter le token pour invalider tout callback en vol ────────
         self._session_token += 1
 
-        # ── 2. Arrêter et déconnecter proprement le WebSocket ─────────────────
         if self.websocket_client:
             try:
                 self.websocket_client.disconnected.disconnect()
@@ -866,39 +841,33 @@ class MainWindow(QMainWindow):
                 pass
             self.websocket_client = None
 
-        # ── 3. Reset des flags d'état ─────────────────────────────────────────
         self.is_connecting = False
         self.session_id    = None
 
-        # ── 4. Caméra et vidéo ────────────────────────────────────────────────
         if self._video_collector and self._video_collector.is_capturing:
             self._video_collector.stop_capture()
         self.video_player.camera_preview.hide()
         self.video_player.camera_preview.set_recording(False)
 
-        # ── 5. Restaurer l'UI vers l'écran de session ─────────────────────────
         self.stacked.setVisible(True)
-        self.stacked.setCurrentIndex(1)          # → écran session directement
+        self.stacked.setCurrentIndex(1)
         self.interview_container.setVisible(False)
         self._connect_btn.setEnabled(True)
         self._connect_btn.setText(self.t("start_btn"))
         self._session_input.setEnabled(True)
         self._session_input.clear()
-        self._session_input.setFocus()           # focus prêt à taper
+        self._session_input.setFocus()
 
-        # ── 6. Status chip ────────────────────────────────────────────────────
         self.status_chip.lbl_main.setText(self.t("status_disconnected"))
         self.status_chip.set_state("disconnected")
         self.statusBar().showMessage(self.t("vocal_mode_label"))
 
-        # ── 7. Reset interview widget ─────────────────────────────────────────
         if hasattr(self, "interview_widget"):
             self.interview_widget.enable_recording(False)
             if self.interview_widget.is_recording:
                 try: self.interview_widget._stop_rec(auto=False)
                 except Exception: pass
 
-        # ── 8. Audio recorder ─────────────────────────────────────────────────
         if self.audio_recorder:
             try:
                 self.audio_recorder.cleanup()
@@ -960,7 +929,6 @@ class MainWindow(QMainWindow):
         if not self._is_active(tok): return
         if self.is_connecting:
             self._handle_conn_failure(reason or f"Code {code}"); return
-        # Déconnexion en cours d'entretien (inattendue) — reset complet
         if self.interview_container.isVisible():
             self._reset_audio_state()
             self._reset_ui_for_new_session()
@@ -986,7 +954,11 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(self.t("generating_audio"))
             self.video_player.set_speaking(); return
 
-        if mt in ("welcome", "welcome_back", "question", "interview_completed"):
+        # ── Messages avec audio chunked ───────────────────────────────────────
+        # FIX : ajout de followup_question et followup_thanks dans la liste,
+        #       et appel immédiat à set_speaking() dès réception du header.
+        if mt in ("welcome", "welcome_back", "question", "interview_completed",
+                  "followup_question", "followup_thanks"):
             if md.get("audio_mode") == "chunked":
                 self._pending_msg_type = mt; self._pending_msg_data = md
                 self._audio_chunks = []; self._audio_total_chunks = md.get("total_chunks", 0)
@@ -997,6 +969,9 @@ class MainWindow(QMainWindow):
                 if mt == "question":
                     self.interview_widget.set_max_recording_seconds(md.get("max_duration", 90))
                     self.interview_widget.enable_recording(False)
+                # FIX : passer l'avatar en mode parole dès réception du header,
+                # quel que soit le type de message audio.
+                self.video_player.set_speaking()
                 return
             ab = md.get("audio_data")
             if ab: self._play_bytes_direct(base64.b64decode(ab))
@@ -1020,6 +995,14 @@ class MainWindow(QMainWindow):
 
         if mt == "answer_evaluated":
             self.statusBar().showMessage(self.t("answer_saved")); return
+
+        if mt == "followup_incoming":
+            # Serveur annonce qu'une question de suivi va arriver
+            self.video_player.set_speaking()
+            self.statusBar().showMessage(self.t("followup_status")); return
+
+        if mt == "answer_followup_completed":
+            self.video_player.set_idle(); return
 
     def _finalize_msg(self, mt, md):
         if mt == "welcome":
@@ -1054,12 +1037,22 @@ class MainWindow(QMainWindow):
             self.video_player.set_speaking()
             self.statusBar().showMessage(self.t("question_status"))
 
+        # FIX : question de suivi — avatar en mode parole + barre de statut
+        elif mt == "followup_question":
+            self.video_player.set_speaking()
+            self.statusBar().showMessage(self.t("followup_status"))
+
+        # FIX : remerciement de suivi — avatar en mode parole
+        elif mt == "followup_thanks":
+            self.video_player.set_speaking()
+
         elif mt == "interview_completed":
             if self._video_collector and self._video_collector.is_capturing:
                 self._video_collector.stop_capture()
             self._show_info(self.t("interview_complete"), self.t("thanks_message"))
             self.statusBar().showMessage("✓ " + self.t("interview_complete"))
-            self._reset_audio_state(); self._reset_ui_for_new_session()
+            # FIX : reset différé pour ne pas couper l'audio de remerciement
+            QTimer.singleShot(500, lambda: (self._reset_audio_state(), self._reset_ui_for_new_session()))
 
     def _on_session_started(self, md):
         self.is_connecting = False
@@ -1168,7 +1161,6 @@ class MainWindow(QMainWindow):
     def _handle_conn_failure(self, msg: str):
         self.is_connecting = False
         self._reset_audio_state()
-        # Nettoyer le websocket
         if self.websocket_client:
             try:
                 self.websocket_client.disconnected.disconnect()
@@ -1179,7 +1171,6 @@ class MainWindow(QMainWindow):
             try: self.websocket_client.disconnect_from_server()
             except Exception: pass
             self.websocket_client = None
-        # Réactiver l'UI
         self._connect_btn.setEnabled(True)
         self._connect_btn.setText(self.t("start_btn"))
         self._session_input.setEnabled(True)
